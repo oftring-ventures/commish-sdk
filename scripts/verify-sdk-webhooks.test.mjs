@@ -128,13 +128,26 @@ test("runtime failure, changed installed bytes and external resolution cannot pr
   }
 });
 test("actual Node import rejects missing exports, wrong signatures and permissive verifiers", () => {
-  const header = "t=1000,v1=69247e8c853132093c4013883f4111557d7be5b575a9373b6992355306cd0fad";
-  for (const [signature, diagnostic, missingVerifier] of [
-    ["wrong", "HMAC signing vector"],
-    [header, "payload-byte tampering"],
-    [header, "public webhook verifier", true],
+  for (const [implementation, diagnostic] of [
+    [
+      `export function signWebhook() { return "wrong"; }
+export function verifyWebhook() { return true; }`,
+      "HMAC signing vector",
+    ],
+    [
+      `export function signWebhook() {
+  return "t=1000,v1=69247e8c853132093c4013883f4111557d7be5b575a9373b6992355306cd0fad";
+}
+export function verifyWebhook() { return true; }`,
+      "payload-byte tampering",
+    ],
+    [
+      `export function signWebhook() {
+  return "t=1000,v1=69247e8c853132093c4013883f4111557d7be5b575a9373b6992355306cd0fad";
+}`,
+      "public webhook verifier",
+    ],
   ]) {
-    const implementation = `export function signWebhook() { return ${JSON.stringify(signature)}; } ${missingVerifier ? "" : "export function verifyWebhook() { return true; }"}`;
     const files = packed(null, true, implementation);
     installed(files, (consumer) => {
       assert.throws(
