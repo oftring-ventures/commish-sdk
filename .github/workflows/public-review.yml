@@ -1,7 +1,5 @@
 name: Public review admission
 on:
-  pull_request:
-    types: [opened, reopened, synchronize, ready_for_review]
   pull_request_target:
     types: [opened, reopened, synchronize, ready_for_review]
 permissions:
@@ -32,7 +30,6 @@ jobs:
           script: |
             const assert = require('node:assert/strict');
             const repository = 'oftring-ventures/commish-sdk';
-            const bootstrap = '1fceca7803fb7b74f8c22c1ac5e7f650fa9deb27';
             const gate = 'codex_review / Codex review gate';
             const { owner, repo } = context.repo;
             assert.equal(`${owner}/${repo}`, repository, 'Unexpected repository');
@@ -52,33 +49,11 @@ jobs:
             const { data: main } = await github.rest.git.getRef({ owner, repo, ref: 'heads/main' });
             assert.equal(pull.base.sha, main.object.sha, 'Main moved before admission');
             const workflow = `${repository}/.github/workflows/public-review.yml@`;
-            if (context.eventName === 'pull_request') {
-              // This one bootstrap is reviewed as a frozen candidate before any secret grant.
-              if (pull.base.sha !== bootstrap) return;
-              assert.equal(process.env.GITHUB_WORKFLOW_REF,
-                `${workflow}refs/pull/${pull_number}/merge`, 'Unexpected bootstrap workflow');
-              const { data: commit } = await github.rest.repos.getCommit({
-                owner, repo, ref: pull.head.sha,
-              });
-              assert.deepEqual(commit.parents.map(({ sha }) => sha), [bootstrap],
-                'Bootstrap must be one commit above the approved source');
-              const files = await github.paginate(github.rest.pulls.listFiles,
-                { owner, repo, pull_number });
-              const expected = {
-                '.github/workflows/public-review.yml': 'added',
-                '.github/workflows/public-review-merge-group.yml': 'added',
-                'scripts/verify-public-source.mjs': 'modified',
-                'scripts/verify-public-source.test.mjs': 'modified',
-              };
-              assert.deepEqual(Object.fromEntries(files.map(({ filename, status }) =>
-                [filename, status])), expected, 'Unexpected bootstrap changes');
-            } else {
-              assert.equal(context.eventName, 'pull_request_target', 'Unexpected event');
-              assert.equal(process.env.GITHUB_WORKFLOW_REF,
-                `${workflow}refs/heads/main`, 'Review must execute the main workflow');
-              assert.equal(process.env.GITHUB_WORKFLOW_SHA, main.object.sha,
-                'Review workflow is not current main');
-            }
+            assert.equal(context.eventName, 'pull_request_target', 'Unexpected event');
+            assert.equal(process.env.GITHUB_WORKFLOW_REF,
+              `${workflow}refs/heads/main`, 'Review must execute the main workflow');
+            assert.equal(process.env.GITHUB_WORKFLOW_SHA, main.object.sha,
+              'Review workflow is not current main');
             const checks = await github.paginate(github.rest.checks.listForRef,
               { owner, repo, ref: pull.head.sha, filter: 'all' });
             // Existing queued/failed/successful reviews never authorize an automatic retry.
