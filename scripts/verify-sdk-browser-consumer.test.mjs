@@ -31,6 +31,7 @@ test("consumer isolates the verified artifact, invokes browser conditions, and c
     "behavior",
     "types",
     "webhooks",
+    "http",
   ]) {
     const packed = fixture(),
       archive = Buffer.from("controlled archive"),
@@ -40,15 +41,16 @@ test("consumer isolates the verified artifact, invokes browser conditions, and c
       manifest.exports["."] = { types: "invalid" };
       packed.set("package/package.json", { data: Buffer.from(JSON.stringify(manifest)) });
     }
-    if (failure === "webhooks") {
+    if (failure === "webhooks" || failure === "http") {
+      const target = failure === "http" ? "index" : "webhooks";
       const manifest = JSON.parse(packed.get("package/package.json").data);
-      manifest.exports["./webhooks"] = {
+      manifest.exports[failure === "http" ? "." : "./webhooks"] = {
         browser: null,
-        types: "./dist/webhooks.d.ts",
-        default: "./dist/webhooks.js",
+        types: `./dist/${target}.d.ts`,
+        default: `./dist/${target}.js`,
       };
       packed.set("package/package.json", { data: Buffer.from(JSON.stringify(manifest)) });
-      for (const name of ["webhooks.js", "webhooks.d.ts"])
+      for (const name of [`${target}.js`, `${target}.d.ts`])
         packed.set(`package/dist/${name}`, { data: Buffer.from("export {};") });
     }
     let consumer;
@@ -95,7 +97,13 @@ test("consumer isolates the verified artifact, invokes browser conditions, and c
           execFileSync(command, args, { cwd, stdio: "pipe", timeout: 10_000 });
       }
     };
-    if (failure) assert.throws(() => verifySdkBrowserConsumer(archive, packed, run));
+    if (failure)
+      assert.throws(
+        () => verifySdkBrowserConsumer(archive, packed, run),
+        failure === "http"
+          ? (error) => error.status === 1 && error.stderr.toString().includes("public HTTP client")
+          : undefined,
+      );
     else {
       assert.deepEqual(verifySdkBrowserConsumer(archive, packed, run), {
         scopes: [browserConsumerScope],
