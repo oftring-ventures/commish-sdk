@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
+import { mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { gunzipSync } from "node:zlib";
 
 const automation = [
   ".github/workflows/public-source.yml",
@@ -14,19 +18,234 @@ const bootstrap = {
   LICENSE: "03f0077d06d3281e364be7f1cbb440d6996c65d3a6a19a73de41a7c6d02be702",
   "README.md": "e54066163aa6be032484c7193f096cbcd0d9a57b55d65a9b4d4c8bc27382972e",
 };
+const roots = [...Object.keys(bootstrap), "package.json", "pnpm-workspace.yaml", "pnpm-lock.yaml"];
+const common = ["package.json", "LICENSE", "README.md", "build.mjs", "tsconfig.build.json"];
+const sources = {
+  sdk: ["browser", "types", "webhooks", "index", "reads"],
+  next: ["browser", "provider", "index"],
+};
+const sha = (data) => createHash("sha256").update(data).digest("hex");
+const bytes = (files, name) => {
+  assert(files.has(name), "missing required file");
+  return files.get(name).data;
+};
+const json = (files, name) => JSON.parse(bytes(files, name));
+const pair = (name, server = false) => ({
+  ...(server ? { browser: null } : {}),
+  types: `./dist/${name}.d.ts`,
+  default: `./dist/${name}.js`,
+});
 
 export function inspect(files) {
-  const allowed = [...Object.keys(bootstrap), ...automation];
-  assert.equal(files.size, allowed.length, "only the exact bootstrap is supported");
+  const allowed = new Set([
+    ...roots,
+    ...automation,
+    "packages/next/bin/init.mjs",
+    ...Object.entries(sources).flatMap(([pkg, names]) =>
+      [...common, ...names.map((name) => `src/${name}.${name === "provider" ? "tsx" : "ts"}`)].map(
+        (name) => `packages/${pkg}/${name}`,
+      ),
+    ),
+  ]);
   for (const [name, file] of files) {
-    assert(allowed.includes(name), "package or unexpected source is not supported");
-    assert.equal(file.mode, "100644", "invalid bootstrap source mode");
-    if (bootstrap[name]) {
-      const hash = createHash("sha256").update(file.data).digest("hex");
-      assert.equal(hash, bootstrap[name], "bootstrap bytes differ");
-    }
+    assert(allowed.has(name), "unexpected source path");
+    assert.equal(
+      file.mode,
+      name === "packages/next/bin/init.mjs" ? "100755" : "100644",
+      "invalid source mode",
+    );
   }
-  return [];
+  for (const name of automation) bytes(files, name);
+  if (!files.has("package.json")) {
+    assert.equal(files.size, automation.length + 3, "incomplete package tree is not bootstrap");
+    for (const [name, hash] of Object.entries(bootstrap))
+      assert.equal(sha(bytes(files, name)), hash, "bootstrap bytes differ");
+    return [];
+  }
+  for (const name of roots) bytes(files, name);
+  const packages = files.has("packages/next/package.json") ? ["sdk", "next"] : ["sdk"];
+  const expectedBuild = packages.map((name) => `pnpm --filter @commish/${name} build`).join(" && ");
+  assert.deepEqual(
+    json(files, "package.json"),
+    {
+      name: "commish-public-packages",
+      private: true,
+      packageManager: "pnpm@11.1.3",
+      engines: { node: ">=24 <25" },
+      scripts: { build: expectedBuild },
+    },
+    "unsupported root manifest",
+  );
+  const react = files.has("packages/next/src/provider.tsx");
+  const workspace = `packages:\n${packages.map((name) => `  - packages/${name}\n`).join("")}engineStrict: true\n${react ? "overrides:\n  baseline-browser-mapping: 2.11.18\n  caniuse-lite: 1.0.30001809\n" : ""}`;
+  assert.equal(
+    bytes(files, "pnpm-workspace.yaml").toString(),
+    workspace,
+    "unsupported workspace configuration",
+  );
+  const expectedLock =
+    packages.length === 1
+      ? "7e23bad69c9b8a88d53fc992196178aecdef08a6311e54752201de147b1314f2"
+      : react
+        ? "81c9949580d3ed18cfe1c75e3616ef666f403b127a08c39e6899546b6d871f7b"
+        : "0c15096dcc1644b3d0e3fd288da4ab13ddef54d9b609bc2a8547cc9d7d88bc3f";
+  assert.equal(sha(bytes(files, "pnpm-lock.yaml")), expectedLock, "unsupported lockfile");
+  for (const name of files.keys())
+    if (name.startsWith("packages/"))
+      assert(packages.includes(name.split("/")[1]), "orphan package source");
+  return packages.map((pkg) => {
+    const dir = `packages/${pkg}`;
+    for (const name of common.filter((name) => name !== "README.md"))
+      bytes(files, `${dir}/${name}`);
+    bytes(files, `${dir}/src/browser.ts`);
+    const manifest = json(files, `${dir}/package.json`);
+    assert.equal(manifest.name, `@commish/${pkg}`);
+    assert.equal(manifest.version, "0.1.0-beta.9");
+    assert.equal(manifest.type, "module");
+    assert.deepEqual(
+      manifest.scripts,
+      {
+        build: "node build.mjs",
+        prepack: "pnpm build",
+        typecheck: "tsc -p tsconfig.build.json --noEmit",
+      },
+      "unexpected lifecycle command",
+    );
+    assert(
+      !manifest.dependencies && !manifest.optionalDependencies,
+      "unexpected production dependencies",
+    );
+    const dev = { typescript: "5.9.2", "@types/node": "24.13.3" };
+    const peers = {};
+    if (pkg === "next") {
+      dev["@commish/sdk"] = "workspace:*";
+      peers["@commish/sdk"] = manifest.version;
+    }
+    if (pkg === "next" && react) {
+      Object.assign(dev, {
+        next: "16.3.4",
+        react: "19.2.8",
+        "react-dom": "19.2.8",
+        "@types/react": "19.2.18",
+        "@types/react-dom": "19.2.5",
+      });
+      Object.assign(peers, { next: ">=16.2.12 <17", react: ">=19.2.8 <20" });
+    }
+    assert.deepEqual(manifest.devDependencies, dev, "unsupported development dependencies");
+    assert.deepEqual(manifest.peerDependencies ?? {}, peers, "unsupported peer dependencies");
+    const exports = { "./browser": pair("browser") };
+    const has = (name) => files.has(`${dir}/src/${name}.ts`);
+    if (has("index")) {
+      exports["."] = pair("index", true);
+      if (pkg === "sdk") {
+        bytes(files, `${dir}/src/reads.ts`);
+        bytes(files, `${dir}/src/types.ts`);
+      }
+    } else if (pkg === "sdk" && has("types")) exports["."] = pair("types", true);
+    if (pkg === "sdk" && has("webhooks")) exports["./webhooks"] = pair("webhooks", true);
+    if (pkg === "next" && react) exports["./react"] = pair("provider");
+    assert.deepEqual(manifest.exports, exports, "exports do not match present source");
+    const bin = pkg === "next" && has("index") ? { "commish-next": "./bin/init.mjs" } : undefined;
+    assert.deepEqual(manifest.bin, bin, "bin does not match present source");
+    if (bin) bytes(files, `${dir}/bin/init.mjs`);
+    const targets = [
+      ...Object.values(exports).flatMap(Object.values),
+      ...Object.values(bin ?? {}),
+    ].filter((value) => typeof value === "string");
+    return { dir, manifest, targets };
+  });
+}
+
+export function archiveFiles(compressed) {
+  const tar = gunzipSync(compressed, { maxOutputLength: 10_000_000 });
+  const files = new Map();
+  let offset = 0;
+  while (offset + 512 <= tar.length && tar[offset]) {
+    const header = tar.subarray(offset, offset + 512);
+    const field = (start, length) =>
+      header
+        .subarray(start, start + length)
+        .toString()
+        .replace(/\0.*$/s, "");
+    const name = field(0, 100),
+      size = Number.parseInt(field(124, 12).trim(), 8);
+    const mode = Number.parseInt(field(100, 8).trim(), 8);
+    assert(
+      /^(package\/(?:dist\/)?[a-zA-Z0-9_.-]+|package\/bin\/init.mjs)$/.test(name) &&
+        !files.has(name),
+      "unsafe archive entry",
+    );
+    assert(
+      !name.split("/").some((segment) => segment === "." || segment === ".."),
+      "archive dot segment",
+    );
+    assert(
+      (header[156] === 0 || header[156] === 48) && field(345, 155) === "",
+      "unsupported archive entry type",
+    );
+    assert(
+      Number.isSafeInteger(size) && size >= 0 && offset + 512 + size <= tar.length,
+      "invalid archive length",
+    );
+    files.set(name, { data: tar.subarray(offset + 512, offset + 512 + size), mode });
+    offset += 512 + Math.ceil(size / 512) * 512;
+  }
+  assert(
+    tar.subarray(offset).length >= 1024 && tar.subarray(offset).every((byte) => byte === 0),
+    "invalid archive terminator",
+  );
+  return files;
+}
+
+export function verifyPackages(files, packages, run) {
+  const work = mkdtempSync(join(tmpdir(), "commish-public-source-"));
+  try {
+    for (const [name, file] of files) {
+      mkdirSync(join(work, name, ".."), { recursive: true });
+      writeFileSync(join(work, name), file.data, { mode: Number.parseInt(file.mode, 8) & 0o777 });
+    }
+    run(
+      "pnpm",
+      ["install", "--frozen-lockfile", "--ignore-scripts", "--registry=https://registry.npmjs.org"],
+      work,
+    );
+    for (const { dir, manifest, targets } of packages) {
+      const cwd = join(work, dir),
+        destination = join(work, "packed", dir);
+      mkdirSync(destination, { recursive: true });
+      run("pnpm", ["build"], cwd);
+      run("pnpm", ["typecheck"], cwd);
+      run("pnpm", ["pack", "--pack-destination", destination], cwd);
+      const archives = readdirSync(destination);
+      assert.equal(archives.length, 1, "expected one package archive");
+      const packed = archiveFiles(readFileSync(join(destination, archives[0])));
+      const packedManifest = JSON.parse(bytes(packed, "package/package.json"));
+      assert.equal(packedManifest.name, manifest.name);
+      assert.equal(packedManifest.version, manifest.version);
+      assert.deepEqual(packedManifest.exports, manifest.exports);
+      assert.deepEqual(packedManifest.bin, manifest.bin);
+      assert(!packedManifest.scripts?.prepack, "prepack must not ship");
+      for (const target of targets) {
+        const entry = packed.get(`package/${target.slice(2)}`);
+        assert(
+          entry && entry.data.equals(readFileSync(join(cwd, target))),
+          "declared target is missing or changed in archive",
+        );
+        assert.equal(
+          entry.mode & 0o777,
+          target.startsWith("./bin/") ? 0o755 : 0o644,
+          "invalid packed target mode",
+        );
+      }
+    }
+    for (const [name, file] of files)
+      assert(
+        readFileSync(join(work, name)).equals(file.data),
+        "source or lock changed during verification",
+      );
+  } finally {
+    rmSync(work, { recursive: true, force: true });
+  }
 }
 
 export function verify(root, expectedSha) {
@@ -54,11 +273,23 @@ export function verify(root, expectedSha) {
         return [name, { mode, data: git("cat-file", "blob", oid) }];
       }),
   );
-  inspect(files);
+  const packages = inspect(files);
+  if (packages.length) {
+    assert.equal(
+      execFileSync("pnpm", ["--version"], { encoding: "utf8" }).trim(),
+      "11.1.3",
+      "pnpm must be 11.1.3",
+    );
+    verifyPackages(files, packages, (command, args, cwd) =>
+      execFileSync(command, args, { cwd, stdio: "inherit", timeout: 600_000 }),
+    );
+  }
   return {
     sha: head,
-    scope: "exact-bootstrap-and-automation",
-    packages: [],
+    scope: packages.length
+      ? "frozen-install-build-typecheck-pack-exports"
+      : "exact-bootstrap-and-automation",
+    packages: packages.map(({ manifest }) => manifest.name),
     consumerChecks: false,
     publication: false,
   };

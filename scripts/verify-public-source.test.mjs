@@ -1,11 +1,12 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createRequire } from "node:module";
+import { gzipSync } from "node:zlib";
 import test from "node:test";
-import { inspect, verify } from "./verify-public-source.mjs";
+import { archiveFiles, inspect, verify, verifyPackages } from "./verify-public-source.mjs";
 
 function bootstrap() {
   const files = new Map();
@@ -34,6 +35,102 @@ function put(files, name, value) {
     ),
   });
 }
+function packageTree() {
+  const files = bootstrap();
+  put(files, "package.json", {
+    name: "commish-public-packages",
+    private: true,
+    packageManager: "pnpm@11.1.3",
+    engines: { node: ">=24 <25" },
+    scripts: { build: "pnpm --filter @commish/sdk build" },
+  });
+  put(files, "pnpm-workspace.yaml", "packages:\n  - packages/sdk\nengineStrict: true\n");
+  put(
+    files,
+    "pnpm-lock.yaml",
+    `lockfileVersion: '9.0'
+
+settings:
+  autoInstallPeers: true
+  excludeLinksFromLockfile: false
+
+importers:
+
+  .: {}
+
+  packages/sdk:
+    devDependencies:
+      '@types/node':
+        specifier: 24.13.3
+        version: 24.13.3
+      typescript:
+        specifier: 5.9.2
+        version: 5.9.2
+
+packages:
+
+  '@types/node@24.13.3':
+    resolution: {integrity: sha512-Dh8vAsV36ig5wa9OX4pXvMc9D3Veibfw2wix0CUwYODLD8nkj9UsLjASr49nPg+2eKzxhBV+v7L8pXvT4e639Q==}
+
+  typescript@5.9.2:
+    resolution: {integrity: sha512-CWBzXQrc/qOkhidw1OzBTQuYRbfyxDXJMVJ1XNwUHGROVmuaeiEm3OslpZ1RV96d7SKKjZKrSJu3+t/xlw3R9A==}
+    engines: {node: '>=14.17'}
+    hasBin: true
+
+  undici-types@7.18.2:
+    resolution: {integrity: sha512-AsuCzffGHJybSaRrmr5eHr81mwJU3kjw6M+uprWvCXiNeN9SOGwQ3Jn8jb8m3Z6izVgknn1R0FTCEAP2QrLY/w==}
+
+snapshots:
+
+  '@types/node@24.13.3':
+    dependencies:
+      undici-types: 7.18.2
+
+  typescript@5.9.2: {}
+
+  undici-types@7.18.2: {}
+`,
+  );
+  put(files, "packages/sdk/package.json", {
+    name: "@commish/sdk",
+    version: "0.1.0-beta.9",
+    type: "module",
+    scripts: {
+      build: "node build.mjs",
+      prepack: "pnpm build",
+      typecheck: "tsc -p tsconfig.build.json --noEmit",
+    },
+    devDependencies: { typescript: "5.9.2", "@types/node": "24.13.3" },
+    exports: { "./browser": { types: "./dist/browser.d.ts", default: "./dist/browser.js" } },
+  });
+  for (const name of ["LICENSE", "build.mjs", "tsconfig.build.json", "src/browser.ts"])
+    put(files, `packages/sdk/${name}`, "");
+  return files;
+}
+function tar(entries) {
+  return gzipSync(
+    Buffer.concat([
+      ...entries.flatMap(([name, value, type = "0", mode = "0000644"]) => {
+        const data = Buffer.from(value),
+          header = Buffer.alloc(512);
+        header.write(name);
+        header.write(mode, 100);
+        header.write(data.length.toString(8).padStart(11, "0"), 124);
+        header.write(type, 156);
+        header.fill(32, 148, 156);
+        header.write(
+          [...header]
+            .reduce((sum, byte) => sum + byte, 0)
+            .toString(8)
+            .padStart(6, "0"),
+          148,
+        );
+        return [header, data, Buffer.alloc((512 - (data.length % 512)) % 512)];
+      }),
+      Buffer.alloc(1024),
+    ]),
+  );
+}
 
 test("only the exact approved bootstrap receives the empty package plan", () => {
   assert.deepEqual(inspect(bootstrap()), []);
@@ -60,6 +157,124 @@ test("only the exact approved bootstrap receives the empty package plan", () => 
   const linked = bootstrap();
   linked.get("LICENSE").mode = "120000";
   assert.throws(() => inspect(linked));
+});
+test("package shapes fail closed on missing scaffolding, orphan sources, unsafe commands and exports", () => {
+  assert.equal(inspect(packageTree())[0].manifest.name, "@commish/sdk");
+  for (const name of [
+    "package.json",
+    "pnpm-lock.yaml",
+    "packages/sdk/package.json",
+    "packages/sdk/build.mjs",
+    "packages/sdk/src/browser.ts",
+  ]) {
+    const files = packageTree();
+    files.delete(name);
+    assert.throws(() => inspect(files));
+  }
+  for (const patch of [
+    { scripts: { install: "do-something" } },
+    { dependencies: { unexpected: "1.0.0" } },
+    { exports: {} },
+    { exports: { "./browser": "../../outside.js" } },
+    { bin: { other: "./bin/other" } },
+    { devDependencies: { typescript: "latest" } },
+  ]) {
+    const files = packageTree(),
+      name = "packages/sdk/package.json";
+    put(files, name, { ...JSON.parse(files.get(name).data), ...patch });
+    assert.throws(() => inspect(files));
+  }
+  for (const [name, value] of [
+    ["packages/next/src/browser.ts", ""],
+    ["pnpm-workspace.yaml", "packages: ['**']"],
+    ["pnpm-lock.yaml", "lockfileVersion: '9.0'\n  tarball: https://example.invalid/a.tgz"],
+    [
+      "pnpm-lock.yaml",
+      "lockfileVersion: '9.0'\n  resolution: {type: git, repo: 'git@example.invalid:repo.git', commit: abc}",
+    ],
+    [
+      "pnpm-lock.yaml",
+      "lockfileVersion: '9.0'\n  resolution: {type: directory, directory: '../../outside'}",
+    ],
+  ]) {
+    const files = packageTree();
+    put(files, name, value);
+    assert.throws(() => inspect(files));
+  }
+});
+test("archive inspection rejects traversal, duplicate paths, links and truncated bodies", () => {
+  assert.equal(
+    archiveFiles(tar([["package/dist/browser.js", "ok"]]))
+      .get("package/dist/browser.js")
+      .data.toString(),
+    "ok",
+  );
+  for (const entries of [
+    [["package/../outside", ""]],
+    [["package/.", ""]],
+    [["package/..", ""]],
+    [["package/dist/.", ""]],
+    [["package/dist/..", ""]],
+    [
+      ["package/a", ""],
+      ["package/a", ""],
+    ],
+    [["package/a", "", "2"]],
+  ])
+    assert.throws(() => archiveFiles(tar(entries)));
+  assert.throws(() => archiveFiles(gzipSync(Buffer.alloc(512))));
+  assert.throws(() => archiveFiles(tar([["package/a", "content"]]).subarray(0, 20)));
+});
+test("package commands run frozen install then ordered build/typecheck/pack and clean up after any failure", () => {
+  for (const failure of [
+    null,
+    "install",
+    "build",
+    "typecheck",
+    "pack",
+    "missing-export",
+    "mutated-lock",
+  ]) {
+    const files = packageTree(),
+      packages = inspect(files),
+      calls = [];
+    let work;
+    const run = (command, args, cwd) => {
+      assert.equal(command, "pnpm");
+      calls.push(args[0]);
+      work ??= cwd;
+      if (args[0] === failure) throw new Error("controlled command failure");
+      if (args[0] === "install")
+        assert.deepEqual(args, [
+          "install",
+          "--frozen-lockfile",
+          "--ignore-scripts",
+          "--registry=https://registry.npmjs.org",
+        ]);
+      if (args[0] === "build") {
+        mkdirSync(join(cwd, "dist"));
+        for (const ext of ["js", "d.ts"])
+          writeFileSync(join(cwd, `dist/browser.${ext}`), "export {};");
+      }
+      if (args[0] === "pack") {
+        const manifest = structuredClone(packages[0].manifest);
+        delete manifest.scripts.prepack;
+        const entries = [
+          ["package/package.json", JSON.stringify(manifest)],
+          ["package/dist/browser.js", "export {};"],
+        ];
+        if (failure !== "missing-export") entries.push(["package/dist/browser.d.ts", "export {};"]);
+        writeFileSync(join(args[2], "fixture.tgz"), tar(entries));
+        if (failure === "mutated-lock") writeFileSync(join(work, "pnpm-lock.yaml"), "changed");
+      }
+    };
+    if (failure) assert.throws(() => verifyPackages(files, packages, run));
+    else {
+      verifyPackages(files, packages, run);
+      assert.deepEqual(calls, ["install", "build", "typecheck", "pack"]);
+    }
+    assert(work && !existsSync(work), "owned working tree must be removed");
+  }
 });
 test("verification binds its receipt to the actual immutable checkout and rejects dirty source", () => {
   const root = mkdtempSync(join(tmpdir(), "commish-public-git-test-"));
