@@ -1,7 +1,7 @@
 # Commish public packages
 
 MIT-licensed source for the Commish test-money pilot.
-Available source entry point: `@commish/sdk/browser`.
+Available: public root types and `@commish/sdk/browser`.
 No npm publication, release artifact provenance or hosted acceptance is claimed.
 
 With Node 24 and pnpm 11.1.3:

@@ -1,7 +1,7 @@
 {
   "name": "@commish/sdk",
   "version": "0.1.0-beta.9",
-  "description": "Public browser referral capture for the Commish test-money pilot",
+  "description": "Public types and browser interfaces for the Commish test-money pilot",
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -17,6 +17,11 @@
     "LICENSE"
   ],
   "exports": {
+    ".": {
+      "browser": null,
+      "types": "./dist/types.d.ts",
+      "default": "./dist/types.js"
+    },
     "./browser": {
       "types": "./dist/browser.d.ts",
       "default": "./dist/browser.js"
