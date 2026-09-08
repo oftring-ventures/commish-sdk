@@ -28,6 +28,8 @@ const automation = [
   "scripts/verify-sdk-types.test.mjs",
   "scripts/verify-sdk-webhooks.mjs",
   "scripts/verify-sdk-webhooks.test.mjs",
+  "scripts/verify-sdk-http.mjs",
+  "scripts/verify-sdk-http.test.mjs",
   "scripts/fixtures/types-common.ts",
   "scripts/fixtures/types-only.ts",
 ];
