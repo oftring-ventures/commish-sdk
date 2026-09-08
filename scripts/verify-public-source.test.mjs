@@ -27,6 +27,8 @@ function bootstrap() {
     "scripts/verify-sdk-browser-consumer.test.mjs",
     "scripts/verify-sdk-types.mjs",
     "scripts/verify-sdk-types.test.mjs",
+    "scripts/verify-sdk-webhooks.mjs",
+    "scripts/verify-sdk-webhooks.test.mjs",
     "scripts/fixtures/types-common.ts",
     "scripts/fixtures/types-only.ts",
   ])
