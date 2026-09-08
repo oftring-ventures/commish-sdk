@@ -4,6 +4,8 @@ import { createHash } from "node:crypto";
 
 const automation = [
   ".github/workflows/public-source.yml",
+  ".github/workflows/public-review.yml",
+  ".github/workflows/public-review-merge-group.yml",
   "scripts/verify-public-source.mjs",
   "scripts/verify-public-source.test.mjs",
 ];

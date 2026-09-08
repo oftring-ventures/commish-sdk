@@ -1,0 +1,117 @@
+name: Public review admission
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, ready_for_review]
+  pull_request_target:
+    types: [opened, reopened, synchronize, ready_for_review]
+permissions:
+  contents: read
+concurrency:
+  group: public-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+jobs:
+  admit:
+    name: Validate public review admission
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+      checks: write
+    outputs:
+      admitted: ${{ steps.admit.outputs.admitted }}
+      pr_number: ${{ steps.admit.outputs.pr_number }}
+      base_sha: ${{ steps.admit.outputs.base_sha }}
+      head_sha: ${{ steps.admit.outputs.head_sha }}
+      head_repository: ${{ steps.admit.outputs.head_repository }}
+      check_run_id: ${{ steps.admit.outputs.check_run_id }}
+    steps:
+      - uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
+        id: admit
+        with:
+          script: |
+            const assert = require('node:assert/strict');
+            const repository = 'oftring-ventures/commish-sdk';
+            const bootstrap = '1fceca7803fb7b74f8c22c1ac5e7f650fa9deb27';
+            const gate = 'codex_review / Codex review gate';
+            const { owner, repo } = context.repo;
+            assert.equal(`${owner}/${repo}`, repository, 'Unexpected repository');
+            const event = context.payload.pull_request;
+            assert(event && Number.isSafeInteger(event.number), 'Missing pull request');
+            const pull_number = event.number;
+            const { data: pull } = await github.rest.pulls.get({ owner, repo, pull_number });
+            assert.equal(pull.state, 'open', 'Pull request is closed');
+            assert.equal(pull.draft, false, 'Drafts are not admitted');
+            assert.equal(pull.head.repo?.full_name, repository, 'Forks are not admitted');
+            assert.equal(pull.base.repo?.full_name, repository, 'Unexpected base repository');
+            assert.equal(pull.base.ref, 'main', 'Only the main frontier is admitted');
+            assert(/^[a-f0-9]{40}$/.test(pull.head.sha), 'Invalid head SHA');
+            assert(/^[a-f0-9]{40}$/.test(pull.base.sha), 'Invalid base SHA');
+            assert.equal(pull.head.sha, event.head.sha, 'Pull request head moved');
+            assert.equal(pull.base.sha, event.base.sha, 'Pull request base moved');
+            const { data: main } = await github.rest.git.getRef({ owner, repo, ref: 'heads/main' });
+            assert.equal(pull.base.sha, main.object.sha, 'Main moved before admission');
+            const workflow = `${repository}/.github/workflows/public-review.yml@`;
+            if (context.eventName === 'pull_request') {
+              // This one bootstrap is reviewed as a frozen candidate before any secret grant.
+              if (pull.base.sha !== bootstrap) return;
+              assert.equal(process.env.GITHUB_WORKFLOW_REF,
+                `${workflow}refs/pull/${pull_number}/merge`, 'Unexpected bootstrap workflow');
+              const { data: commit } = await github.rest.repos.getCommit({
+                owner, repo, ref: pull.head.sha,
+              });
+              assert.deepEqual(commit.parents.map(({ sha }) => sha), [bootstrap],
+                'Bootstrap must be one commit above the approved source');
+              const files = await github.paginate(github.rest.pulls.listFiles,
+                { owner, repo, pull_number });
+              const expected = {
+                '.github/workflows/public-review.yml': 'added',
+                '.github/workflows/public-review-merge-group.yml': 'added',
+                'scripts/verify-public-source.mjs': 'modified',
+                'scripts/verify-public-source.test.mjs': 'modified',
+              };
+              assert.deepEqual(Object.fromEntries(files.map(({ filename, status }) =>
+                [filename, status])), expected, 'Unexpected bootstrap changes');
+            } else {
+              assert.equal(context.eventName, 'pull_request_target', 'Unexpected event');
+              assert.equal(process.env.GITHUB_WORKFLOW_REF,
+                `${workflow}refs/heads/main`, 'Review must execute the main workflow');
+              assert.equal(process.env.GITHUB_WORKFLOW_SHA, main.object.sha,
+                'Review workflow is not current main');
+            }
+            const checks = await github.paginate(github.rest.checks.listForRef,
+              { owner, repo, ref: pull.head.sha, filter: 'all' });
+            // Existing queued/failed/successful reviews never authorize an automatic retry.
+            if (checks.some(({ name }) => name === gate)) return;
+            const { data: check } = await github.rest.checks.create({
+              owner, repo, name: gate, head_sha: pull.head.sha, status: 'queued',
+              external_id: `public-review:${pull_number}:${pull.base.sha}:${pull.head.sha}`,
+            });
+            assert(Number.isSafeInteger(check.id) && check.id > 0, 'Invalid check identity');
+            assert.equal(check.head_sha, pull.head.sha, 'Check belongs to another head');
+            assert.equal(check.name, gate, 'Check name changed');
+            assert.equal(check.app?.id, 15368, 'Unexpected check producer');
+            for (const [name, value] of Object.entries({
+              pr_number: pull_number, base_sha: pull.base.sha, head_sha: pull.head.sha,
+              head_repository: repository, check_run_id: check.id, admitted: 'true',
+            })) core.setOutput(name, String(value));
+  review_model:
+    # Its skipped job names deliberately differ from the inherited required context.
+    needs: admit
+    if: needs.admit.outputs.admitted == 'true'
+    permissions:
+      contents: read
+      actions: read
+      checks: write
+      pull-requests: read
+      statuses: write
+    uses: oftring-ventures/.github/.github/workflows/codex-pr-review.yml@fdd93807ece89f1d1de6df6007a4ef9ccabb2e83
+    with:
+      mode: pr
+      pr_number: ${{ needs.admit.outputs.pr_number }}
+      base_sha: ${{ needs.admit.outputs.base_sha }}
+      head_sha: ${{ needs.admit.outputs.head_sha }}
+      head_repository: ${{ needs.admit.outputs.head_repository }}
+      check_run_id: ${{ needs.admit.outputs.check_run_id }}
+    secrets:
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}

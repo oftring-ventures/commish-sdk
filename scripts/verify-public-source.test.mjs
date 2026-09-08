@@ -3,6 +3,7 @@ import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { createRequire } from "node:module";
 import test from "node:test";
 import { inspect, verify } from "./verify-public-source.mjs";
 
@@ -17,6 +18,8 @@ function bootstrap() {
   );
   for (const name of [
     ".github/workflows/public-source.yml",
+    ".github/workflows/public-review.yml",
+    ".github/workflows/public-review-merge-group.yml",
     "scripts/verify-public-source.mjs",
     "scripts/verify-public-source.test.mjs",
   ])
@@ -101,4 +104,245 @@ test("verification binds its receipt to the actual immutable checkout and reject
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
+});
+
+const reviewWorkflow = readFileSync(
+  new URL("../.github/workflows/public-review.yml", import.meta.url),
+  "utf8",
+);
+const admissionScript = reviewWorkflow
+  .split("          script: |\n")[1]
+  .split("\n")
+  .filter((line, index, lines) =>
+    lines.slice(0, index + 1).every((part) => part.startsWith("            ")),
+  )
+  .map((line) => line.slice(12))
+  .join("\n");
+const runAdmission = new (Object.getPrototypeOf(async function () {}).constructor)(
+  "github",
+  "context",
+  "core",
+  "process",
+  "require",
+  admissionScript,
+);
+const publicRepository = "oftring-ventures/commish-sdk";
+const reviewGate = "codex_review / Codex review gate";
+const bootstrapSha = "1fceca7803fb7b74f8c22c1ac5e7f650fa9deb27";
+function admissionFixture(bootstrap = false) {
+  const base = bootstrap ? bootstrapSha : "b".repeat(40);
+  const pull = {
+    number: 7,
+    state: "open",
+    draft: false,
+    head: { sha: "a".repeat(40), repo: { full_name: publicRepository } },
+    base: { sha: base, ref: "main", repo: { full_name: publicRepository } },
+  };
+  const state = {
+    pull,
+    main: base,
+    parents: [bootstrapSha],
+    checks: [],
+    created: {},
+    calls: [],
+    outputs: {},
+    files: [
+      [".github/workflows/public-review.yml", "added"],
+      [".github/workflows/public-review-merge-group.yml", "added"],
+      ["scripts/verify-public-source.mjs", "modified"],
+      ["scripts/verify-public-source.test.mjs", "modified"],
+    ].map(([filename, status]) => ({ filename, status })),
+    context: {
+      repo: { owner: "oftring-ventures", repo: "commish-sdk" },
+      eventName: bootstrap ? "pull_request" : "pull_request_target",
+      payload: { pull_request: structuredClone(pull) },
+    },
+    env: {
+      GITHUB_WORKFLOW_SHA: base,
+      GITHUB_WORKFLOW_REF: `${publicRepository}/.github/workflows/public-review.yml@${
+        bootstrap ? "refs/pull/7/merge" : "refs/heads/main"
+      }`,
+    },
+  };
+  const github = {
+    rest: {
+      pulls: { get: async () => ({ data: state.pull }), listFiles: "files" },
+      git: { getRef: async () => ({ data: { object: { sha: state.main } } }) },
+      repos: {
+        getCommit: async () => ({
+          data: {
+            parents: state.parents.map((sha) => ({ sha })),
+          },
+        }),
+      },
+      checks: {
+        listForRef: "checks",
+        create: async (input) => {
+          state.calls.push(input);
+          return {
+            data: {
+              id: 71,
+              name: reviewGate,
+              head_sha: input.head_sha,
+              app: { id: 15368 },
+              ...state.created,
+            },
+          };
+        },
+      },
+    },
+    paginate: async (kind) => state[kind],
+  };
+  state.run = () =>
+    runAdmission(
+      github,
+      state.context,
+      {
+        setOutput: (name, value) => {
+          state.outputs[name] = value;
+        },
+      },
+      { env: state.env },
+      createRequire(import.meta.url),
+    );
+  return state;
+}
+
+test("both admitted modes bind one queued required check to the API-validated head", async () => {
+  for (const bootstrap of [false, true]) {
+    const state = admissionFixture(bootstrap);
+    await state.run();
+    assert.equal(state.calls.length, 1);
+    assert.deepEqual(state.calls[0], {
+      owner: "oftring-ventures",
+      repo: "commish-sdk",
+      name: reviewGate,
+      head_sha: state.pull.head.sha,
+      status: "queued",
+      external_id: `public-review:7:${state.main}:${state.pull.head.sha}`,
+    });
+    assert.deepEqual(state.outputs, {
+      pr_number: "7",
+      base_sha: state.main,
+      head_sha: state.pull.head.sha,
+      head_repository: publicRepository,
+      check_run_id: "71",
+      admitted: "true",
+    });
+  }
+});
+test("fork, draft, stale and untrusted workflow paths cannot create a required check", async () => {
+  for (const mutate of [
+    (s) => {
+      s.pull.head.repo.full_name = "outsider/fork";
+    },
+    (s) => {
+      s.pull.draft = true;
+    },
+    (s) => {
+      s.pull.state = "closed";
+    },
+    (s) => {
+      s.pull.base.ref = "other";
+    },
+    (s) => {
+      s.pull.base.repo.full_name = "outsider/base";
+    },
+    (s) => {
+      s.pull.head.sha = "c".repeat(40);
+    },
+    (s) => {
+      s.pull.base.sha = "c".repeat(40);
+    },
+    (s) => {
+      s.main = "c".repeat(40);
+    },
+    (s) => {
+      s.env.GITHUB_WORKFLOW_SHA = "c".repeat(40);
+    },
+    (s) => {
+      s.env.GITHUB_WORKFLOW_REF = "untrusted/branch";
+    },
+    (s) => {
+      s.context.eventName = "workflow_dispatch";
+    },
+  ]) {
+    const state = admissionFixture();
+    mutate(state);
+    await assert.rejects(state.run());
+    assert.deepEqual(state.calls, []);
+    assert.deepEqual(state.outputs, {});
+  }
+});
+test("bootstrap admission permits only its one-parent reviewed four-file scope", async () => {
+  for (const mutate of [
+    (s) => {
+      s.parents.push("c".repeat(40));
+    },
+    (s) => {
+      s.parents = ["c".repeat(40)];
+    },
+    (s) => {
+      s.files.push({ filename: "package.json", status: "added" });
+    },
+    (s) => {
+      s.files.pop();
+    },
+    (s) => {
+      s.files[0].status = "modified";
+    },
+    (s) => {
+      s.env.GITHUB_WORKFLOW_REF = "untrusted/branch";
+    },
+  ]) {
+    const state = admissionFixture(true);
+    mutate(state);
+    await assert.rejects(state.run());
+    assert.deepEqual(state.calls, []);
+  }
+  const inactive = admissionFixture();
+  inactive.context.eventName = "pull_request";
+  await inactive.run();
+  assert.deepEqual(inactive.calls, []);
+  assert.deepEqual(inactive.outputs, {});
+});
+test("existing reviews are never replaced or automatically retried", async () => {
+  for (const status of ["queued", "in_progress", "completed"]) {
+    const state = admissionFixture();
+    state.checks = [{ name: reviewGate, status }];
+    await state.run();
+    assert.deepEqual(state.calls, []);
+    assert.deepEqual(state.outputs, {});
+  }
+});
+test("wrong provider check identity never reaches the review receiver", async () => {
+  for (const created of [
+    { id: "71" },
+    { id: 0 },
+    { name: "other" },
+    { head_sha: "c".repeat(40) },
+    { app: { id: 0 } },
+  ]) {
+    const state = admissionFixture();
+    state.created = created;
+    await assert.rejects(state.run());
+    assert.deepEqual(state.outputs, {});
+  }
+});
+test("skipped model jobs cannot impersonate the required gate and group bridging is separate", () => {
+  assert.match(reviewWorkflow, /^  review_model:$/m);
+  assert.doesNotMatch(reviewWorkflow, /^  codex_review:$/m);
+  assert.doesNotMatch(
+    reviewWorkflow,
+    /name: Codex review gate|secrets: inherit|run:|actions\/checkout/,
+  );
+  assert.match(reviewWorkflow, /OPENAI_API_KEY: \$\{\{ secrets.OPENAI_API_KEY \}\}/);
+  const group = readFileSync(
+    new URL("../.github/workflows/public-review-merge-group.yml", import.meta.url),
+    "utf8",
+  );
+  assert.match(group, /^  merge_group:$/m);
+  assert.match(group, /^  codex_review:$/m);
+  assert.match(group, /mode: merge_group/);
+  assert.doesNotMatch(group, /pull_request:|pull_request_target:|\n\s+if:|secrets:/);
 });
