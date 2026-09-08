@@ -1,7 +1,7 @@
 # Commish public packages
 
 MIT-licensed source for the Commish test-money pilot.
-Available: public root types, `@commish/sdk/browser`, and `@commish/sdk/webhooks`.
+Available: the SDK HTTP client, public types, browser capture and webhook helpers.
 No npm publication, release artifact provenance or hosted acceptance is claimed.
 
 With Node 24 and pnpm 11.1.3:
