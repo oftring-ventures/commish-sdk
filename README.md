@@ -1,8 +1,14 @@
 # Commish public packages
 
 MIT-licensed source for the Commish test-money pilot.
-
-This repository is receiving independently buildable source layers.
+Available source entry point: `@commish/sdk/browser`.
 No npm publication, release artifact provenance or hosted acceptance is claimed.
 
-See LICENSE for copyright and permission terms.
+With Node 24 and pnpm 11.1.3:
+
+```sh
+pnpm install --frozen-lockfile --ignore-scripts --registry=https://registry.npmjs.org
+pnpm build
+```
+
+Only the entry points described above are available at this source checkpoint.
