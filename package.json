@@ -1,0 +1,11 @@
+{
+  "name": "commish-public-packages",
+  "private": true,
+  "packageManager": "pnpm@11.1.3",
+  "engines": {
+    "node": ">=24 <25"
+  },
+  "scripts": {
+    "build": "pnpm --filter @commish/sdk build"
+  }
+}
