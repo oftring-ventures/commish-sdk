@@ -14,6 +14,7 @@ import { isAbsolute, join, relative, sep } from "node:path";
 import { verifySdkTypes } from "./verify-sdk-types.mjs";
 import { verifySdkWebhooks } from "./verify-sdk-webhooks.mjs";
 import { verifySdkHttp } from "./verify-sdk-http.mjs";
+import { verifySdkReads } from "./verify-sdk-reads.mjs";
 
 export const browserConsumerScope = "sdk-browser-node-primitives";
 const contained = (root, path) => {
@@ -158,9 +159,13 @@ export function verifySdkBrowserConsumer(
     writeFileSync(join(consumer, "probe.mjs"), `await (${browserProbe.toString()})();\n`);
     run(process.execPath, ["--conditions=browser", "probe.mjs"], consumer);
     const http = verifySdkHttp(consumer, packed);
+    const reads = verifySdkReads(consumer, packed);
     const types = verifySdkTypes(consumer, packed, context);
     const webhooks = verifySdkWebhooks(consumer, packed);
-    return { ...types, scopes: [browserConsumerScope, ...types.scopes, ...webhooks, ...http] };
+    return {
+      ...types,
+      scopes: [browserConsumerScope, ...types.scopes, ...webhooks, ...http, ...reads],
+    };
   } finally {
     rmSync(consumer, { recursive: true, force: true });
   }
