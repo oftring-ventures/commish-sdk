@@ -30,6 +30,7 @@ test("consumer isolates the verified artifact, invokes browser conditions, and c
     "probe",
     "behavior",
     "types",
+    "webhooks",
   ]) {
     const packed = fixture(),
       archive = Buffer.from("controlled archive"),
@@ -38,6 +39,17 @@ test("consumer isolates the verified artifact, invokes browser conditions, and c
       const manifest = JSON.parse(packed.get("package/package.json").data);
       manifest.exports["."] = { types: "invalid" };
       packed.set("package/package.json", { data: Buffer.from(JSON.stringify(manifest)) });
+    }
+    if (failure === "webhooks") {
+      const manifest = JSON.parse(packed.get("package/package.json").data);
+      manifest.exports["./webhooks"] = {
+        browser: null,
+        types: "./dist/webhooks.d.ts",
+        default: "./dist/webhooks.js",
+      };
+      packed.set("package/package.json", { data: Buffer.from(JSON.stringify(manifest)) });
+      for (const name of ["webhooks.js", "webhooks.d.ts"])
+        packed.set(`package/dist/${name}`, { data: Buffer.from("export {};") });
     }
     let consumer;
     const run = (command, args, cwd) => {
