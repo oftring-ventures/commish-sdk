@@ -11,6 +11,8 @@ import {
 import { tmpdir } from "node:os";
 import { isAbsolute, join, relative, sep } from "node:path";
 
+import { verifySdkTypes } from "./verify-sdk-types.mjs";
+
 export const browserConsumerScope = "sdk-browser-node-primitives";
 const contained = (root, path) => {
   const part = relative(root, realpathSync(path));
@@ -91,6 +93,7 @@ export function verifySdkBrowserConsumer(
   packed,
   run = (command, args, cwd) =>
     execFileSync(command, args, { cwd, stdio: "inherit", timeout: 120_000 }),
+  context,
 ) {
   const manifest = JSON.parse(packed.get("package/package.json").data);
   assert.equal(manifest.name, "@commish/sdk");
@@ -152,7 +155,8 @@ export function verifySdkBrowserConsumer(
     }
     writeFileSync(join(consumer, "probe.mjs"), `await (${browserProbe.toString()})();\n`);
     run(process.execPath, ["--conditions=browser", "probe.mjs"], consumer);
-    return browserConsumerScope;
+    const types = verifySdkTypes(consumer, packed, context);
+    return { ...types, scopes: [browserConsumerScope, ...types.scopes] };
   } finally {
     rmSync(consumer, { recursive: true, force: true });
   }

@@ -1,12 +1,20 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import {
+  mkdtempSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { gunzipSync } from "node:zlib";
 
-import { browserConsumerScope, verifySdkBrowserConsumer } from "./verify-sdk-browser-consumer.mjs";
+import { verifySdkBrowserConsumer } from "./verify-sdk-browser-consumer.mjs";
 
 const automation = [
   ".github/workflows/public-source.yml",
@@ -16,6 +24,10 @@ const automation = [
   "scripts/verify-public-source.test.mjs",
   "scripts/verify-sdk-browser-consumer.mjs",
   "scripts/verify-sdk-browser-consumer.test.mjs",
+  "scripts/verify-sdk-types.mjs",
+  "scripts/verify-sdk-types.test.mjs",
+  "scripts/fixtures/types-common.ts",
+  "scripts/fixtures/types-only.ts",
 ];
 const bootstrap = {
   ".gitignore": "e8e70120c7fb8891ed746bb896e739a62f7f6ea1df6225461506760c146f6614",
@@ -201,7 +213,8 @@ export function archiveFiles(compressed) {
   return files;
 }
 
-export function verifyPackages(files, packages, run) {
+export function verifyPackages(files, packages, run, checkout = process.cwd()) {
+  let evidence = { scopes: [] };
   const work = mkdtempSync(join(tmpdir(), "commish-public-source-"));
   try {
     for (const [name, file] of files) {
@@ -242,13 +255,19 @@ export function verifyPackages(files, packages, run) {
           "invalid packed target mode",
         );
       }
-      if (manifest.name === "@commish/sdk") verifySdkBrowserConsumer(archive, packed, run);
+      if (manifest.name === "@commish/sdk")
+        evidence = verifySdkBrowserConsumer(archive, packed, run, {
+          build: realpathSync(work),
+          checkout: realpathSync(checkout),
+          lock: Buffer.from(bytes(files, "pnpm-lock.yaml")),
+        });
     }
     for (const [name, file] of files)
       assert(
         readFileSync(join(work, name)).equals(file.data),
         "source or lock changed during verification",
       );
+    return evidence;
   } finally {
     rmSync(work, { recursive: true, force: true });
   }
@@ -280,14 +299,19 @@ export function verify(root, expectedSha) {
       }),
   );
   const packages = inspect(files);
+  let evidence = { scopes: [] };
   if (packages.length) {
     assert.equal(
       execFileSync("pnpm", ["--version"], { encoding: "utf8" }).trim(),
       "11.1.3",
       "pnpm must be 11.1.3",
     );
-    verifyPackages(files, packages, (command, args, cwd) =>
-      execFileSync(command, args, { cwd, stdio: "inherit", timeout: 600_000 }),
+    evidence = verifyPackages(
+      files,
+      packages,
+      (command, args, cwd) =>
+        execFileSync(command, args, { cwd, stdio: "inherit", timeout: 600_000 }),
+      root,
     );
   }
   return {
@@ -296,7 +320,8 @@ export function verify(root, expectedSha) {
       ? "frozen-install-build-typecheck-pack-exports"
       : "exact-bootstrap-and-automation",
     packages: packages.map(({ manifest }) => manifest.name),
-    consumerScopes: packages.length ? [browserConsumerScope] : [],
+    consumerScopes: evidence.scopes,
+    ...(evidence.typeCompiler ? { typeCompiler: evidence.typeCompiler } : {}),
     consumerChecks: false,
     publication: false,
   };

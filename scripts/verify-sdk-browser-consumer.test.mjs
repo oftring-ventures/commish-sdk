@@ -29,10 +29,16 @@ test("consumer isolates the verified artifact, invokes browser conditions, and c
     "external",
     "probe",
     "behavior",
+    "types",
   ]) {
     const packed = fixture(),
       archive = Buffer.from("controlled archive"),
       calls = [];
+    if (failure === "types") {
+      const manifest = JSON.parse(packed.get("package/package.json").data);
+      manifest.exports["."] = { types: "invalid" };
+      packed.set("package/package.json", { data: Buffer.from(JSON.stringify(manifest)) });
+    }
     let consumer;
     const run = (command, args, cwd) => {
       consumer = cwd;
@@ -79,7 +85,9 @@ test("consumer isolates the verified artifact, invokes browser conditions, and c
     };
     if (failure) assert.throws(() => verifySdkBrowserConsumer(archive, packed, run));
     else {
-      assert.equal(verifySdkBrowserConsumer(archive, packed, run), browserConsumerScope);
+      assert.deepEqual(verifySdkBrowserConsumer(archive, packed, run), {
+        scopes: [browserConsumerScope],
+      });
       assert.deepEqual(calls, ["pnpm", process.execPath]);
     }
     assert(consumer && !existsSync(consumer), "consumer is removed after success or failure");

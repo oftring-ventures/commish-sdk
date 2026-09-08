@@ -25,6 +25,10 @@ function bootstrap() {
     "scripts/verify-public-source.test.mjs",
     "scripts/verify-sdk-browser-consumer.mjs",
     "scripts/verify-sdk-browser-consumer.test.mjs",
+    "scripts/verify-sdk-types.mjs",
+    "scripts/verify-sdk-types.test.mjs",
+    "scripts/fixtures/types-common.ts",
+    "scripts/fixtures/types-only.ts",
   ])
     put(files, name, "");
   return files;
