@@ -1,0 +1,16 @@
+name: Public review merge-group bridge
+on:
+  merge_group:
+    types: [checks_requested]
+permissions:
+  contents: read
+  actions: read
+  checks: write
+  pull-requests: read
+  statuses: write
+jobs:
+  codex_review:
+    # This workflow has no PR trigger: no skipped required job can admit a PR head.
+    uses: oftring-ventures/.github/.github/workflows/codex-pr-review.yml@fdd93807ece89f1d1de6df6007a4ef9ccabb2e83
+    with:
+      mode: merge_group
