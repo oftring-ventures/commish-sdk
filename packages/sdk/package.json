@@ -1,7 +1,7 @@
 {
   "name": "@commish/sdk",
   "version": "0.1.0-beta.9",
-  "description": "Public types and browser interfaces for the Commish test-money pilot",
+  "description": "Public types, browser and webhook interfaces for the Commish test-money pilot",
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -25,6 +25,11 @@
     "./browser": {
       "types": "./dist/browser.d.ts",
       "default": "./dist/browser.js"
+    },
+    "./webhooks": {
+      "browser": null,
+      "types": "./dist/webhooks.d.ts",
+      "default": "./dist/webhooks.js"
     }
   },
   "publishConfig": {
