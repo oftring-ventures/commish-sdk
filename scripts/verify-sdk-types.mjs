@@ -20,14 +20,13 @@ const pair = (name, server = false) => ({
 });
 export function selectSdkTypes(packed) {
   const { exports } = JSON.parse(packed.get("package/package.json").data);
-  if (!Object.hasOwn(exports, ".")) {
-    assert.deepEqual(exports, { "./browser": pair("browser") });
-    return null;
+  const expected = { "./browser": pair("browser") };
+  let kind = null;
+  if (Object.hasOwn(exports, ".")) {
+    kind = exports["."]?.types === "./dist/types.d.ts" ? "types" : "index";
+    expected["."] = pair(kind, true);
   }
-  const kind = exports["."]?.types === "./dist/types.d.ts" ? "types" : "index";
-  const expected = { "./browser": pair("browser"), ".": pair(kind, true) };
-  if (kind === "index" || Object.hasOwn(exports, "./webhooks"))
-    expected["./webhooks"] = pair("webhooks", true);
+  if (Object.hasOwn(exports, "./webhooks")) expected["./webhooks"] = pair("webhooks", true);
   assert.deepEqual(exports, expected, "unsupported SDK root tuple");
   for (const entry of Object.values(expected)
     .flatMap(Object.values)

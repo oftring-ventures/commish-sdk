@@ -13,7 +13,7 @@ function packed(kind = "types", webhook = false) {
   });
   const exports = { "./browser": pair("browser") };
   if (kind) exports["."] = pair(kind, true);
-  if (webhook || kind === "index") exports["./webhooks"] = pair("webhooks", true);
+  if (webhook) exports["./webhooks"] = pair("webhooks", true);
   const files = new Map([
     ["package/package.json", { data: Buffer.from(JSON.stringify({ exports })) }],
   ]);
@@ -24,11 +24,26 @@ function packed(kind = "types", webhook = false) {
   return files;
 }
 test("only exact no-root, types-only and runtime-root tuples select type scope", () => {
-  assert.equal(selectSdkTypes(packed(null)), null);
-  assert.deepEqual(verifySdkTypes("unused", packed(null)), { scopes: [] });
-  for (const kind of ["types", "index"])
-    for (const webhook of [false, true]) assert.equal(selectSdkTypes(packed(kind, webhook)), kind);
+  for (const kind of [null, "types", "index"])
+    for (const webhook of [false, true]) {
+      const files = packed(kind, webhook);
+      const { exports } = JSON.parse(files.get("package/package.json").data);
+      assert.equal(Object.hasOwn(exports, "./webhooks"), webhook);
+      assert.equal(selectSdkTypes(files), kind);
+      if (kind === null) assert.deepEqual(verifySdkTypes("unused", files), { scopes: [] });
+      for (const name of files.keys()) {
+        if (name === "package/package.json") continue;
+        const missing = new Map(files);
+        missing.delete(name);
+        assert.throws(() => selectSdkTypes(missing), /missing promised SDK target/);
+      }
+    }
   for (const mutate of [
+    (files) => {
+      const manifest = JSON.parse(files.get("package/package.json").data);
+      manifest.exports["./unknown"] = manifest.exports["./browser"];
+      files.set("package/package.json", { data: Buffer.from(JSON.stringify(manifest)) });
+    },
     (files) => files.delete("package/dist/types.d.ts"),
     (files) => files.delete("package/dist/types.js"),
     (files) => {
