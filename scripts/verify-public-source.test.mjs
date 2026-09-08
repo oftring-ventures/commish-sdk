@@ -35,6 +35,7 @@ function bootstrap() {
     "scripts/verify-sdk-reads.test.mjs",
     "scripts/fixtures/types-common.ts",
     "scripts/fixtures/types-only.ts",
+    "scripts/fixtures/types-client.ts",
   ])
     put(files, name, "");
   return files;

@@ -58,7 +58,7 @@ test("only exact no-root, types-only and runtime-root tuples select type scope",
   }
 });
 test("compiler context, exact project, resolution, mutation and failure boundaries", () => {
-  for (const failure of [
+  const typeFailures = [
     null,
     "context",
     "lock",
@@ -72,14 +72,23 @@ test("compiler context, exact project, resolution, mutation and failure boundari
     "mutation",
     "late-lock",
     "command",
+  ];
+  for (const { kind, webhook = false, failure } of [
+    ...typeFailures.map((failure) => ({ kind: "types", failure })),
+    { kind: "index", failure: null },
+    { kind: "index", webhook: true, failure: null },
+    { kind: "index", failure: "fixture" },
+    { kind: "index", failure: "fixture-resolution" },
+    { kind: "index", failure: "client-command" },
   ]) {
+    const names = ["types-common.ts", kind === "types" ? "types-only.ts" : "types-client.ts"];
     const root = mkdtempSync(join(tmpdir(), "commish-types-test-"));
     const build = join(root, "build"),
       checkout = join(root, "checkout"),
       consumer = join(root, "consumer");
     const compiler = join(build, "packages/sdk/node_modules/typescript"),
       sdk = join(consumer, "node_modules/@commish/sdk"),
-      files = packed();
+      files = packed(kind, webhook);
     const write = (file, data) => {
       mkdirSync(join(file, ".."), { recursive: true });
       writeFileSync(file, data);
@@ -97,11 +106,12 @@ test("compiler context, exact project, resolution, mutation and failure boundari
       );
       for (const name of ["bin/tsc", "lib/tsc.js", "lib/_tsc.js", "lib/lib.es2022.d.ts"])
         write(join(compiler, name), "");
-      for (const name of ["types-common.ts", "types-only.ts"])
-        write(
-          join(build, "scripts/fixtures", name),
-          readFileSync(new URL(`./fixtures/${name}`, import.meta.url)),
-        );
+      for (const name of names)
+        if (!(failure === "fixture" && name === "types-client.ts"))
+          write(
+            join(build, "scripts/fixtures", name),
+            readFileSync(new URL(`./fixtures/${name}`, import.meta.url)),
+          );
       for (const [name, entry] of files) write(join(sdk, name.slice(8)), entry.data);
       const context = { build, checkout, lock: Buffer.from("locked") },
         calls = [];
@@ -112,9 +122,9 @@ test("compiler context, exact project, resolution, mutation and failure boundari
         symlinkSync(join(checkout, "tsc"), join(compiler, "bin/tsc"));
       }
       if (failure === "sdk-link") {
-        rmSync(join(sdk, "dist/types.d.ts"));
+        rmSync(join(sdk, `dist/${kind}.d.ts`));
         write(join(checkout, "types.d.ts"), "export {};\n");
-        symlinkSync(join(checkout, "types.d.ts"), join(sdk, "dist/types.d.ts"));
+        symlinkSync(join(checkout, "types.d.ts"), join(sdk, `dist/${kind}.d.ts`));
       }
       const execute = (command, args, options) => {
         calls.push(args);
@@ -130,7 +140,7 @@ test("compiler context, exact project, resolution, mutation and failure boundari
         if (args.includes("--version"))
           return failure === "actual-version" ? "Version 0" : "Version 5.9.2\n";
         assert.deepEqual(JSON.parse(readFileSync(join(consumer, "tsconfig.json"))), {
-          files: ["types-common.ts", "types-only.ts"],
+          files: names,
           compilerOptions: {
             strict: true,
             noEmit: true,
@@ -142,36 +152,45 @@ test("compiler context, exact project, resolution, mutation and failure boundari
             skipLibCheck: false,
           },
         });
+        if (failure === "client-command") throw new Error("controlled full-root compiler failure");
         if (!args.includes("--listFilesOnly")) return "";
         if (failure === "empty") return "";
         const listed = [
           join(compiler, "lib/lib.es2022.d.ts"),
-          join(sdk, "dist/types.d.ts"),
+          join(sdk, `dist/${kind}.d.ts`),
           join(sdk, "dist/browser.d.ts"),
-          join(consumer, "types-common.ts"),
-          join(consumer, "types-only.ts"),
+          ...names.map((name) => join(consumer, name)),
         ];
         if (failure === "incomplete") listed.splice(2, 1);
+        if (failure === "fixture-resolution") listed.pop();
         if (failure === "source") {
           write(join(build, "packages/sdk/src/types.ts"), "");
           listed.push(join(build, "packages/sdk/src/types.ts"));
         }
-        if (failure === "mutation") write(join(sdk, "dist/types.d.ts"), "changed");
+        if (failure === "mutation") write(join(sdk, `dist/${kind}.d.ts`), "changed");
         if (failure === "late-lock") write(join(build, "pnpm-lock.yaml"), "changed");
         return listed.join("\n") + "\n";
       };
       const check = () =>
         verifySdkTypes(consumer, files, failure === "context" ? undefined : context, execute);
-      if (failure) assert.throws(check);
+      if (failure === "fixture") assert.throws(check, /ENOENT.*types-client\.ts/);
+      else if (failure === "fixture-resolution")
+        assert.throws(check, /missing consumer fixture resolution/);
+      else if (failure === "client-command")
+        assert.throws(check, /controlled full-root compiler failure/);
+      else if (failure) assert.throws(check);
       else {
         assert.deepEqual(check().scopes, [
           "sdk-public-types-external-ts",
-          "sdk-types-only-root-external-ts",
+          kind === "types" ? "sdk-types-only-root-external-ts" : "sdk-client-types-external-ts",
         ]);
         assert.equal(calls.length, 3);
         assert(calls[2].includes("--listFilesOnly"));
         assert(!calls[1].includes("--listFilesOnly"));
       }
+      if (failure === "fixture") assert.equal(calls.length, 1);
+      if (failure === "client-command") assert.equal(calls.length, 2);
+      if (failure === "fixture-resolution") assert.equal(calls.length, 3);
       if (["context", "lock", "compiler-path", "version"].includes(failure))
         assert.equal(calls.length, 0);
     } finally {
