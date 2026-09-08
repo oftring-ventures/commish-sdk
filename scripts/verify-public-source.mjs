@@ -34,6 +34,7 @@ const automation = [
   "scripts/verify-sdk-reads.test.mjs",
   "scripts/fixtures/types-common.ts",
   "scripts/fixtures/types-only.ts",
+  "scripts/fixtures/types-client.ts",
 ];
 const bootstrap = {
   ".gitignore": "e8e70120c7fb8891ed746bb896e739a62f7f6ea1df6225461506760c146f6614",

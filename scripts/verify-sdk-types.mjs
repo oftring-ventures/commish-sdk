@@ -75,7 +75,7 @@ export function verifySdkTypes(consumer, packed, context, execute = execFileSync
       maxBuffer: 1_048_576,
     });
   assert.equal(run(["--version"]).trim(), "Version 5.9.2", "wrong actual compiler version");
-  const names = ["types-common.ts", ...(kind === "types" ? ["types-only.ts"] : [])];
+  const names = ["types-common.ts", kind === "types" ? "types-only.ts" : "types-client.ts"];
   for (const name of names)
     writeFileSync(join(consumer, name), readFileSync(join(build, "scripts/fixtures", name)));
   const config = join(consumer, "tsconfig.json");
@@ -119,6 +119,11 @@ export function verifySdkTypes(consumer, packed, context, execute = execFileSync
       resolved.has(child(installed, join(installed, target))),
       "missing SDK declaration resolution",
     );
+  for (const name of names)
+    assert(
+      resolved.has(child(consumer, join(consumer, name))),
+      "missing consumer fixture resolution",
+    );
   for (const [name, entry] of packed)
     assert(
       readFileSync(child(installed, join(installed, name.slice(8)))).equals(entry.data),
@@ -128,7 +133,7 @@ export function verifySdkTypes(consumer, packed, context, execute = execFileSync
   return {
     scopes: [
       "sdk-public-types-external-ts",
-      ...(kind === "types" ? ["sdk-types-only-root-external-ts"] : []),
+      kind === "types" ? "sdk-types-only-root-external-ts" : "sdk-client-types-external-ts",
     ],
     typeCompiler: {
       version: "5.9.2",
