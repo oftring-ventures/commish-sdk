@@ -128,9 +128,8 @@ const runAdmission = new (Object.getPrototypeOf(async function () {}).constructo
 );
 const publicRepository = "oftring-ventures/commish-sdk";
 const reviewGate = "codex_review / Codex review gate";
-const bootstrapSha = "1fceca7803fb7b74f8c22c1ac5e7f650fa9deb27";
-function admissionFixture(bootstrap = false) {
-  const base = bootstrap ? bootstrapSha : "b".repeat(40);
+function admissionFixture() {
+  const base = "b".repeat(40);
   const pull = {
     number: 7,
     state: "open",
@@ -141,40 +140,24 @@ function admissionFixture(bootstrap = false) {
   const state = {
     pull,
     main: base,
-    parents: [bootstrapSha],
     checks: [],
     created: {},
     calls: [],
     outputs: {},
-    files: [
-      [".github/workflows/public-review.yml", "added"],
-      [".github/workflows/public-review-merge-group.yml", "added"],
-      ["scripts/verify-public-source.mjs", "modified"],
-      ["scripts/verify-public-source.test.mjs", "modified"],
-    ].map(([filename, status]) => ({ filename, status })),
     context: {
       repo: { owner: "oftring-ventures", repo: "commish-sdk" },
-      eventName: bootstrap ? "pull_request" : "pull_request_target",
+      eventName: "pull_request_target",
       payload: { pull_request: structuredClone(pull) },
     },
     env: {
       GITHUB_WORKFLOW_SHA: base,
-      GITHUB_WORKFLOW_REF: `${publicRepository}/.github/workflows/public-review.yml@${
-        bootstrap ? "refs/pull/7/merge" : "refs/heads/main"
-      }`,
+      GITHUB_WORKFLOW_REF: `${publicRepository}/.github/workflows/public-review.yml@refs/heads/main`,
     },
   };
   const github = {
     rest: {
-      pulls: { get: async () => ({ data: state.pull }), listFiles: "files" },
+      pulls: { get: async () => ({ data: state.pull }) },
       git: { getRef: async () => ({ data: { object: { sha: state.main } } }) },
-      repos: {
-        getCommit: async () => ({
-          data: {
-            parents: state.parents.map((sha) => ({ sha })),
-          },
-        }),
-      },
       checks: {
         listForRef: "checks",
         create: async (input) => {
@@ -208,28 +191,26 @@ function admissionFixture(bootstrap = false) {
   return state;
 }
 
-test("both admitted modes bind one queued required check to the API-validated head", async () => {
-  for (const bootstrap of [false, true]) {
-    const state = admissionFixture(bootstrap);
-    await state.run();
-    assert.equal(state.calls.length, 1);
-    assert.deepEqual(state.calls[0], {
-      owner: "oftring-ventures",
-      repo: "commish-sdk",
-      name: reviewGate,
-      head_sha: state.pull.head.sha,
-      status: "queued",
-      external_id: `public-review:7:${state.main}:${state.pull.head.sha}`,
-    });
-    assert.deepEqual(state.outputs, {
-      pr_number: "7",
-      base_sha: state.main,
-      head_sha: state.pull.head.sha,
-      head_repository: publicRepository,
-      check_run_id: "71",
-      admitted: "true",
-    });
-  }
+test("trusted main binds one queued required check to the API-validated head", async () => {
+  const state = admissionFixture();
+  await state.run();
+  assert.equal(state.calls.length, 1);
+  assert.deepEqual(state.calls[0], {
+    owner: "oftring-ventures",
+    repo: "commish-sdk",
+    name: reviewGate,
+    head_sha: state.pull.head.sha,
+    status: "queued",
+    external_id: `public-review:7:${state.main}:${state.pull.head.sha}`,
+  });
+  assert.deepEqual(state.outputs, {
+    pr_number: "7",
+    base_sha: state.main,
+    head_sha: state.pull.head.sha,
+    head_repository: publicRepository,
+    check_run_id: "71",
+    admitted: "true",
+  });
 });
 test("fork, draft, stale and untrusted workflow paths cannot create a required check", async () => {
   for (const mutate of [
@@ -266,6 +247,9 @@ test("fork, draft, stale and untrusted workflow paths cannot create a required c
     (s) => {
       s.context.eventName = "workflow_dispatch";
     },
+    (s) => {
+      s.context.eventName = "pull_request";
+    },
   ]) {
     const state = admissionFixture();
     mutate(state);
@@ -274,37 +258,18 @@ test("fork, draft, stale and untrusted workflow paths cannot create a required c
     assert.deepEqual(state.outputs, {});
   }
 });
-test("bootstrap admission permits only its one-parent reviewed four-file scope", async () => {
-  for (const mutate of [
-    (s) => {
-      s.parents.push("c".repeat(40));
-    },
-    (s) => {
-      s.parents = ["c".repeat(40)];
-    },
-    (s) => {
-      s.files.push({ filename: "package.json", status: "added" });
-    },
-    (s) => {
-      s.files.pop();
-    },
-    (s) => {
-      s.files[0].status = "modified";
-    },
-    (s) => {
-      s.env.GITHUB_WORKFLOW_REF = "untrusted/branch";
-    },
-  ]) {
-    const state = admissionFixture(true);
-    mutate(state);
-    await assert.rejects(state.run());
-    assert.deepEqual(state.calls, []);
-  }
-  const inactive = admissionFixture();
-  inactive.context.eventName = "pull_request";
-  await inactive.run();
-  assert.deepEqual(inactive.calls, []);
-  assert.deepEqual(inactive.outputs, {});
+test("the former A1a pull_request bootstrap cannot admit a review", async () => {
+  const state = admissionFixture();
+  const formerBase = "1fceca7803fb7b74f8c22c1ac5e7f650fa9deb27";
+  state.main = formerBase;
+  state.pull.base.sha = formerBase;
+  state.context.payload.pull_request.base.sha = formerBase;
+  state.context.eventName = "pull_request";
+  state.env.GITHUB_WORKFLOW_SHA = formerBase;
+  state.env.GITHUB_WORKFLOW_REF = `${publicRepository}/.github/workflows/public-review.yml@refs/pull/7/merge`;
+  await assert.rejects(state.run(), /Unexpected event/);
+  assert.deepEqual(state.calls, []);
+  assert.deepEqual(state.outputs, {});
 });
 test("existing reviews are never replaced or automatically retried", async () => {
   for (const status of ["queued", "in_progress", "completed"]) {
@@ -330,6 +295,10 @@ test("wrong provider check identity never reaches the review receiver", async ()
   }
 });
 test("skipped model jobs cannot impersonate the required gate and group bridging is separate", () => {
+  assert.equal(
+    reviewWorkflow.match(/^on:\n([\s\S]*?)^permissions:/m)?.[1],
+    "  pull_request_target:\n    types: [opened, reopened, synchronize, ready_for_review]\n",
+  );
   assert.match(reviewWorkflow, /^  review_model:$/m);
   assert.doesNotMatch(reviewWorkflow, /^  codex_review:$/m);
   assert.doesNotMatch(
