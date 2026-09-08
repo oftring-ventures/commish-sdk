@@ -6,12 +6,16 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { gunzipSync } from "node:zlib";
 
+import { browserConsumerScope, verifySdkBrowserConsumer } from "./verify-sdk-browser-consumer.mjs";
+
 const automation = [
   ".github/workflows/public-source.yml",
   ".github/workflows/public-review.yml",
   ".github/workflows/public-review-merge-group.yml",
   "scripts/verify-public-source.mjs",
   "scripts/verify-public-source.test.mjs",
+  "scripts/verify-sdk-browser-consumer.mjs",
+  "scripts/verify-sdk-browser-consumer.test.mjs",
 ];
 const bootstrap = {
   ".gitignore": "e8e70120c7fb8891ed746bb896e739a62f7f6ea1df6225461506760c146f6614",
@@ -218,7 +222,8 @@ export function verifyPackages(files, packages, run) {
       run("pnpm", ["pack", "--pack-destination", destination], cwd);
       const archives = readdirSync(destination);
       assert.equal(archives.length, 1, "expected one package archive");
-      const packed = archiveFiles(readFileSync(join(destination, archives[0])));
+      const archive = readFileSync(join(destination, archives[0]));
+      const packed = archiveFiles(archive);
       const packedManifest = JSON.parse(bytes(packed, "package/package.json"));
       assert.equal(packedManifest.name, manifest.name);
       assert.equal(packedManifest.version, manifest.version);
@@ -237,6 +242,7 @@ export function verifyPackages(files, packages, run) {
           "invalid packed target mode",
         );
       }
+      if (manifest.name === "@commish/sdk") verifySdkBrowserConsumer(archive, packed, run);
     }
     for (const [name, file] of files)
       assert(
@@ -290,6 +296,7 @@ export function verify(root, expectedSha) {
       ? "frozen-install-build-typecheck-pack-exports"
       : "exact-bootstrap-and-automation",
     packages: packages.map(({ manifest }) => manifest.name),
+    consumerScopes: packages.length ? [browserConsumerScope] : [],
     consumerChecks: false,
     publication: false,
   };

@@ -23,6 +23,8 @@ function bootstrap() {
     ".github/workflows/public-review-merge-group.yml",
     "scripts/verify-public-source.mjs",
     "scripts/verify-public-source.test.mjs",
+    "scripts/verify-sdk-browser-consumer.mjs",
+    "scripts/verify-sdk-browser-consumer.test.mjs",
   ])
     put(files, name, "");
   return files;
@@ -240,7 +242,21 @@ test("package commands run frozen install then ordered build/typecheck/pack and 
       calls = [];
     let work;
     const run = (command, args, cwd) => {
+      if (command === process.execPath) {
+        calls.push("consumer-probe");
+        return;
+      }
       assert.equal(command, "pnpm");
+      if (args.includes("--offline")) {
+        calls.push("consumer-install");
+        mkdirSync(join(cwd, "node_modules/.pnpm/sdk"), { recursive: true });
+        for (const [name, entry] of archiveFiles(readFileSync(join(cwd, "sdk.tgz")))) {
+          const path = join(cwd, "node_modules/@commish/sdk", name.slice(8));
+          mkdirSync(join(path, ".."), { recursive: true });
+          writeFileSync(path, entry.data);
+        }
+        return;
+      }
       calls.push(args[0]);
       work ??= cwd;
       if (args[0] === failure) throw new Error("controlled command failure");
@@ -271,7 +287,14 @@ test("package commands run frozen install then ordered build/typecheck/pack and 
     if (failure) assert.throws(() => verifyPackages(files, packages, run));
     else {
       verifyPackages(files, packages, run);
-      assert.deepEqual(calls, ["install", "build", "typecheck", "pack"]);
+      assert.deepEqual(calls, [
+        "install",
+        "build",
+        "typecheck",
+        "pack",
+        "consumer-install",
+        "consumer-probe",
+      ]);
     }
     assert(work && !existsSync(work), "owned working tree must be removed");
   }
@@ -310,6 +333,7 @@ test("verification binds its receipt to the actual immutable checkout and reject
       sha: head,
       scope: "exact-bootstrap-and-automation",
       packages: [],
+      consumerScopes: [],
       consumerChecks: false,
       publication: false,
     });
