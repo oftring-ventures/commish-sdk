@@ -249,7 +249,7 @@ test("archive inspection rejects traversal, duplicate paths, links and truncated
   assert.throws(() => archiveFiles(gzipSync(Buffer.alloc(512))));
   assert.throws(() => archiveFiles(tar([["package/a", "content"]]).subarray(0, 20)));
 });
-test("package commands run frozen install then ordered build/typecheck/pack and clean up after any failure", () => {
+test("package commands run frozen install then ordered build/typecheck/pack and clean up after any failure", async () => {
   for (const failure of [
     null,
     "install",
@@ -306,9 +306,9 @@ test("package commands run frozen install then ordered build/typecheck/pack and 
         if (failure === "mutated-lock") writeFileSync(join(work, "pnpm-lock.yaml"), "changed");
       }
     };
-    if (failure) assert.throws(() => verifyPackages(files, packages, run));
+    if (failure) await assert.rejects(() => verifyPackages(files, packages, run));
     else {
-      verifyPackages(files, packages, run);
+      await verifyPackages(files, packages, run);
       assert.deepEqual(calls, [
         "install",
         "build",
@@ -321,7 +321,7 @@ test("package commands run frozen install then ordered build/typecheck/pack and 
     assert(work && !existsSync(work), "owned working tree must be removed");
   }
 });
-test("verification binds its receipt to the actual immutable checkout and rejects dirty source", () => {
+test("verification binds its receipt to the actual immutable checkout and rejects dirty source", async () => {
   const root = mkdtempSync(join(tmpdir(), "commish-public-git-test-"));
   const env = Object.fromEntries(
     Object.entries(process.env).filter(([name]) => !name.startsWith("GIT_")),
@@ -351,7 +351,7 @@ test("verification binds its receipt to the actual immutable checkout and reject
       "fixture",
     );
     const head = git("rev-parse", "HEAD");
-    assert.deepEqual(verify(root, head), {
+    assert.deepEqual(await verify(root, head), {
       sha: head,
       scope: "exact-bootstrap-and-automation",
       packages: [],
@@ -359,9 +359,10 @@ test("verification binds its receipt to the actual immutable checkout and reject
       consumerChecks: false,
       publication: false,
     });
-    for (const sha of [undefined, "", "a".repeat(40)]) assert.throws(() => verify(root, sha));
+    for (const sha of [undefined, "", "a".repeat(40)])
+      await assert.rejects(() => verify(root, sha));
     writeFileSync(join(root, "README.md"), "dirty");
-    assert.throws(() => verify(root, head));
+    await assert.rejects(() => verify(root, head));
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
