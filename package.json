@@ -6,6 +6,6 @@
     "node": ">=24 <25"
   },
   "scripts": {
-    "build": "pnpm --filter @commish/sdk build"
+    "build": "pnpm --filter @commish/sdk build && pnpm --filter @commish/next build"
   }
 }

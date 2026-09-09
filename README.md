@@ -1,7 +1,7 @@
 # Commish public packages
 
 MIT-licensed source for the Commish test-money pilot.
-Available: the SDK HTTP client, public types, browser capture and webhook helpers.
+Available: the complete SDK and the `@commish/next/browser` bridge.
 No npm publication, release artifact provenance or hosted acceptance is claimed.
 
 With Node 24 and pnpm 11.1.3:

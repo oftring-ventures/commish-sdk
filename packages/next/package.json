@@ -1,0 +1,43 @@
+{
+  "name": "@commish/next",
+  "version": "0.1.0-beta.9",
+  "description": "Browser referral-capture bridge for the Commish test-money pilot",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/oftring-ventures/commish-sdk.git",
+    "directory": "packages/next"
+  },
+  "type": "module",
+  "engines": {
+    "node": ">=24 <25"
+  },
+  "files": [
+    "dist",
+    "LICENSE"
+  ],
+  "exports": {
+    "./browser": {
+      "types": "./dist/browser.d.ts",
+      "default": "./dist/browser.js"
+    }
+  },
+  "peerDependencies": {
+    "@commish/sdk": "0.1.0-beta.9"
+  },
+  "publishConfig": {
+    "access": "public",
+    "tag": "beta"
+  },
+  "scripts": {
+    "build": "node build.mjs",
+    "prepack": "pnpm build",
+    "typecheck": "tsc -p tsconfig.build.json --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "5.9.2",
+    "@types/node": "24.13.3",
+    "@commish/sdk": "workspace:*"
+  },
+  "private": true
+}
