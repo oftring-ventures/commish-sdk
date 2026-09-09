@@ -25,6 +25,8 @@ function bootstrap() {
     "scripts/verify-public-source.test.mjs",
     "scripts/verify-sdk-browser-consumer.mjs",
     "scripts/verify-sdk-browser-consumer.test.mjs",
+    "scripts/verify-next-browser-consumer.mjs",
+    "scripts/verify-next-browser-consumer.test.mjs",
     "scripts/verify-sdk-types.mjs",
     "scripts/verify-sdk-types.test.mjs",
     "scripts/verify-sdk-webhooks.mjs",

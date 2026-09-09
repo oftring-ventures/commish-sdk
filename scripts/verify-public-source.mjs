@@ -15,6 +15,7 @@ import { join } from "node:path";
 import { gunzipSync } from "node:zlib";
 
 import { verifySdkBrowserConsumer } from "./verify-sdk-browser-consumer.mjs";
+import { verifyNextBrowserConsumer } from "./verify-next-browser-consumer.mjs";
 
 const automation = [
   ".github/workflows/public-source.yml",
@@ -24,6 +25,8 @@ const automation = [
   "scripts/verify-public-source.test.mjs",
   "scripts/verify-sdk-browser-consumer.mjs",
   "scripts/verify-sdk-browser-consumer.test.mjs",
+  "scripts/verify-next-browser-consumer.mjs",
+  "scripts/verify-next-browser-consumer.test.mjs",
   "scripts/verify-sdk-types.mjs",
   "scripts/verify-sdk-types.test.mjs",
   "scripts/verify-sdk-webhooks.mjs",
@@ -221,7 +224,8 @@ export function archiveFiles(compressed) {
 }
 
 export function verifyPackages(files, packages, run, checkout = process.cwd()) {
-  let evidence = { scopes: [] };
+  let evidence = { scopes: [] },
+    sdkArchive;
   const work = mkdtempSync(join(tmpdir(), "commish-public-source-"));
   try {
     for (const [name, file] of files) {
@@ -262,12 +266,26 @@ export function verifyPackages(files, packages, run, checkout = process.cwd()) {
           "invalid packed target mode",
         );
       }
-      if (manifest.name === "@commish/sdk")
+      if (manifest.name === "@commish/sdk") {
+        sdkArchive = { archive, packed };
         evidence = verifySdkBrowserConsumer(archive, packed, run, {
           build: realpathSync(work),
           checkout: realpathSync(checkout),
           lock: Buffer.from(bytes(files, "pnpm-lock.yaml")),
         });
+      } else {
+        assert(sdkArchive, "Next browser consumer requires the verified SDK pair");
+        evidence.scopes.push(
+          ...verifyNextBrowserConsumer(
+            sdkArchive,
+            { archive, packed },
+            {
+              build: realpathSync(work),
+              checkout: realpathSync(checkout),
+            },
+          ),
+        );
+      }
     }
     for (const [name, file] of files)
       assert(
