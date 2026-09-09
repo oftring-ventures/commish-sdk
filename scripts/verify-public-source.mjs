@@ -27,6 +27,9 @@ const automation = [
   "scripts/verify-sdk-browser-consumer.test.mjs",
   "scripts/verify-next-browser-consumer.mjs",
   "scripts/verify-next-browser-consumer.test.mjs",
+  "scripts/verify-next-types.mjs",
+  "scripts/verify-next-types.test.mjs",
+  "scripts/fixtures/types-next-browser.ts",
   "scripts/verify-sdk-types.mjs",
   "scripts/verify-sdk-types.test.mjs",
   "scripts/verify-sdk-webhooks.mjs",
@@ -282,6 +285,7 @@ export function verifyPackages(files, packages, run, checkout = process.cwd()) {
             {
               build: realpathSync(work),
               checkout: realpathSync(checkout),
+              lock: Buffer.from(bytes(files, "pnpm-lock.yaml")),
             },
           ),
         );

@@ -12,6 +12,8 @@ import {
 import { tmpdir } from "node:os";
 import { isAbsolute, join, relative, sep } from "node:path";
 
+import { verifyNextBrowserTypes } from "./verify-next-types.mjs";
+
 export const nextBrowserScope = "next-browser-node-bridge";
 const pair = (name, server = false) => ({
   ...(server ? { browser: null } : {}),
@@ -154,8 +156,9 @@ export function verifyNextBrowserConsumer(sdk, next, context, execute = execFile
     checkBytes();
     writeFileSync(join(consumer, "probe.mjs"), `await (${probe.toString()})();\n`);
     run(process.execPath, ["--conditions=browser", "probe.mjs"]);
+    const typeScopes = verifyNextBrowserTypes(consumer, sdk.packed, next.packed, context, execute);
     checkBytes();
-    return [nextBrowserScope];
+    return [nextBrowserScope, ...typeScopes];
   } finally {
     rmSync(consumer, { recursive: true, force: true });
   }

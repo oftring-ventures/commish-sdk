@@ -1,12 +1,61 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import test from "node:test";
+import test, { after } from "node:test";
+import { nextBrowserTypesScope } from "./verify-next-types.mjs";
 import { nextBrowserScope, verifyNextBrowserConsumer } from "./verify-next-browser-consumer.mjs";
 
-const context = { build: import.meta.dirname, checkout: import.meta.dirname };
+const owned = realpathSync(mkdtempSync(join(tmpdir(), "commish-next-context-")));
+after(() => rmSync(owned, { recursive: true, force: true }));
+const context = {
+  build: join(owned, "build"),
+  checkout: join(owned, "checkout"),
+  lock: Buffer.from("locked"),
+};
+mkdirSync(context.checkout);
+const compiler = join(context.build, "packages/sdk/node_modules/typescript");
+for (const [name, data] of Object.entries({
+  "pnpm-lock.yaml": "locked",
+  "packages/sdk/node_modules/typescript/package.json": JSON.stringify({
+    name: "typescript",
+    version: "5.9.2",
+    bin: { tsc: "./bin/tsc" },
+  }),
+  ...Object.fromEntries(
+    ["bin/tsc", "lib/tsc.js", "lib/_tsc.js", "lib/lib.es2022.d.ts"].map((name) => [
+      `packages/sdk/node_modules/typescript/${name}`,
+      "",
+    ]),
+  ),
+  "scripts/fixtures/types-next-browser.ts": readFileSync(
+    new URL("./fixtures/types-next-browser.ts", import.meta.url),
+  ),
+})) {
+  const path = join(context.build, name);
+  mkdirSync(join(path, ".."), { recursive: true });
+  writeFileSync(path, data);
+}
+// Compiler execution is mocked here; the installed browser identity probe remains real.
+function compilerResult(args, cwd) {
+  if (args.includes("--version")) return "Version 5.9.2\n";
+  if (!args.includes("--listFilesOnly")) return "";
+  return [
+    join(compiler, "lib/lib.es2022.d.ts"),
+    join(cwd, "types-next-browser.ts"),
+    ...["sdk", "next"].map((name) => join(cwd, "node_modules/@commish", name, "dist/browser.d.ts")),
+  ].join("\n");
+}
 const pair = (name, server = false) => ({
   ...(server ? { browser: null } : {}),
   types: `./dist/${name}.d.ts`,
@@ -140,13 +189,15 @@ test("all Next shapes run the actual browser identity probe from isolated paired
           return "";
         }
         assert.equal(command, process.execPath);
+        if (args[0] === join(compiler, "bin/tsc")) return compilerResult(args, root);
         assert.deepEqual(args, ["--conditions=browser", "probe.mjs"]);
         return execFileSync(command, args, options);
       };
       assert.deepEqual(verifyNextBrowserConsumer(...packages, context, execute), [
         nextBrowserScope,
+        nextBrowserTypesScope,
       ]);
-      assert.equal(calls.length, 3);
+      assert.equal(calls.length, 6);
       assert(root && !existsSync(root));
     }
 });
@@ -180,6 +231,7 @@ test("first failures suppress the scope and remove the entire owned consumer", (
     "post-bytes",
     "wrapper",
     "exports",
+    "types",
   ]) {
     const packages = fixture();
     if (failure === "wrapper")
@@ -210,6 +262,10 @@ test("first failures suppress the scope and remove the entire owned consumer", (
         }
         return "";
       }
+      if (args[0] === join(compiler, "bin/tsc")) {
+        if (failure === "types") throw new Error("controlled Next compiler failure");
+        return compilerResult(args, root);
+      }
       if (failure === "probe") throw new Error("controlled probe failure");
       const result = execFileSync(command, args, options);
       if (failure === "post-bytes") writeFileSync(browser, "changed after probe");
@@ -223,7 +279,9 @@ test("first failures suppress the scope and remove the entire owned consumer", (
             error.stderr.includes(
               failure === "wrapper" ? "Next browser identity" : "Next browser export names",
             )
-        : undefined,
+        : failure === "types"
+          ? /controlled Next compiler failure/
+          : undefined,
     );
     assert(root && !existsSync(root), failure);
   }
