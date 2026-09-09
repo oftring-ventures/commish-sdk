@@ -12,7 +12,12 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { nextBrowserTypesScope, verifyNextBrowserTypes } from "./verify-next-types.mjs";
+import {
+  nextBrowserTypesScope,
+  nextProviderTypesScope,
+  verifyNextBrowserTypes,
+  verifyNextProviderTypes,
+} from "./verify-next-types.mjs";
 
 // These controls mock compiler execution. Real packed declaration acceptance is separate.
 test("Next declaration compiler, project, resolution and mutation boundaries fail closed", () => {
@@ -24,7 +29,7 @@ test("Next declaration compiler, project, resolution and mutation boundaries fai
     ["compiler-path", /escaped its owned root/, 0],
     ["version", /5\.9\.2/, 0],
     ["actual-version", /wrong actual Next type compiler/, 1],
-    ["fixture", /ENOENT.*types-next-browser/, 1],
+    ["fixture", /ENOENT.*types-next-(browser\.ts|provider\.tsx)/, 1],
     ["sdk-link", /escaped its owned root/, 0],
     ["next-bytes", /differs from archive/, 0],
     ["command", /controlled compile failure/, 2],
@@ -43,7 +48,26 @@ test("Next declaration compiler, project, resolution and mutation boundaries fai
     ["mode-change", /Next type package mode changed/, 3],
     ["late-lock", /Next type lock changed/, 3],
   ];
-  for (const [failure, message, count] of cases) {
+  const profiles = [false, true].flatMap((provider) =>
+    [
+      ...cases.filter(([failure]) => !provider || failure !== "missing-sdk"),
+      ...(provider
+        ? [
+            ["provider-export", /Expected values/, 0],
+            ["type-version", /19.2.18/, 0],
+            ["type-escape", /dependency contains a link/, 0],
+            ...["react", "jsx", "csstype"].map((name) => [
+              `missing-${name}`,
+              /missing Next browser type resolution/,
+              3,
+            ]),
+            ["type-mutation", /Next type dependency changed/, 3],
+            ["type-mode", /Next type dependency changed/, 3],
+          ]
+        : []),
+    ].map((entry) => [provider, ...entry]),
+  );
+  for (const [provider, failure, message, count] of profiles) {
     const root = realpathSync(mkdtempSync(join(tmpdir(), "commish-next-types-test-")));
     const build = join(root, "build"),
       checkout = join(root, "checkout"),
@@ -69,8 +93,17 @@ test("Next declaration compiler, project, resolution and mutation boundaries fai
       mkdirSync(join(build, "scripts/fixtures"), { recursive: true });
       if (failure !== "fixture")
         write(
-          join(build, "scripts/fixtures/types-next-browser.ts"),
-          readFileSync(new URL("./fixtures/types-next-browser.ts", import.meta.url)),
+          join(
+            build,
+            "scripts/fixtures",
+            provider ? "types-next-provider.tsx" : "types-next-browser.ts",
+          ),
+          readFileSync(
+            new URL(
+              provider ? "./fixtures/types-next-provider.tsx" : "./fixtures/types-next-browser.ts",
+              import.meta.url,
+            ),
+          ),
         );
       const installed = ["sdk", "next"].map((name) =>
         join(consumer, "node_modules/@commish", name),
@@ -82,10 +115,22 @@ test("Next declaration compiler, project, resolution and mutation boundaries fai
             version: "0.1.0-beta.9",
             exports: {
               "./browser": { types: "./dist/browser.d.ts", default: "./dist/browser.js" },
+              ...(provider && index
+                ? {
+                    "./react": {
+                      types: "./dist/provider.d.ts",
+                      default:
+                        failure === "provider-export" ? "./dist/wrong.js" : "./dist/provider.js",
+                    },
+                  }
+                : {}),
             },
           }),
           "dist/browser.js": "export {};\n",
           "dist/browser.d.ts": "export {};\n",
+          ...(provider && index
+            ? { "dist/provider.d.ts": "export {};\n", "dist/provider.js": "export {};\n" }
+            : {}),
         };
         return new Map(
           Object.entries(entries).map(([path, data]) => {
@@ -94,6 +139,31 @@ test("Next declaration compiler, project, resolution and mutation boundaries fai
           }),
         );
       });
+      const typeFiles = [];
+      if (provider) {
+        for (const [name, version, files] of [
+          ["@types/react", "19.2.18", ["index.d.ts", "jsx-runtime.d.ts", "global.d.ts"]],
+          ["csstype", "3.2.3", ["index.d.ts"]],
+        ]) {
+          const root = join(consumer, "node_modules", name);
+          write(
+            join(root, "package.json"),
+            JSON.stringify({ name, version: failure === "type-version" ? "wrong" : version }),
+          );
+          for (const name of files) {
+            const path = join(root, name);
+            write(path, "");
+            typeFiles.push(path);
+          }
+        }
+        if (failure === "type-escape") {
+          write(join(checkout, "extra.d.ts"), "");
+          symlinkSync(
+            join(checkout, "extra.d.ts"),
+            join(consumer, "node_modules/@types/react/extra.d.ts"),
+          );
+        }
+      }
       const context = { build, checkout, lock: Buffer.from("locked") },
         calls = [];
       if (failure === "lock") write(join(build, "pnpm-lock.yaml"), "changed");
@@ -106,7 +176,8 @@ test("Next declaration compiler, project, resolution and mutation boundaries fai
         write(join(checkout, "outside"), "export {};\n");
         symlinkSync(join(checkout, "outside"), target);
       }
-      if (failure === "next-bytes") write(join(installed[1], "dist/browser.d.ts"), "changed");
+      if (failure === "next-bytes")
+        write(join(installed[1], provider ? "dist/provider.d.ts" : "dist/browser.d.ts"), "changed");
       const execute = (command, args, options) => {
         calls.push(args);
         assert.equal(command, process.execPath);
@@ -121,9 +192,9 @@ test("Next declaration compiler, project, resolution and mutation boundaries fai
         if (args.includes("--version"))
           return failure === "actual-version" ? "Version 0" : "Version 5.9.2\n";
         const config = join(consumer, "tsconfig.next.json"),
-          fixture = join(consumer, "types-next-browser.ts");
+          fixture = join(consumer, provider ? "types-next-provider.tsx" : "types-next-browser.ts");
         assert.deepEqual(JSON.parse(readFileSync(config)), {
-          files: ["types-next-browser.ts"],
+          files: [provider ? "types-next-provider.tsx" : "types-next-browser.ts"],
           compilerOptions: {
             strict: true,
             noEmit: true,
@@ -133,18 +204,31 @@ test("Next declaration compiler, project, resolution and mutation boundaries fai
             lib: ["ES2022", "DOM"],
             types: [],
             skipLibCheck: false,
+            ...(provider ? { jsx: "react-jsx" } : {}),
           },
         });
         if (failure === "command") throw new Error("controlled compile failure");
         if (!args.includes("--listFilesOnly")) return "";
         if (failure === "empty") return "";
+        const required = [
+          ...(!provider ? [["sdk", join(installed[0], "dist/browser.d.ts")]] : []),
+          ["next", join(installed[1], provider ? "dist/provider.d.ts" : "dist/browser.d.ts")],
+          ["fixture", fixture],
+          ...(provider
+            ? [
+                ["react", typeFiles[0]],
+                ["jsx", typeFiles[1]],
+                ["csstype", typeFiles[3]],
+              ]
+            : []),
+        ];
         const listed = [
-          ...installed.map((path) => join(path, "dist/browser.d.ts")),
-          fixture,
+          ...required.filter(([name]) => failure !== `missing-${name}`).map(([, path]) => path),
+          ...(provider ? [typeFiles[2]] : []),
           join(compiler, "lib/lib.es2022.d.ts"),
         ];
-        if (failure?.startsWith("missing-"))
-          listed.splice(["missing-sdk", "missing-next", "missing-fixture"].indexOf(failure), 1);
+        if (failure === "type-mutation") write(typeFiles[0], "changed");
+        if (failure === "type-mode") chmodSync(typeFiles[0], 0o755);
         if (failure === "relative") listed.push("relative.d.ts");
         if (failure === "source" || failure === "unknown-lib") {
           const extra =
@@ -160,7 +244,7 @@ test("Next declaration compiler, project, resolution and mutation boundaries fai
         return listed.join("\n") + "\n";
       };
       const check = () =>
-        verifyNextBrowserTypes(
+        (provider ? verifyNextProviderTypes : verifyNextBrowserTypes)(
           failure === "overlap" ? build : consumer,
           ...packages,
           failure === "context" ? undefined : context,
@@ -170,7 +254,7 @@ test("Next declaration compiler, project, resolution and mutation boundaries fai
         assert.throws(check, message, failure);
         assert.equal(calls.length, count, failure);
       } else {
-        assert.deepEqual(check(), [nextBrowserTypesScope]);
+        assert.deepEqual(check(), [provider ? nextProviderTypesScope : nextBrowserTypesScope]);
         assert.equal(calls.length, 3);
         assert.deepEqual(calls[1].slice(1), ["-p", join(consumer, "tsconfig.next.json")]);
         assert(calls[2].includes("--listFilesOnly"));
