@@ -35,6 +35,8 @@ const automation = [
   "scripts/fixtures/types-next-browser.ts",
   "scripts/fixtures/types-next-provider.tsx",
   "scripts/provider-types-lock.mjs",
+  "scripts/inspect-next-build.mjs",
+  "scripts/inspect-next-build.test.mjs",
   "scripts/verify-sdk-types.mjs",
   "scripts/verify-sdk-types.test.mjs",
   "scripts/verify-sdk-webhooks.mjs",
