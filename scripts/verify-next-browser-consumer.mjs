@@ -12,7 +12,7 @@ import {
 import { tmpdir } from "node:os";
 import { isAbsolute, join, relative, sep } from "node:path";
 
-import { verifyNextBrowserTypes } from "./verify-next-types.mjs";
+import { verifyNextBrowserTypes, verifyNextProviderTypes } from "./verify-next-types.mjs";
 import {
   readProviderTypeInputs,
   providerTypeDependencies,
@@ -215,9 +215,13 @@ function verifyNextConsumer(provider, sdk, next, context, execute = execFileSync
     checkBytes();
     writeFileSync(join(consumer, "probe.mjs"), `await (${probe.toString()})();\n`);
     run(process.execPath, ["--conditions=browser", "probe.mjs"]);
-    const typeScopes = provider
-      ? []
-      : verifyNextBrowserTypes(consumer, sdk.packed, next.packed, context, execute);
+    const typeScopes = (provider ? verifyNextProviderTypes : verifyNextBrowserTypes)(
+      consumer,
+      sdk.packed,
+      next.packed,
+      context,
+      execute,
+    );
     if (provider)
       assert.equal(
         readFileSync(join(consumer, "pnpm-lock.yaml"), "utf8"),
@@ -231,7 +235,7 @@ function verifyNextConsumer(provider, sdk, next, context, execute = execFileSync
         "provider types changed during probe",
       );
     checkBytes();
-    return provider ? [nextProviderLayoutScope] : [nextBrowserScope, ...typeScopes];
+    return [provider ? nextProviderLayoutScope : nextBrowserScope, ...typeScopes];
   } finally {
     rmSync(consumer, { recursive: true, force: true });
   }

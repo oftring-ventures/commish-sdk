@@ -15,7 +15,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import test, { after } from "node:test";
 import { providerTypesLock } from "./provider-types-lock.mjs";
-import { nextBrowserTypesScope } from "./verify-next-types.mjs";
+import { nextBrowserTypesScope, nextProviderTypesScope } from "./verify-next-types.mjs";
 import {
   nextBrowserScope,
   nextProviderLayoutScope,
@@ -322,12 +322,17 @@ test("provider layout freezes registry types then extends the exact local pair o
     "paired-peer",
     "paired-extra",
     "extension-types",
+    "provider-compiler",
   ]) {
     const preparation = realpathSync(mkdtempSync(join(tmpdir(), "commish-provider-context-")));
     let consumer;
     try {
       const build = join(preparation, "build");
       cpSync(context.build, build, { recursive: true });
+      writeFileSync(
+        join(build, "scripts/fixtures/types-next-provider.tsx"),
+        readFileSync(new URL("./fixtures/types-next-provider.tsx", import.meta.url)),
+      );
       // Controlled source context only: inspect's complete lock fingerprint is independently tested.
       const lock = Buffer.from(
         failure === "integrity"
@@ -427,11 +432,22 @@ test("provider layout freezes registry types then extends the exact local pair o
             );
           return "";
         }
-        assert.deepEqual(
-          args,
-          ["--conditions=browser", "probe.mjs"],
-          "layout cannot invoke compiler",
-        );
+        if (args[0] === join(build, "packages/sdk/node_modules/typescript/bin/tsc")) {
+          if (failure === "provider-compiler")
+            throw new Error("controlled provider compiler failure");
+          if (args.includes("--version")) return "Version 5.9.2";
+          if (!args.includes("--listFilesOnly")) return "";
+          return [
+            "types-next-provider.tsx",
+            "node_modules/@commish/next/dist/provider.d.ts",
+            "node_modules/@types/react/index.d.ts",
+            "node_modules/@types/react/jsx-runtime.d.ts",
+            "node_modules/csstype/index.d.ts",
+          ]
+            .map((path) => join(consumer, path))
+            .join("\n");
+        }
+        assert.deepEqual(args, ["--conditions=browser", "probe.mjs"]);
         const result = execFileSync(command, args, options);
         if (failure === "type-change")
           writeFileSync(join(consumer, "node_modules/@types/react/index.d.ts"), "changed");
@@ -458,11 +474,12 @@ test("provider layout freezes registry types then extends the exact local pair o
             "paired-peer": /provider paired lock differs/,
             "paired-extra": /provider paired lock differs/,
             "extension-types": /provider types changed during extension/,
+            "provider-compiler": /controlled provider compiler failure/,
           }[failure],
         );
       else {
-        assert.deepEqual(check(), [nextProviderLayoutScope]);
-        assert.equal(calls.length, 5);
+        assert.deepEqual(check(), [nextProviderLayoutScope, nextProviderTypesScope]);
+        assert.equal(calls.length, 8);
       }
       if (consumer) assert.equal(existsSync(consumer), false, "provider consumer cleanup");
     } finally {

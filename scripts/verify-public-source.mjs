@@ -33,6 +33,7 @@ const automation = [
   "scripts/verify-next-types.mjs",
   "scripts/verify-next-types.test.mjs",
   "scripts/fixtures/types-next-browser.ts",
+  "scripts/fixtures/types-next-provider.tsx",
   "scripts/provider-types-lock.mjs",
   "scripts/verify-sdk-types.mjs",
   "scripts/verify-sdk-types.test.mjs",

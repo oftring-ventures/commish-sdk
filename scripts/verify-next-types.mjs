@@ -3,7 +3,10 @@ import { execFileSync } from "node:child_process";
 import { readFileSync, realpathSync, statSync, writeFileSync } from "node:fs";
 import { basename, dirname, isAbsolute, join, relative, sep } from "node:path";
 
+import { readProviderTypeInputs } from "./provider-types-lock.mjs";
+
 export const nextBrowserTypesScope = "next-browser-types-external-ts";
+export const nextProviderTypesScope = "next-provider-types-external-ts";
 const inside = (root, path) => {
   const part = relative(root, path);
   return part && !isAbsolute(part) && part !== ".." && !part.startsWith(`..${sep}`);
@@ -15,7 +18,15 @@ const child = (root, path) => {
 };
 
 // The enclosing paired consumer validates complete manifests, archives and installation.
-export function verifyNextBrowserTypes(consumer, sdk, next, context, execute = execFileSync) {
+export function verifyNextBrowserTypes(...args) {
+  return verifyNextTypes("browser", ...args);
+}
+
+export function verifyNextProviderTypes(...args) {
+  return verifyNextTypes("provider", ...args);
+}
+
+function verifyNextTypes(kind, consumer, sdk, next, context, execute = execFileSync) {
   assert(context, "missing Next compiler context");
   const build = realpathSync(context.build),
     checkout = realpathSync(context.checkout);
@@ -44,18 +55,23 @@ export function verifyNextBrowserTypes(consumer, sdk, next, context, execute = e
     const item = JSON.parse(packed.get("package/package.json").data);
     assert.equal(item.name, `@commish/${name}`);
     assert.equal(item.version, "0.1.0-beta.9");
-    assert.deepEqual(item.exports["./browser"], {
-      types: "./dist/browser.d.ts",
-      default: "./dist/browser.js",
+    const entry = kind === "provider" && index ? "provider" : "browser";
+    assert.deepEqual(item.exports[entry === "provider" ? "./react" : "./browser"], {
+      types: `./dist/${entry}.d.ts`,
+      default: `./dist/${entry}.js`,
     });
     const installed = child(consumer, join(consumer, "node_modules/@commish", name));
-    const declaration = child(installed, join(installed, "dist/browser.d.ts"));
+    const declaration = child(installed, join(installed, `dist/${entry}.d.ts`));
     assert(
-      readFileSync(declaration).equals(packed.get("package/dist/browser.d.ts").data),
+      readFileSync(declaration).equals(packed.get(`package/dist/${entry}.d.ts`).data),
       "Next browser declaration differs from archive",
     );
     return { packed, installed, declaration };
   });
+  const typeInputs = () =>
+    kind === "provider" ? readProviderTypeInputs(consumer) : { roots: [], files: [] };
+  const originalTypes = typeInputs();
+  const typeRoots = originalTypes.roots;
   const env = Object.freeze({
     ...Object.fromEntries(
       Object.entries(process.env).filter(
@@ -74,7 +90,7 @@ export function verifyNextBrowserTypes(consumer, sdk, next, context, execute = e
       maxBuffer: 1_048_576,
     });
   assert.equal(run(["--version"]).trim(), "Version 5.9.2", "wrong actual Next type compiler");
-  const fixtureName = "types-next-browser.ts";
+  const fixtureName = kind === "provider" ? "types-next-provider.tsx" : "types-next-browser.ts";
   const fixture = readFileSync(child(build, join(build, "scripts/fixtures", fixtureName)));
   const fixturePath = join(consumer, fixtureName),
     configPath = join(consumer, "tsconfig.next.json");
@@ -89,6 +105,7 @@ export function verifyNextBrowserTypes(consumer, sdk, next, context, execute = e
       lib: ["ES2022", "DOM"],
       types: [],
       skipLibCheck: false,
+      ...(kind === "provider" ? { jsx: "react-jsx" } : {}),
     },
   });
   writeFileSync(fixturePath, fixture);
@@ -98,7 +115,12 @@ export function verifyNextBrowserTypes(consumer, sdk, next, context, execute = e
   assert(listed.length, "empty Next type resolution");
   const required = new Set([
     child(consumer, fixturePath),
-    ...packages.map((item) => item.declaration),
+    ...packages.filter((_, index) => kind === "browser" || index).map((item) => item.declaration),
+    ...typeRoots.flatMap((root, index) =>
+      (index ? ["index.d.ts"] : ["index.d.ts", "jsx-runtime.d.ts"]).map((name) =>
+        child(consumer, join(root, name)),
+      ),
+    ),
   ]);
   const resolved = new Set(
     listed.map((path) => {
@@ -106,7 +128,8 @@ export function verifyNextBrowserTypes(consumer, sdk, next, context, execute = e
       const actual = realpathSync(path);
       assert(
         required.has(actual) ||
-          (dirname(actual) === lib && /^lib\..+\.d\.ts$/.test(basename(actual))),
+          (dirname(actual) === lib && /^lib\..+\.d\.ts$/.test(basename(actual))) ||
+          typeRoots.some((root) => inside(root, actual) && actual.endsWith(".d.ts")),
         "unapproved Next type resolution",
       );
       return actual;
@@ -125,6 +148,7 @@ export function verifyNextBrowserTypes(consumer, sdk, next, context, execute = e
         "Next type package mode changed",
       );
     }
+  assert.deepEqual(typeInputs(), originalTypes, "Next type dependency changed");
   checkLock();
-  return [nextBrowserTypesScope];
+  return [kind === "provider" ? nextProviderTypesScope : nextBrowserTypesScope];
 }
