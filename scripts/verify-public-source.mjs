@@ -15,7 +15,10 @@ import { join } from "node:path";
 import { gunzipSync } from "node:zlib";
 
 import { verifySdkBrowserConsumer } from "./verify-sdk-browser-consumer.mjs";
-import { verifyNextBrowserConsumer } from "./verify-next-browser-consumer.mjs";
+import {
+  verifyNextBrowserConsumer,
+  verifyNextProviderConsumer,
+} from "./verify-next-browser-consumer.mjs";
 
 const automation = [
   ".github/workflows/public-source.yml",
@@ -30,6 +33,7 @@ const automation = [
   "scripts/verify-next-types.mjs",
   "scripts/verify-next-types.test.mjs",
   "scripts/fixtures/types-next-browser.ts",
+  "scripts/provider-types-lock.mjs",
   "scripts/verify-sdk-types.mjs",
   "scripts/verify-sdk-types.test.mjs",
   "scripts/verify-sdk-webhooks.mjs",
@@ -280,6 +284,17 @@ export function verifyPackages(files, packages, run, checkout = process.cwd()) {
         assert(sdkArchive, "Next browser consumer requires the verified SDK pair");
         evidence.scopes.push(
           ...verifyNextBrowserConsumer(
+            sdkArchive,
+            { archive, packed },
+            {
+              build: realpathSync(work),
+              checkout: realpathSync(checkout),
+              lock: Buffer.from(bytes(files, "pnpm-lock.yaml")),
+            },
+          ),
+        );
+        evidence.scopes.push(
+          ...verifyNextProviderConsumer(
             sdkArchive,
             { archive, packed },
             {

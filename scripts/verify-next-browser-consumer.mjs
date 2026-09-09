@@ -13,8 +13,14 @@ import { tmpdir } from "node:os";
 import { isAbsolute, join, relative, sep } from "node:path";
 
 import { verifyNextBrowserTypes } from "./verify-next-types.mjs";
+import {
+  readProviderTypeInputs,
+  providerTypeDependencies,
+  providerTypesLock,
+} from "./provider-types-lock.mjs";
 
 export const nextBrowserScope = "next-browser-node-bridge";
+export const nextProviderLayoutScope = "next-provider-types-layout";
 const pair = (name, server = false) => ({
   ...(server ? { browser: null } : {}),
   types: `./dist/${name}.d.ts`,
@@ -55,7 +61,13 @@ async function probe() {
 }
 
 // Both archives and their maps have passed the caller's exact archive/target validation.
-export function verifyNextBrowserConsumer(sdk, next, context, execute = execFileSync) {
+export function verifyNextBrowserConsumer(...args) {
+  return verifyNextConsumer(false, ...args);
+}
+export function verifyNextProviderConsumer(...args) {
+  return verifyNextConsumer(true, ...args);
+}
+function verifyNextConsumer(provider, sdk, next, context, execute = execFileSync) {
   assert(context, "missing paired consumer source context");
   const sources = [context.build, context.checkout].map((path) => realpathSync(path));
   const manifests = [sdk, next].map(({ packed }) =>
@@ -84,6 +96,13 @@ export function verifyNextBrowserConsumer(sdk, next, context, execute = execFile
       ...Object.values(manifests[index].bin ?? {}),
     ].filter((value) => typeof value === "string"))
       assert(packed.has(`package/${target.slice(2)}`), "missing promised paired artifact");
+  if (provider && !Object.hasOwn(manifests[1].exports, "./react")) return [];
+  if (provider)
+    assert(
+      readFileSync(join(context.build, "pnpm-lock.yaml")).equals(context.lock),
+      "provider source lock changed",
+    );
+  const locks = provider ? providerTypesLock(sdk, next, context.lock) : null;
   const consumer = realpathSync(mkdtempSync(join(tmpdir(), "commish-next-browser-consumer-")));
   try {
     for (const source of sources) {
@@ -100,39 +119,79 @@ export function verifyNextBrowserConsumer(sdk, next, context, execute = execFile
         timeout: 120_000,
         maxBuffer: 1_048_576,
       });
-    writeFileSync(
-      join(consumer, "package.json"),
-      JSON.stringify({
-        private: true,
-        type: "module",
-        packageManager: "pnpm@11.1.3",
-        dependencies: { "@commish/sdk": "file:./sdk.tgz", "@commish/next": "file:./next.tgz" },
-      }),
-    );
+    const pairDependencies = {
+      "@commish/sdk": "file:./sdk.tgz",
+      "@commish/next": "file:./next.tgz",
+    };
+    const writeManifest = (dependencies) =>
+      writeFileSync(
+        join(consumer, "package.json"),
+        JSON.stringify({
+          private: true,
+          type: "module",
+          packageManager: "pnpm@11.1.3",
+          dependencies,
+        }),
+      );
+    writeManifest(provider ? providerTypeDependencies : pairDependencies);
     writeFileSync(join(consumer, "sdk.tgz"), sdk.archive);
     writeFileSync(join(consumer, "next.tgz"), next.archive);
-    assert.equal(run("pnpm", ["--version"]).trim(), "11.1.3", "paired consumer pnpm version");
-    run("pnpm", [
-      "install",
-      "--offline",
-      "--ignore-scripts",
-      "--ignore-workspace",
-      "--config.auto-install-peers=false",
-    ]);
+    const common = ["--ignore-scripts", "--ignore-workspace", "--config.auto-install-peers=false"];
+    const checkVersion = () =>
+      assert.equal(run("pnpm", ["--version"]).trim(), "11.1.3", "paired consumer pnpm version");
+    checkVersion();
+    let originalTypes;
+    if (provider) {
+      writeFileSync(join(consumer, "pnpm-lock.yaml"), locks.registry);
+      run("pnpm", [
+        "install",
+        "--frozen-lockfile",
+        "--registry=https://registry.npmjs.org",
+        ...common,
+      ]);
+      assert.equal(
+        readFileSync(join(consumer, "pnpm-lock.yaml"), "utf8"),
+        locks.registry,
+        "provider registry lock changed",
+      );
+      originalTypes = readProviderTypeInputs(consumer);
+      writeManifest({ ...pairDependencies, ...providerTypeDependencies });
+      checkVersion();
+      run("pnpm", ["install", "--offline", "--no-frozen-lockfile", ...common]);
+      assert.equal(
+        readFileSync(join(consumer, "pnpm-lock.yaml"), "utf8"),
+        locks.paired,
+        "provider paired lock differs",
+      );
+      assert.deepEqual(
+        readProviderTypeInputs(consumer),
+        originalTypes,
+        "provider types changed during extension",
+      );
+    } else run("pnpm", ["install", "--offline", ...common]);
     const modules = join(consumer, "node_modules"),
       store = join(modules, ".pnpm");
     assert.deepEqual(
-      readdirSync(modules).filter((name) => !name.startsWith(".")),
-      ["@commish"],
+      readdirSync(modules)
+        .filter((name) => !name.startsWith("."))
+        .sort(),
+      provider ? ["@commish", "@types", "csstype"] : ["@commish"],
     );
     assert.deepEqual(readdirSync(join(modules, "@commish")).sort(), ["next", "sdk"]);
     const installed = ["sdk", "next"].map((name) =>
       inside(consumer, join(modules, "@commish", name)),
     );
-    const expected = installed
-      .map((path) => relative(realpathSync(store), path).split(sep)[0])
+    const extra = provider
+      ? Object.keys(providerTypeDependencies).map((name) => inside(consumer, join(modules, name)))
+      : [];
+    const expected = [...installed, ...extra]
+      .map((path) => relative(realpathSync(store), inside(realpathSync(store), path)).split(sep)[0])
       .sort();
-    assert.equal(new Set(expected).size, 2, "paired packages must be separate artifacts");
+    assert.equal(
+      new Set(expected).size,
+      provider ? 4 : 2,
+      "paired packages must be separate artifacts",
+    );
     assert.deepEqual(
       readdirSync(store, { withFileTypes: true })
         .filter((entry) => entry.isDirectory() && entry.name !== "node_modules")
@@ -156,9 +215,23 @@ export function verifyNextBrowserConsumer(sdk, next, context, execute = execFile
     checkBytes();
     writeFileSync(join(consumer, "probe.mjs"), `await (${probe.toString()})();\n`);
     run(process.execPath, ["--conditions=browser", "probe.mjs"]);
-    const typeScopes = verifyNextBrowserTypes(consumer, sdk.packed, next.packed, context, execute);
+    const typeScopes = provider
+      ? []
+      : verifyNextBrowserTypes(consumer, sdk.packed, next.packed, context, execute);
+    if (provider)
+      assert.equal(
+        readFileSync(join(consumer, "pnpm-lock.yaml"), "utf8"),
+        locks.paired,
+        "provider consumer lock changed",
+      );
+    if (provider)
+      assert.deepEqual(
+        readProviderTypeInputs(consumer),
+        originalTypes,
+        "provider types changed during probe",
+      );
     checkBytes();
-    return [nextBrowserScope, ...typeScopes];
+    return provider ? [nextProviderLayoutScope] : [nextBrowserScope, ...typeScopes];
   } finally {
     rmSync(consumer, { recursive: true, force: true });
   }
