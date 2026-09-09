@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import {
   existsSync,
+  cpSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -13,8 +14,14 @@ import {
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import test, { after } from "node:test";
+import { providerTypesLock } from "./provider-types-lock.mjs";
 import { nextBrowserTypesScope } from "./verify-next-types.mjs";
-import { nextBrowserScope, verifyNextBrowserConsumer } from "./verify-next-browser-consumer.mjs";
+import {
+  nextBrowserScope,
+  nextProviderLayoutScope,
+  verifyNextBrowserConsumer,
+  verifyNextProviderConsumer,
+} from "./verify-next-browser-consumer.mjs";
 
 const owned = realpathSync(mkdtempSync(join(tmpdir(), "commish-next-context-")));
 after(() => rmSync(owned, { recursive: true, force: true }));
@@ -67,6 +74,7 @@ function fixture(react = false, server = false) {
       name: `@commish/${name}`,
       version: "0.1.0-beta.9",
       type: "module",
+      engines: { node: ">=24 <25" },
       exports: { "./browser": pair("browser") },
       ...(name === "next" ? { peerDependencies: { "@commish/sdk": "0.1.0-beta.9" } } : {}),
     };
@@ -151,11 +159,12 @@ test("paired manifests and every promised target fail before commands", () => {
         const packages = fixture(react, server);
         mutate(packages);
         let called = false;
-        assert.throws(() =>
-          verifyNextBrowserConsumer(...packages, context, () => {
-            called = true;
-          }),
-        );
+        for (const verify of [verifyNextBrowserConsumer, verifyNextProviderConsumer])
+          assert.throws(() =>
+            verify(...packages, context, () => {
+              called = true;
+            }),
+          );
         assert.equal(called, false);
       }
     }
@@ -284,5 +293,180 @@ test("first failures suppress the scope and remove the entire owned consumer", (
           : undefined,
     );
     assert(root && !existsSync(root), failure);
+  }
+});
+
+// The new profile reuses the real browser probe; only installation/compiler calls are mocked.
+test("provider layout freezes registry types then extends the exact local pair offline", () => {
+  assert.deepEqual(
+    verifyNextProviderConsumer(...fixture(), context, () =>
+      assert.fail("absent provider installed"),
+    ),
+    [],
+  );
+  for (const failure of [
+    null,
+    "server",
+    "integrity",
+    "extra",
+    "missing-jsx",
+    "wrong-type-version",
+    "type-link",
+    "type-change",
+    "lock-change",
+    "registry-install",
+    "registry-lock",
+    "extension-install",
+    "paired-version",
+    "paired-integrity",
+    "paired-peer",
+    "paired-extra",
+    "extension-types",
+  ]) {
+    const preparation = realpathSync(mkdtempSync(join(tmpdir(), "commish-provider-context-")));
+    let consumer;
+    try {
+      const build = join(preparation, "build");
+      cpSync(context.build, build, { recursive: true });
+      // Controlled source context only: inspect's complete lock fingerprint is independently tested.
+      const lock = Buffer.from(
+        failure === "integrity"
+          ? "invalid"
+          : "sha512-AnzbBERsrLKtk2XSfTbYRLjQPdy116Sty4q+T+Bp3IC4l6jNBvreVPAHmpq9qhXQM7CXZPjLVmGMw9sy+hxQ3w== sha512-z1HGKcYy2xA8AGQfwrn0PAy+PB7X/GSj3UVJW9qKyn43xWa+gl5nXmU4qqLMRzWVLFC8KusUX8T/0kCiOYpAIQ==",
+      );
+      writeFileSync(join(build, "pnpm-lock.yaml"), lock);
+      const source = { build, checkout: context.checkout, lock },
+        packages = fixture(true, failure === "server"),
+        calls = [];
+      const execute = (command, args, options) => {
+        consumer = options.cwd;
+        calls.push([command, args]);
+        if (command === "pnpm" && args[0] === "--version") return "11.1.3";
+        if (command === "pnpm") {
+          const registry = args.includes("--frozen-lockfile");
+          assert.deepEqual(args, [
+            "install",
+            ...(registry
+              ? ["--frozen-lockfile", "--registry=https://registry.npmjs.org"]
+              : ["--offline", "--no-frozen-lockfile"]),
+            "--ignore-scripts",
+            "--ignore-workspace",
+            "--config.auto-install-peers=false",
+          ]);
+          assert.deepEqual(JSON.parse(readFileSync(join(consumer, "package.json"))).dependencies, {
+            ...(registry
+              ? {}
+              : { "@commish/sdk": "file:./sdk.tgz", "@commish/next": "file:./next.tgz" }),
+            "@types/react": "19.2.18",
+            csstype: "3.2.3",
+          });
+          const locks = providerTypesLock(...packages, lock);
+          assert.equal(readFileSync(join(consumer, "pnpm-lock.yaml"), "utf8"), locks.registry);
+          if (!registry) {
+            assert(
+              existsSync(join(consumer, "node_modules/@types/react/index.d.ts")),
+              "types install precedes pair",
+            );
+            if (failure === "extension-install")
+              throw new Error("controlled extension install failure");
+            install(consumer, packages);
+            let generated = locks.paired;
+            if (failure === "paired-version")
+              generated = generated.replace("version: 0.1.0-beta.9", "version: 0.1.0-beta.8");
+            if (failure === "paired-integrity")
+              generated = generated.replace("integrity: sha512-", "integrity: sha512-changed");
+            if (failure === "paired-peer")
+              generated = generated.replace("react: '>=19.2.8 <20'", "react: '*'");
+            if (failure === "paired-extra") generated += "extra: true\n";
+            writeFileSync(join(consumer, "pnpm-lock.yaml"), generated);
+            if (failure === "extension-types")
+              writeFileSync(join(consumer, "node_modules/@types/react/index.d.ts"), "changed");
+            if (failure === "extra") mkdirSync(join(consumer, "node_modules/.pnpm/extra"));
+            return "";
+          }
+          assert(
+            !existsSync(join(consumer, "node_modules/@commish")),
+            "registry phase has no local pair",
+          );
+          if (failure === "registry-install")
+            throw new Error("controlled registry install failure");
+          if (failure === "registry-lock")
+            writeFileSync(join(consumer, "pnpm-lock.yaml"), "changed");
+          for (const [index, name] of ["@types/react", "csstype"].entries()) {
+            const root = join(
+              consumer,
+              "node_modules/.pnpm",
+              `types-${index}`,
+              "node_modules",
+              name,
+            );
+            mkdirSync(root, { recursive: true });
+            writeFileSync(
+              join(root, "package.json"),
+              JSON.stringify({ name, version: index ? "3.2.3" : "19.2.18" }),
+            );
+            for (const file of index
+              ? ["index.d.ts"]
+              : ["index.d.ts", "jsx-runtime.d.ts", "global.d.ts"])
+              writeFileSync(join(root, file), "");
+            const link = join(consumer, "node_modules", name);
+            mkdirSync(join(link, ".."), { recursive: true });
+            symlinkSync(root, link);
+          }
+          if (failure === "missing-jsx")
+            rmSync(join(consumer, "node_modules/@types/react/jsx-runtime.d.ts"));
+          if (failure === "wrong-type-version")
+            writeFileSync(
+              join(consumer, "node_modules/@types/react/package.json"),
+              JSON.stringify({ name: "@types/react", version: "19.0.0" }),
+            );
+          if (failure === "type-link")
+            symlinkSync(
+              import.meta.filename,
+              join(consumer, "node_modules/@types/react/extra.d.ts"),
+            );
+          return "";
+        }
+        assert.deepEqual(
+          args,
+          ["--conditions=browser", "probe.mjs"],
+          "layout cannot invoke compiler",
+        );
+        const result = execFileSync(command, args, options);
+        if (failure === "type-change")
+          writeFileSync(join(consumer, "node_modules/@types/react/index.d.ts"), "changed");
+        if (failure === "lock-change") writeFileSync(join(consumer, "pnpm-lock.yaml"), "changed");
+        return result;
+      };
+      const check = () => verifyNextProviderConsumer(...packages, source, execute);
+      if (failure && failure !== "server")
+        assert.throws(
+          check,
+          {
+            integrity: /type integrity absent/,
+            extra: /unexpected paired dependency closure/,
+            "missing-jsx": /ENOENT/,
+            "wrong-type-version": /19.0.0/,
+            "type-link": /dependency contains a link/,
+            "type-change": /provider types changed during probe/,
+            "lock-change": /provider consumer lock changed/,
+            "registry-install": /controlled registry install failure/,
+            "registry-lock": /provider registry lock changed/,
+            "extension-install": /controlled extension install failure/,
+            "paired-version": /provider paired lock differs/,
+            "paired-integrity": /provider paired lock differs/,
+            "paired-peer": /provider paired lock differs/,
+            "paired-extra": /provider paired lock differs/,
+            "extension-types": /provider types changed during extension/,
+          }[failure],
+        );
+      else {
+        assert.deepEqual(check(), [nextProviderLayoutScope]);
+        assert.equal(calls.length, 5);
+      }
+      if (consumer) assert.equal(existsSync(consumer), false, "provider consumer cleanup");
+    } finally {
+      rmSync(preparation, { recursive: true, force: true });
+    }
   }
 });
