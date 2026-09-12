@@ -31,3 +31,16 @@ The complete source pair targets `0.1.0-beta.10`. Both packages include MIT LICE
 and setup documentation, and Next requires that exact SDK version. Release candidate
 preparation and hosted acceptance remain separate steps; use an accepted artifact
 receipt before installing the pair.
+
+To prepare a new local candidate from a reviewed clean commit, pass a new absolute
+output directory whose parent exists outside the checkout:
+
+```sh
+EXPECTED_SHA="$(git rev-parse HEAD)" node scripts/verify-public-source.mjs /absolute/new-candidate
+```
+
+The command builds and normalizes both packages, runs the existing installed
+consumers against those exact archives, then writes two tarballs, `SHA512SUMS`
+and a manifest with source, archive/member hashes and consumer scopes. It refuses
+existing outputs. A failed write may leave partial files without a valid receipt;
+use a fresh directory after investigating. No npm or hosted acceptance is implied.

@@ -16,6 +16,7 @@ import { gunzipSync } from "node:zlib";
 
 import { verifyNextBuild } from "./verify-next-build.mjs";
 import { publicPackageManifests } from "./public-package-manifest.mjs";
+import { candidateDirectory, normalizePackage, writeCandidate } from "./public-candidate.mjs";
 import { verifySdkBrowserConsumer } from "./verify-sdk-browser-consumer.mjs";
 import {
   verifyNextBrowserConsumer,
@@ -54,6 +55,8 @@ const automation = [
   "scripts/fixtures/next-cli.mjs",
   "scripts/public-package-manifest.mjs",
   "scripts/public-package-manifest.test.mjs",
+  "scripts/public-candidate.mjs",
+  "scripts/public-candidate.test.mjs",
   "scripts/verify-sdk-types.mjs",
   "scripts/verify-sdk-types.test.mjs",
   "scripts/verify-sdk-webhooks.mjs",
@@ -263,7 +266,8 @@ export function archiveFiles(compressed) {
   return files;
 }
 
-export async function verifyPackages(files, packages, run, checkout = process.cwd()) {
+export async function verifyPackages(files, packages, run, checkout = process.cwd(), releaseManifests) {
+  const artifacts = [];
   let evidence = { scopes: [] },
     sdkArchive;
   const work = mkdtempSync(join(tmpdir(), "commish-public-source-"));
@@ -286,8 +290,8 @@ export async function verifyPackages(files, packages, run, checkout = process.cw
       run("pnpm", ["pack", "--pack-destination", destination], cwd);
       const archives = readdirSync(destination);
       assert.equal(archives.length, 1, "expected one package archive");
-      const archive = readFileSync(join(destination, archives[0]));
-      const packed = archiveFiles(archive);
+      let archive = readFileSync(join(destination, archives[0]));
+      let packed = archiveFiles(archive);
       const packedManifest = JSON.parse(bytes(packed, "package/package.json"));
       assert.equal(packedManifest.name, manifest.name);
       assert.equal(packedManifest.version, manifest.version);
@@ -305,6 +309,11 @@ export async function verifyPackages(files, packages, run, checkout = process.cw
           target.startsWith("./bin/") ? 0o755 : 0o644,
           "invalid packed target mode",
         );
+      }
+      if (releaseManifests) {
+        ({ archive, packed } = normalizePackage(files, dir, releaseManifests[artifacts.length],
+          packed, work, run, archiveFiles));
+        artifacts.push({ archive, packed });
       }
       if (manifest.name === "@commish/sdk") {
         sdkArchive = { archive, packed };
@@ -355,13 +364,13 @@ export async function verifyPackages(files, packages, run, checkout = process.cw
         readFileSync(join(work, name)).equals(file.data),
         "source or lock changed during verification",
       );
-    return evidence;
+    return { ...evidence, ...(releaseManifests ? { artifacts } : {}) };
   } finally {
     rmSync(work, { recursive: true, force: true });
   }
 }
 
-export async function verify(root, expectedSha) {
+export async function verify(root, expectedSha, candidateOutput) {
   const git = (...args) => execFileSync("git", args, { cwd: root });
   const head = git("rev-parse", "HEAD").toString().trim();
   assert(
@@ -387,6 +396,8 @@ export async function verify(root, expectedSha) {
       }),
   );
   const packages = inspect(files);
+  const output = candidateOutput === undefined ? undefined : candidateDirectory(root, candidateOutput);
+  const releaseManifests = output ? publicPackageManifests(files) : undefined;
   let evidence = { scopes: [] };
   if (packages.length) {
     assert.equal(
@@ -400,8 +411,13 @@ export async function verify(root, expectedSha) {
       (command, args, cwd) =>
         execFileSync(command, args, { cwd, stdio: "inherit", timeout: 600_000 }),
       root,
+      releaseManifests,
     );
   }
+  assert.equal(git("rev-parse", "HEAD").toString().trim(), head, "source HEAD changed during verification");
+  assert.equal(git("status", "--porcelain", "--untracked-files=all").length, 0, "source changed during verification");
+  const candidate = output ? writeCandidate(root, output, head, evidence.artifacts, evidence.scopes,
+    releaseManifests, archiveFiles) : undefined;
   return {
     sha: head,
     scope: packages.length
@@ -412,12 +428,14 @@ export async function verify(root, expectedSha) {
     ...(evidence.typeCompiler ? { typeCompiler: evidence.typeCompiler } : {}),
     consumerChecks: false,
     publication: false,
+    ...(candidate ? { candidate } : {}),
   };
 }
 
 if (import.meta.main) {
   try {
-    console.log(JSON.stringify(await verify(process.cwd(), process.env.EXPECTED_SHA)));
+    assert(process.argv.length <= 3, "unexpected verifier arguments");
+    console.log(JSON.stringify(await verify(process.cwd(), process.env.EXPECTED_SHA, process.argv[2])));
   } catch {
     console.error("Public source verification failed; no acceptance receipt issued.");
     process.exitCode = 1;
