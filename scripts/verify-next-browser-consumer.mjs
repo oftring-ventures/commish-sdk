@@ -61,12 +61,20 @@ async function probe() {
     await assert.rejects(import(name), { code: "ERR_PACKAGE_PATH_NOT_EXPORTED" });
 }
 
-export async function metadataProbe(cookieHelpers = false) {
+export async function metadataProbe(cookieHelpers = false, capture = false) {
   const { default: assert } = await import("node:assert/strict");
   const root = await import("@commish/next");
-  assert.deepEqual(Object.keys(root), cookieHelpers
-    ? ["applyCommishStripeMetadata", "getCommishAttribution", "withCommishStripeMetadata"]
-    : ["applyCommishStripeMetadata"], "Next root export names");
+  assert.deepEqual(Object.keys(root), [
+    ...(capture ? ["COMMISH_COOKIE"] : []), "applyCommishStripeMetadata",
+    ...(capture ? ["createAttributionHandler"] : []),
+    ...(cookieHelpers ? ["getCommishAttribution", "withCommishStripeMetadata"] : []),
+  ], "Next root export names");
+  if (capture) {
+    assert.equal(root.COMMISH_COOKIE, "commish_attribution");
+    await assert.rejects(() => root.createAttributionHandler({ apiUrl: "http://127.0.0.1:1" })(
+      new Request("http://consumer.test", { method: "POST", body: "{}",
+        headers: { "x-commish-capture-id": "a".repeat(32) } })), /request scope/);
+  }
   if (cookieHelpers) {
     await assert.rejects(() => root.getCommishAttribution(), /request scope/);
     await assert.rejects(() => root.withCommishStripeMetadata({}), /request scope/);
