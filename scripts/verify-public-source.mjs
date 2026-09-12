@@ -37,6 +37,8 @@ const automation = [
   "scripts/provider-types-lock.mjs",
   "scripts/inspect-next-build.mjs",
   "scripts/inspect-next-build.test.mjs",
+  "scripts/next-command-scope.mjs",
+  "scripts/next-command-scope.test.mjs",
   "scripts/verify-sdk-types.mjs",
   "scripts/verify-sdk-types.test.mjs",
   "scripts/verify-sdk-webhooks.mjs",
