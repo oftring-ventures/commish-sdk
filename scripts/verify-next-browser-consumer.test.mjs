@@ -70,7 +70,7 @@ const pair = (name, server = false) => ({
   types: `./dist/${name}.d.ts`,
   default: `./dist/${name}.js`,
 });
-function fixture(react = false, server = false) {
+function fixture(react = false, server = false, framework = react) {
   return ["sdk", "next"].map((name) => {
     const manifest = {
       name: `@commish/${name}`,
@@ -80,8 +80,8 @@ function fixture(react = false, server = false) {
       exports: { "./browser": pair("browser") },
       ...(name === "next" ? { peerDependencies: { "@commish/sdk": "0.1.0-beta.9" } } : {}),
     };
-    if (name === "next" && react) {
-      manifest.exports["./react"] = pair("provider");
+    if (name === "next" && react) manifest.exports["./react"] = pair("provider");
+    if (name === "next" && framework) {
       Object.assign(manifest.peerDependencies, { next: ">=16.2.12 <17", react: ">=19.2.8 <20" });
     }
     if (name === "next" && server) {
@@ -179,9 +179,9 @@ test("paired manifests and every promised target fail before commands", () => {
 });
 
 test("all Next shapes run the actual browser identity probe from isolated paired fixtures", () => {
-  for (const react of [false, true])
+  for (const [react, framework] of [[false, false], [false, true], [true, true]])
     for (const server of [false, true]) {
-      const packages = fixture(react, server),
+      const packages = fixture(react, server, framework),
         calls = [];
       let root;
       const execute = (command, args, options) => {
