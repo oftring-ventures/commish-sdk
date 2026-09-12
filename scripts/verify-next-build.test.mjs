@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { verifyNextBuild } from "./verify-next-build.mjs";
-import { nextBuildFixture, nextServerBuildFixture } from "./fixtures/next-build.mjs";
+import { cookieRequestProbe, nextBuildFixture, nextServerBuildFixture } from "./fixtures/next-build.mjs";
 import { serverMarker } from "./inspect-next-build.mjs";
 
 test("only declared framework capabilities select a build and invalid inputs fail before commands", async () => {
@@ -94,4 +94,30 @@ test("only declared framework capabilities select a build and invalid inputs fai
     `data:text/javascript,${encodeURIComponent(nextBuildFixture["next.config.mjs"])}`
   );
   assert.deepEqual(config, { experimental: { cpus: 1 } });
+});
+
+test("cookie request probe rejects wrong behavior and closes its loopback server", async () => {
+  for (const failure of [null, "metadata", "status"]) {
+    let closed = false, port;
+    const createApp = () => ({
+      async prepare() {},
+      async close() { closed = true; },
+      getRequestHandler: () => (request, response) => {
+        port = request.socket.localPort;
+        const value = request.headers.cookie?.split("=")[1] ?? null;
+        response.statusCode = failure === "status" ? 500 : 200;
+        response.end(JSON.stringify({ attribution: value, unchanged: value === null,
+          metadata: { keep: "checkout", ...(value ? { commish_attribution: value } : {}),
+            ...(failure === "metadata" ? { unexpected: true } : {}) },
+          subscription: { keep: "subscription", ...(value ? {
+            commish_attribution: value, commish_customer_id: "consumer_123",
+          } : {}) },
+        }));
+      },
+    });
+    if (failure) await assert.rejects(() => cookieRequestProbe(createApp));
+    else await cookieRequestProbe(createApp);
+    assert(closed && port, "request probe must execute and close its app");
+    await assert.rejects(() => fetch(`http://127.0.0.1:${port}`, { signal: AbortSignal.timeout(1_000) }));
+  }
 });
