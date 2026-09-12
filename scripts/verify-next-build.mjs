@@ -23,6 +23,7 @@ import {
 } from "./next-framework-lock.mjs";
 import { nextBuildFixture, nextCookieBuildFixture, nextServerBuildFixture } from "./fixtures/next-build.mjs";
 import { providerProbe } from "./fixtures/next-provider.mjs";
+import { cliProbe } from "./fixtures/next-cli.mjs";
 import { nextCaptureBuildFixture } from "./fixtures/next-capture.mjs";
 import { metadataProbe, nextMetadataScope } from "./verify-next-browser-consumer.mjs";
 import {
@@ -32,6 +33,7 @@ import {
 } from "./inspect-next-build.mjs";
 
 export const nextProviderWiringScope = "next-provider-installed-hook-wiring";
+export const nextCliScope = "next-cli-installed-dry-run";
 export const nextBuildScope = "next-production-build-external";
 export const nextServerBuildScope = "next-server-production-build-external";
 export const nextCaptureScope = "next-attribution-capture-request-external";
@@ -215,6 +217,11 @@ export async function verifyNextBuild(sdk, next, context, execute) {
       );
     };
     verifyBytes();
+    if (manifest.bin) {
+      writeFileSync(join(consumer, "cli-probe.mjs"), `await (${cliProbe.toString()})(${JSON.stringify(join(consumer, "node_modules/.bin/commish-next"))});\n`);
+      await run(process.execPath, ["cli-probe.mjs"]);
+      verifyBytes();
+    }
     if (provider) {
       assert(next.packed.get("package/dist/provider.js").data.toString().trimStart().startsWith('"use client";'),
         "provider client directive missing");
@@ -277,7 +284,7 @@ export async function verifyNextBuild(sdk, next, context, execute) {
       "framework source lock changed",
     );
     return [provider ? nextBuildScope : nextServerBuildScope, ...(server ? [nextMetadataScope] : []),
-      ...(cookieHelpers ? [nextCookieScope] : []), ...(capture ? [nextCaptureScope] : []), ...(provider ? [nextProviderWiringScope] : [])];
+      ...(cookieHelpers ? [nextCookieScope] : []), ...(capture ? [nextCaptureScope] : []), ...(provider ? [nextProviderWiringScope] : []), ...(manifest.bin ? [nextCliScope] : [])];
   } catch (error) {
     failure = error;
     throw error;
