@@ -49,6 +49,8 @@ function bootstrap() {
   "scripts/fixtures/next-cli.mjs",
   "scripts/public-package-manifest.mjs",
   "scripts/public-package-manifest.test.mjs",
+  "scripts/public-candidate.mjs",
+  "scripts/public-candidate.test.mjs",
     "scripts/verify-sdk-types.mjs",
     "scripts/verify-sdk-types.test.mjs",
     "scripts/verify-sdk-webhooks.mjs",
