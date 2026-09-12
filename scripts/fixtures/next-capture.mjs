@@ -17,12 +17,13 @@ export async function captureRequestProbe(runApp) {
     response.end(reply.body);
   });
   const previous = process.env.COMMISH_CONSUMER_API_URL;
+  const upstreamPath = "/".repeat(2_048) + "api/v1";
   try {
     await new Promise((resolve, reject) => {
       upstream.once("error", reject);
       upstream.listen(0, "127.0.0.1", resolve);
     });
-    process.env.COMMISH_CONSUMER_API_URL = `http://127.0.0.1:${upstream.address().port}/api/v1///`;
+    process.env.COMMISH_CONSUMER_API_URL = `http://127.0.0.1:${upstream.address().port}${upstreamPath}${"/".repeat(2_048)}`;
     await runApp(async (origin) => {
       const captureId = "a".repeat(32), clean = { token: "ref_consumer", applicationId: "app_consumer" };
       const body = JSON.stringify({ ...clean, previousAttributionId: "atr_browser_forgery" });
@@ -52,7 +53,7 @@ export async function captureRequestProbe(runApp) {
         const age = Number(/Max-Age=(\d+)/.exec(cookie)?.[1]);
         assert(age > 0 && age <= 3600);
         const forwarded = requests.at(-1);
-        assert.equal(forwarded.url, "/api/v1/attributions/capture");
+        assert.equal(forwarded.url, `${upstreamPath}/attributions/capture`);
         assert.equal(forwarded.method, "POST");
         assert.deepEqual(JSON.parse(forwarded.body), { ...clean, previousAttributionId: prior });
         assert.equal(forwarded.headers["idempotency-key"], key, "cookie changed the retry key");
