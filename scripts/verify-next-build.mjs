@@ -22,6 +22,7 @@ import {
   frameworkPairWorkspace,
 } from "./next-framework-lock.mjs";
 import { nextBuildFixture, nextCookieBuildFixture, nextServerBuildFixture } from "./fixtures/next-build.mjs";
+import { providerProbe } from "./fixtures/next-provider.mjs";
 import { nextCaptureBuildFixture } from "./fixtures/next-capture.mjs";
 import { metadataProbe, nextMetadataScope } from "./verify-next-browser-consumer.mjs";
 import {
@@ -30,6 +31,7 @@ import {
   nextBuildFiles as files,
 } from "./inspect-next-build.mjs";
 
+export const nextProviderWiringScope = "next-provider-installed-hook-wiring";
 export const nextBuildScope = "next-production-build-external";
 export const nextServerBuildScope = "next-server-production-build-external";
 export const nextCaptureScope = "next-attribution-capture-request-external";
@@ -213,6 +215,13 @@ export async function verifyNextBuild(sdk, next, context, execute) {
       );
     };
     verifyBytes();
+    if (provider) {
+      assert(next.packed.get("package/dist/provider.js").data.toString().trimStart().startsWith('"use client";'),
+        "provider client directive missing");
+      writeFileSync(join(consumer, "provider-probe.mjs"), `await (${providerProbe.toString()})();\n`);
+      await run(process.execPath, ["provider-probe.mjs"]);
+      verifyBytes();
+    }
     if (server) {
       writeFileSync(join(consumer, "metadata.mjs"), `await (${metadataProbe.toString()})(${cookieHelpers}, ${capture});\n`);
       await run(process.execPath, ["metadata.mjs"]);
@@ -268,7 +277,7 @@ export async function verifyNextBuild(sdk, next, context, execute) {
       "framework source lock changed",
     );
     return [provider ? nextBuildScope : nextServerBuildScope, ...(server ? [nextMetadataScope] : []),
-      ...(cookieHelpers ? [nextCookieScope] : []), ...(capture ? [nextCaptureScope] : [])];
+      ...(cookieHelpers ? [nextCookieScope] : []), ...(capture ? [nextCaptureScope] : []), ...(provider ? [nextProviderWiringScope] : [])];
   } catch (error) {
     failure = error;
     throw error;
