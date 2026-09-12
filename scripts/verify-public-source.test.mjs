@@ -53,6 +53,8 @@ function bootstrap() {
   "scripts/public-candidate.test.mjs",
   "scripts/candidate-ci-receipt.mjs",
   "scripts/candidate-ci-receipt.test.mjs",
+  "scripts/publication-preflight.mjs",
+  "scripts/publication-preflight.test.mjs",
     "scripts/verify-sdk-types.mjs",
     "scripts/verify-sdk-types.test.mjs",
     "scripts/verify-sdk-webhooks.mjs",
