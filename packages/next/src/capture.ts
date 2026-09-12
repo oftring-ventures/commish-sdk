@@ -21,10 +21,10 @@ export function createAttributionHandler(options: {
         },
         { status: 400 },
       );
-    const apiUrl = (options.apiUrl ?? "https://app.commish.sh/api/v1").replace(
-      /\/+$/,
-      "",
-    );
+    const configuredUrl = options.apiUrl ?? "https://app.commish.sh/api/v1";
+    let urlEnd = configuredUrl.length;
+    while (urlEnd > 0 && configuredUrl[urlEnd - 1] === "/") urlEnd--;
+    const apiUrl = configuredUrl.slice(0, urlEnd);
     const clientIp = request.headers.get("x-vercel-forwarded-for");
     const userAgent = request.headers.get("user-agent");
     const country = request.headers.get("x-vercel-ip-country");
