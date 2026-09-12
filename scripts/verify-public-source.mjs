@@ -69,7 +69,7 @@ const roots = [...Object.keys(bootstrap), "package.json", "pnpm-workspace.yaml",
 const common = ["package.json", "LICENSE", "README.md", "build.mjs", "tsconfig.build.json"];
 const sources = {
   sdk: ["browser", "types", "webhooks", "index", "reads"],
-  next: ["browser", "provider", "index"],
+  next: ["browser", "provider", "index", "metadata"],
 };
 const sha = (data) => createHash("sha256").update(data).digest("hex");
 const bytes = (files, name) => {
@@ -202,6 +202,8 @@ export function inspect(files) {
     if (bin) assert(has("index"), "Next CLI requires its server source");
     assert.deepEqual(manifest.bin, bin, "bin does not match present source");
     if (bin) bytes(files, `${dir}/bin/init.mjs`);
+    if (pkg === "next" && has("metadata"))
+      assert(has("index") && framework, "Next metadata module requires its framework server root");
     const targets = [
       ...Object.values(exports).flatMap(Object.values),
       ...Object.values(bin ?? {}),

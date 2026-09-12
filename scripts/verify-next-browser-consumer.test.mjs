@@ -107,7 +107,7 @@ function fixture(react = false, server = false, framework = react) {
     if (name === "next" && server)
       packed.get("package/dist/index.js").data = Buffer.from(
         stripTypeScriptTypes(
-          readFileSync(new URL("../packages/next/src/index.ts", import.meta.url), "utf8"),
+          readFileSync(new URL("../packages/next/src/metadata.ts", import.meta.url), "utf8"),
         ),
       );
     return { archive: Buffer.from(`${name} controlled archive`), packed };
