@@ -47,3 +47,24 @@ export async function GET() {
     exclude: ["node_modules"],
   }),
 };
+
+export const nextServerBuildFixture = {
+  ...nextBuildFixture,
+  "app/layout.tsx": `import type { ReactNode } from 'react';
+export default function Layout({ children }: { children: ReactNode }) {
+  return <html><body>{children}</body></html>;
+}
+`,
+  "app/page.tsx": "export default function Page() { return <p>Installed public server helper</p>; }\n",
+  "app/api/artifact/route.ts": `import { Commish } from '@commish/sdk';
+import { applyCommishStripeMetadata } from '@commish/next';
+export const dynamic = 'force-dynamic';
+export async function GET() {
+  const client = new Commish({ secretKey: '${serverMarker}',
+    baseUrl: 'https://api.example.test/api/v1',
+    fetch: async () => { throw new Error('Build fixture network forbidden'); } });
+  return Response.json({ kind: typeof client,
+    metadata: applyCommishStripeMetadata({ mode: 'payment', metadata: {} }, 'atr_installed1234').metadata });
+}
+`,
+};

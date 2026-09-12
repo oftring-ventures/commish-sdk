@@ -17,6 +17,12 @@ overrides:
   baseline-browser-mapping: 2.11.18
   caniuse-lite: 1.0.30001809
 `;
+// These two SRI-bound local test tarballs have no registry publication timestamp.
+// All registry dependencies retain pnpm's release-age policy.
+export const frameworkPairWorkspace = `${frameworkWorkspace}minimumReleaseAgeExclude:
+  - '@commish/sdk@0.1.0-beta.9'
+  - '@commish/next@0.1.0-beta.9'
+`;
 const sri = (bytes) => `sha512-${createHash("sha512").update(bytes).digest("base64")}`;
 
 // Project only this reviewed, complete registry closure; the local pair is added offline.
