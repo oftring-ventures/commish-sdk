@@ -13,11 +13,13 @@ import {
 } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
+import { stripTypeScriptTypes } from "node:module";
 import test, { after } from "node:test";
 import { providerTypesLock } from "./provider-types-lock.mjs";
 import { nextBrowserTypesScope, nextProviderTypesScope } from "./verify-next-types.mjs";
 import {
   nextBrowserScope,
+  nextMetadataScope,
   nextProviderLayoutScope,
   verifyNextBrowserConsumer,
   verifyNextProviderConsumer,
@@ -102,6 +104,12 @@ function fixture(react = false, server = false) {
         ? "export async function captureReferral() { return false; }\n"
         : 'export { captureReferral } from "@commish/sdk/browser";\n',
     );
+    if (name === "next" && server)
+      packed.get("package/dist/index.js").data = Buffer.from(
+        stripTypeScriptTypes(
+          readFileSync(new URL("../packages/next/src/index.ts", import.meta.url), "utf8"),
+        ),
+      );
     return { archive: Buffer.from(`${name} controlled archive`), packed };
   });
 }
@@ -199,16 +207,47 @@ test("all Next shapes run the actual browser identity probe from isolated paired
         }
         assert.equal(command, process.execPath);
         if (args[0] === join(compiler, "bin/tsc")) return compilerResult(args, root);
-        assert.deepEqual(args, ["--conditions=browser", "probe.mjs"]);
+        assert.deepEqual(
+          args,
+          args[0] === "metadata.mjs" && server
+            ? ["metadata.mjs"]
+            : ["--conditions=browser", "probe.mjs"],
+        );
         return execFileSync(command, args, options);
       };
       assert.deepEqual(verifyNextBrowserConsumer(...packages, context, execute), [
         nextBrowserScope,
+        ...(server ? [nextMetadataScope] : []),
         nextBrowserTypesScope,
       ]);
-      assert.equal(calls.length, 6);
+      assert.equal(calls.length, server ? 7 : 6);
       assert(root && !existsSync(root));
     }
+});
+
+test("installed Node root rejects wrong exports or behavior and cleans its consumer", () => {
+  for (const code of [
+    "export const wrong = 1;",
+    "export const applyCommishStripeMetadata = (input) => input;",
+  ]) {
+    const packages = fixture(false, true);
+    packages[1].packed.get("package/dist/index.js").data = Buffer.from(code);
+    let root;
+    const execute = (command, args, options) => {
+      root = options.cwd;
+      if (args[0] === "--version") return "11.1.3\n";
+      if (command === "pnpm") return install(root, packages);
+      if (args[0] === join(compiler, "bin/tsc")) return compilerResult(args, root);
+      return execFileSync(command, args, options);
+    };
+    assert.throws(
+      () => verifyNextBrowserConsumer(...packages, context, execute),
+      (error) =>
+        error.status === 1 &&
+        /Next (root export names|installed metadata behavior)/.test(error.stderr),
+    );
+    assert(root && !existsSync(root));
+  }
 });
 
 test("missing or overlapping source context cannot install", () => {
