@@ -15,6 +15,7 @@ import { join } from "node:path";
 import { gunzipSync } from "node:zlib";
 
 import { verifyNextBuild } from "./verify-next-build.mjs";
+import { publicPackageManifests } from "./public-package-manifest.mjs";
 import { verifySdkBrowserConsumer } from "./verify-sdk-browser-consumer.mjs";
 import {
   verifyNextBrowserConsumer,
@@ -51,6 +52,8 @@ const automation = [
   "scripts/fixtures/next-capture.mjs",
   "scripts/fixtures/next-provider.mjs",
   "scripts/fixtures/next-cli.mjs",
+  "scripts/public-package-manifest.mjs",
+  "scripts/public-package-manifest.test.mjs",
   "scripts/verify-sdk-types.mjs",
   "scripts/verify-sdk-types.test.mjs",
   "scripts/verify-sdk-webhooks.mjs",
@@ -146,6 +149,8 @@ export function inspect(files) {
   for (const name of files.keys())
     if (name.startsWith("packages/"))
       assert(packages.includes(name.split("/")[1]), "orphan package source");
+  if (packages.includes("next") && json(files, "packages/next/package.json").private !== true)
+    publicPackageManifests(files);
   return packages.map((pkg) => {
     const dir = `packages/${pkg}`;
     for (const name of common.filter((name) => name !== "README.md"))
@@ -153,7 +158,7 @@ export function inspect(files) {
     bytes(files, `${dir}/src/browser.ts`);
     const manifest = json(files, `${dir}/package.json`);
     assert.equal(manifest.name, `@commish/${pkg}`);
-    assert.equal(manifest.version, "0.1.0-beta.9");
+    assert.equal(manifest.version, "0.1.0-beta.10");
     assert.equal(manifest.type, "module");
     assert.deepEqual(
       manifest.scripts,

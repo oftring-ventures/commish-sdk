@@ -20,8 +20,8 @@ overrides:
 // These two SRI-bound local test tarballs have no registry publication timestamp.
 // All registry dependencies retain pnpm's release-age policy.
 export const frameworkPairWorkspace = `${frameworkWorkspace}minimumReleaseAgeExclude:
-  - '@commish/sdk@0.1.0-beta.9'
-  - '@commish/next@0.1.0-beta.9'
+  - '@commish/sdk@0.1.0-beta.10'
+  - '@commish/next@0.1.0-beta.10'
 `;
 const sri = (bytes) => `sha512-${createHash("sha512").update(bytes).digest("base64")}`;
 
@@ -46,7 +46,7 @@ export function frameworkLocks(source, sdk, next) {
   const peerSuffix = `(${sdkId})(next@${nextVersion})(react@19.2.8)`;
   const packageRecord = (name, artifact, peers = "") => `  '@commish/${name}@file:${name}.tgz':
     resolution: {integrity: ${sri(artifact.archive)}, tarball: file:${name}.tgz}
-    version: 0.1.0-beta.9
+    version: 0.1.0-beta.10
     engines: {node: '>=24 <25'}
 ${JSON.parse(artifact.packed.get("package/package.json").data).bin ? "    hasBin: true\n" : ""}${peers}
 `;
@@ -70,7 +70,7 @@ ${packageRecord(
   "next",
   next,
   `    peerDependencies:
-      '@commish/sdk': 0.1.0-beta.9
+      '@commish/sdk': 0.1.0-beta.10
       next: '>=16.2.12 <17'
       react: '>=19.2.8 <20'
 `,
