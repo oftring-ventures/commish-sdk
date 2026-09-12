@@ -111,7 +111,7 @@ export async function verifyNextBuild(sdk, next, context, execute) {
       browser: null, types: "./dist/index.d.ts", default: "./dist/index.js",
     }, "unsupported server root");
     assert.deepEqual(manifest.peerDependencies, {
-      "@commish/sdk": "0.1.0-beta.9", next: ">=16.2.12 <17", react: ">=19.2.8 <20",
+      "@commish/sdk": "0.1.0-beta.10", next: ">=16.2.12 <17", react: ">=19.2.8 <20",
     }, "unsupported server peers");
   }
   const cookieHelpers = next.packed.has("package/dist/metadata.js");

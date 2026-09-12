@@ -47,6 +47,8 @@ function bootstrap() {
   "scripts/fixtures/next-capture.mjs",
   "scripts/fixtures/next-provider.mjs",
   "scripts/fixtures/next-cli.mjs",
+  "scripts/public-package-manifest.mjs",
+  "scripts/public-package-manifest.test.mjs",
     "scripts/verify-sdk-types.mjs",
     "scripts/verify-sdk-types.test.mjs",
     "scripts/verify-sdk-webhooks.mjs",
@@ -128,7 +130,7 @@ snapshots:
   );
   put(files, "packages/sdk/package.json", {
     name: "@commish/sdk",
-    version: "0.1.0-beta.9",
+    version: "0.1.0-beta.10",
     type: "module",
     scripts: {
       build: "node build.mjs",
@@ -258,6 +260,7 @@ test("Next server metadata may precede CLI without admitting mismatched package 
     // Preserve the pre-CLI stage independently of the current source manifest.
     const manifest = JSON.parse(files.get("packages/next/package.json").data);
     delete manifest.bin;
+    manifest.private = true;
     put(files, "packages/next/package.json", manifest);
     return files;
   };

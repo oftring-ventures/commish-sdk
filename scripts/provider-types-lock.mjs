@@ -80,16 +80,16 @@ packages:
 
   '@commish/next@file:next.tgz':
     resolution: {integrity: ${sri(next.archive)}, tarball: file:next.tgz}
-    version: 0.1.0-beta.9
+    version: 0.1.0-beta.10
     engines: {node: '>=24 <25'}
 ${manifests[1].bin ? "    hasBin: true\n" : ""}    peerDependencies:
-      '@commish/sdk': 0.1.0-beta.9
+      '@commish/sdk': 0.1.0-beta.10
       next: '>=16.2.12 <17'
       react: '>=19.2.8 <20'
 
   '${sdkId}':
     resolution: {integrity: ${sri(sdk.archive)}, tarball: file:sdk.tgz}
-    version: 0.1.0-beta.9
+    version: 0.1.0-beta.10
     engines: {node: '>=24 <25'}
 
 ${typeRecords}
