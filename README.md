@@ -44,3 +44,13 @@ consumers against those exact archives, then writes two tarballs, `SHA512SUMS`
 and a manifest with source, archive/member hashes and consumer scopes. It refuses
 existing outputs. A failed write may leave partial files without a valid receipt;
 use a fresh directory after investigating. No npm or hosted acceptance is implied.
+
+The read-only `Public source` workflow prepares the same candidate on Linux x64
+and retains it for 30 days as `public-candidate-<source SHA>-<run ID>-<attempt>`.
+Its additional `ci-receipt.json` binds the manifest and archives to the reported
+repository, run, workflow revision and actual checked-out source. Pull-request
+trigger and workflow SHAs can differ from that source; all three are recorded.
+Before accepting a handoff, verify the successful run, source and artifact identity
+against GitHub, then compare both downloaded tarballs byte-for-byte with an
+independent macOS candidate built from the same source. The receipt alone is not
+publication authority. Candidate CI has no publication credentials or write permissions.
