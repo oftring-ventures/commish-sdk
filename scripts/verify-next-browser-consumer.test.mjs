@@ -209,7 +209,7 @@ test("all Next shapes run the actual browser identity probe from isolated paired
         if (args[0] === join(compiler, "bin/tsc")) return compilerResult(args, root);
         assert.deepEqual(
           args,
-          args[0] === "metadata.mjs" && server
+          args[0] === "metadata.mjs" && server && !framework
             ? ["metadata.mjs"]
             : ["--conditions=browser", "probe.mjs"],
         );
@@ -217,10 +217,10 @@ test("all Next shapes run the actual browser identity probe from isolated paired
       };
       assert.deepEqual(verifyNextBrowserConsumer(...packages, context, execute), [
         nextBrowserScope,
-        ...(server ? [nextMetadataScope] : []),
+        ...(server && !framework ? [nextMetadataScope] : []),
         nextBrowserTypesScope,
       ]);
-      assert.equal(calls.length, server ? 7 : 6);
+      assert.equal(calls.length, server && !framework ? 7 : 6);
       assert(root && !existsSync(root));
     }
 });
