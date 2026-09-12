@@ -1,7 +1,7 @@
 {
   "name": "@commish/next",
   "version": "0.1.0-beta.9",
-  "description": "Browser referral-capture bridge for the Commish test-money pilot",
+  "description": "Stripe metadata helper and browser referral-capture bridge for the Commish test-money pilot",
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -20,6 +20,11 @@
     "./browser": {
       "types": "./dist/browser.d.ts",
       "default": "./dist/browser.js"
+    },
+    ".": {
+      "browser": null,
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
     }
   },
   "peerDependencies": {
