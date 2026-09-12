@@ -92,6 +92,7 @@ export function verifyFrameworkPackage(consumer, root, artifact, registry) {
     assert.equal(lstatSync(path).mode & 0o777, member.mode & 0o777, "framework pair mode differs");
   }
   const generated = [];
+  let consumerCli;
   if (manifest.name === "@commish/next") {
     const own = createRequire(join(root, "package.json"));
     const outer = createRequire(join(consumer, "package.json"));
@@ -120,9 +121,8 @@ export function verifyFrameworkPackage(consumer, root, artifact, registry) {
       join(dirname(dirname(root)), "next")));
     if (manifest.bin) {
       assert.deepEqual(manifest.bin, { "commish-next": "./bin/init.mjs" });
-      generated.push(
-        verifyShim(consumer, root, "commish-next", root, dirname(dirname(root)), "bin/init.mjs"),
-      );
+      consumerCli = verifyShim(consumer, consumer, "commish-next", root,
+        dirname(dirname(root)), "bin/init.mjs");
     }
   }
   const names = new Set(generated.map((entry) => entry.name));
@@ -134,5 +134,6 @@ export function verifyFrameworkPackage(consumer, root, artifact, registry) {
     [...artifact.packed.keys()].sort(),
     "framework installed member inventory differs",
   );
-  return generated;
+  // The consumer launcher must not exempt any extra member inside the package.
+  return consumerCli ? [...generated, { ...consumerCli, location: "consumer" }] : generated;
 }

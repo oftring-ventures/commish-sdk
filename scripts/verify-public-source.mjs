@@ -50,6 +50,7 @@ const automation = [
   "scripts/fixtures/next-build.mjs",
   "scripts/fixtures/next-capture.mjs",
   "scripts/fixtures/next-provider.mjs",
+  "scripts/fixtures/next-cli.mjs",
   "scripts/verify-sdk-types.mjs",
   "scripts/verify-sdk-types.test.mjs",
   "scripts/verify-sdk-webhooks.mjs",

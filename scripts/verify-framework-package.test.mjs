@@ -72,8 +72,8 @@ function fixture(sdk, cli, run) {
         ],
       ],
     ];
-    const shim = (name, source, sourceModules, targetName) => {
-      const path = join(root, "node_modules/.bin", name),
+    const shim = (name, source, sourceModules, targetName, owner = root) => {
+      const path = join(owner, "node_modules/.bin", name),
         target = join(source, targetName);
       const paths = [join(source, "node_modules"), sourceModules, join(store, "node_modules")].join(
         ":",
@@ -89,7 +89,7 @@ function fixture(sdk, cli, run) {
       return path;
     };
     const bins = sdk ? [] : [shim("next", next, dirname(next), "dist/bin/next")];
-    if (cli) bins.push(shim("commish-next", root, modules, "bin/init.mjs"));
+    if (cli) bins.push(shim("commish-next", root, modules, "bin/init.mjs", consumer));
     const verify = () => verifyFrameworkPackage(consumer, root, { packed }, registry);
     run({ consumer, root, next, bins, verify, write });
   } finally {
@@ -152,6 +152,13 @@ test("bin tampering, extra members, links and changed source or payload cannot b
         f.write(f.bins[1], readFileSync(f.bins[1], "utf8").replace("init.mjs", "elsewhere.mjs")),
       /generated bin content differs/,
     ],
+    [(f) => chmodSync(f.bins[1], 0o644), /invalid bin type\/mode/],
+    [(f) => {
+      rmSync(f.bins[1]);
+      symlinkSync(join(f.root, "bin/init.mjs"), f.bins[1]);
+    }, /invalid bin type\/mode/],
+    [(f) => f.write(join(f.root, "node_modules/.bin/commish-next"), "unexpected", 0o755),
+      /member inventory differs/],
   ];
   for (const [mutate, error] of cases)
     fixture(false, true, (f) => {
