@@ -6,6 +6,8 @@ Available: the complete SDK, the `@commish/next/browser` bridge, and the server-
 Checkout fields and adds attribution to payment or subscription metadata; it does
 not create a Checkout session. Next capture routes, cookie readers, React provider
 and CLI are not available at this source checkpoint.
+The pinned Next framework dependencies are staged for the server integration;
+their presence does not expose a React provider or select its framework consumer.
 No npm publication, release artifact provenance or hosted acceptance is claimed.
 
 With Node 24 and pnpm 11.1.3:

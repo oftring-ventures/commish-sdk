@@ -264,6 +264,21 @@ test("Next server metadata may precede CLI without admitting mismatched package 
     "./dist/index.d.ts",
     "./dist/index.js",
   ]);
+  const legacy = nextTree();
+  patch(legacy, (manifest) => {
+    for (const name of ["next", "react", "react-dom", "@types/react", "@types/react-dom"])
+      delete manifest.devDependencies[name];
+    delete manifest.peerDependencies.next;
+    delete manifest.peerDependencies.react;
+  });
+  put(legacy, "pnpm-workspace.yaml", "packages:\n  - packages/sdk\n  - packages/next\nengineStrict: true\n");
+  const sdkLock = packageTree().get("pnpm-lock.yaml").data.toString();
+  const sdkImporter = sdkLock.split("  packages/sdk:\n")[1].split("\npackages:\n")[0];
+  const nextImporter = sdkImporter.replace("    devDependencies:\n",
+    "    devDependencies:\n      '@commish/sdk':\n        specifier: workspace:*\n        version: link:../sdk\n");
+  put(legacy, "pnpm-lock.yaml", sdkLock.replace("  packages/sdk:\n",
+    `  packages/next:\n${nextImporter}\n  packages/sdk:\n`));
+  assert.deepEqual(inspect(legacy)[1].targets, inspect(nextTree())[1].targets);
   const browser = nextTree();
   browser.delete("packages/next/src/index.ts");
   patch(browser, (manifest) => {
@@ -300,6 +315,12 @@ test("Next server metadata may precede CLI without admitting mismatched package 
         manifest.peerDependencies.next = ">=16";
       }),
     (files) => put(files, "pnpm-lock.yaml", "different"),
+    (files) => patch(files, (manifest) => { manifest.devDependencies.next = "16.3.5"; }),
+    (files) => patch(files, (manifest) => { delete manifest.peerDependencies.react; }),
+    (files) => {
+      put(files, "packages/next/src/provider.tsx", "export {};\n");
+      patch(files, (manifest) => { delete manifest.devDependencies.next; });
+    },
   ]) {
     const files = nextTree();
     change(files);

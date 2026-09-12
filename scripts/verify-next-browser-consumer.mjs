@@ -125,6 +125,9 @@ function verifyNextConsumer(provider, sdk, next, context, execute = execFileSync
   if (Object.hasOwn(manifests[1].exports, ".")) exports["."] = pair("index", true);
   if (Object.hasOwn(manifests[1].exports, "./react")) {
     exports["./react"] = pair("provider");
+    assert(Object.hasOwn(manifests[1].peerDependencies, "next"), "provider framework peer missing");
+  }
+  if (Object.hasOwn(manifests[1].peerDependencies, "next")) {
     Object.assign(peers, { next: ">=16.2.12 <17", react: ">=19.2.8 <20" });
   }
   assert.deepEqual(manifests[1].exports, exports, "unsupported Next export tuple");

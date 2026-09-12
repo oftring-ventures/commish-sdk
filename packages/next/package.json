@@ -28,7 +28,9 @@
     }
   },
   "peerDependencies": {
-    "@commish/sdk": "0.1.0-beta.9"
+    "@commish/sdk": "0.1.0-beta.9",
+    "next": ">=16.2.12 <17",
+    "react": ">=19.2.8 <20"
   },
   "publishConfig": {
     "access": "public",
@@ -42,7 +44,12 @@
   "devDependencies": {
     "typescript": "5.9.2",
     "@types/node": "24.13.3",
-    "@commish/sdk": "workspace:*"
+    "@commish/sdk": "workspace:*",
+    "next": "16.3.4",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "@types/react": "19.2.18",
+    "@types/react-dom": "19.2.5"
   },
   "private": true
 }
