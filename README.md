@@ -12,7 +12,8 @@ for previous attribution, and stores successful attribution in an HttpOnly cooki
 Its server-only `secretKey` option must never come from browser input.
 `CommishProvider` from `@commish/next/react` captures referrals when its configuration
 or the current route changes, and renders its children inside the application layout.
-The dry-run CLI is not available at this source checkpoint.
+`commish-next` prints a dry-run setup plan without changing consumer files.
+See [Next setup](packages/next/README.md) for the route and layout changes.
 The pinned Next framework dependencies support an isolated installed server-helper
 probe, production build, concurrent cookie requests and capture requests against
 an owned loopback upstream. The provider also passes the installed type and production
