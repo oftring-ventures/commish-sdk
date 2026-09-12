@@ -174,7 +174,10 @@ export async function verifyNextBuild(sdk, next, context, execute) {
       "@commish/sdk": "file:./sdk.tgz",
       "@commish/next": "file:./next.tgz",
     });
-    await install(["--offline", "--no-frozen-lockfile"]);
+    // A cold offline store cannot reliably reconstruct optional peer metadata.
+    // Install the exact projected closure instead of resolving it a second time.
+    writeFileSync(join(consumer, "pnpm-lock.yaml"), locks.paired);
+    await install(["--offline", "--frozen-lockfile"]);
     assert.equal(
       readFileSync(join(consumer, "pnpm-lock.yaml"), "utf8"),
       locks.paired,
