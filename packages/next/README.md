@@ -3,7 +3,7 @@
 MIT-licensed Next.js App Router integration for the Commish test-money pilot.
 This source checkpoint is verified with Node 24.15.0, Next 16.3.4 and React 19.2.8.
 It does not establish npm availability or acceptance against a hosted Commish API.
-Use the exact paired SDK/Next artifacts and consumer lockfile from your accepted
+Use the exact paired `0.1.0-beta.10` SDK/Next artifacts and consumer lockfile from your accepted
 candidate receipt; the release workflow and registry install instructions follow
 in separate release preparation work.
 
