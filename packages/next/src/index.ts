@@ -1,35 +1,14 @@
-type StripeMetadata = Record<string, string | number | null>;
-type StripeCheckoutParams = {
-  mode?: string;
-  client_reference_id?: string;
-  metadata?: StripeMetadata;
-  subscription_data?: {
-    metadata?: StripeMetadata;
-    [key: string]: unknown;
-  };
-};
+import { cookies } from "next/headers.js";
+import { applyCommishStripeMetadata, type StripeCheckoutParams } from "./metadata.js";
 
-export function applyCommishStripeMetadata<T extends StripeCheckoutParams>(
+export { applyCommishStripeMetadata };
+
+export async function getCommishAttribution(): Promise<string | null> {
+  return (await cookies()).get("commish_attribution")?.value ?? null;
+}
+
+export async function withCommishStripeMetadata<T extends StripeCheckoutParams>(
   params: T,
-  attribution: string | null,
-): T {
-  if (!attribution) return params;
-  return {
-    ...params,
-    metadata: { ...params.metadata, commish_attribution: attribution },
-    ...(params.mode === "subscription"
-      ? {
-          subscription_data: {
-            ...params.subscription_data,
-            metadata: {
-              ...params.subscription_data?.metadata,
-              commish_attribution: attribution,
-              ...(params.client_reference_id
-                ? { commish_customer_id: params.client_reference_id }
-                : {}),
-            },
-          },
-        }
-      : {}),
-  };
+): Promise<T> {
+  return applyCommishStripeMetadata(params, await getCommishAttribution());
 }

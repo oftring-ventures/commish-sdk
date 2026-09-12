@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { applyCommishStripeMetadata } from "../packages/next/src/index.ts";
+import { applyCommishStripeMetadata } from "../packages/next/src/metadata.ts";
 
 test("missing attribution preserves the original Checkout object", () => {
   const input = Object.freeze({ mode: "payment", metadata: Object.freeze({ order: "one" }) });
