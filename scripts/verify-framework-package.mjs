@@ -7,8 +7,11 @@ import { nextBuildChild as child, nextBuildFiles as files } from "./inspect-next
 
 const hash = (bytes) => createHash("sha256").update(bytes).digest("hex");
 
-function verifyShim(consumer, root, name, source, modules, targetName) {
+function verifyShim(consumer, root, name, source, modules, targetName, peer = source) {
   const target = child(source, join(source, targetName));
+  const programs = [...new Set([target, join(peer, targetName)])];
+  for (const program of programs)
+    assert.equal(child(consumer, program), target, "bin peer target differs");
   assert(lstatSync(target).isFile() && (lstatSync(target).mode & 0o777) === 0o755);
   assert(
     readFileSync(target, "utf8").startsWith("#!/usr/bin/env node\n"),
@@ -25,9 +28,9 @@ function verifyShim(consumer, root, name, source, modules, targetName) {
     modules,
     child(consumer, join(consumer, "node_modules/.pnpm/node_modules")),
   ].join(":");
-  const destination = relative(dirname(path), target);
-  // Exact pnpm 11.1.3 / cmd-shim 9.0.3 POSIX Node output for this fixed install profile.
-  const expected = `#!/bin/sh
+  // Frozen pnpm installs use the peer link; resolver installs use its real path.
+  // Both exact cmd-shim forms must resolve to the same frozen executable.
+  const expected = (program) => `#!/bin/sh
 basedir=$(dirname "$(echo "$0" | sed -e 's,\\\\,/,g')")
 
 case \`uname\` in
@@ -44,17 +47,18 @@ else
   export NODE_PATH="${nodePath}:$NODE_PATH"
 fi
 if [ -x "$basedir/node" ]; then
-  exec "$basedir/node"  "$basedir/${destination}" "$@"
+  exec "$basedir/node"  "$basedir/${relative(dirname(path), program)}" "$@"
 else
-  exec node  "$basedir/${destination}" "$@"
+  exec node  "$basedir/${relative(dirname(path), program)}" "$@"
 fi
-# cmd-shim-target=${target}
+# cmd-shim-target=${program}
 `;
-  assert.equal(readFileSync(path, "utf8"), expected, "generated bin content differs");
+  const content = readFileSync(path, "utf8");
+  assert(programs.some((program) => content === expected(program)), "generated bin content differs");
   return {
     name: relative(root, path),
     mode: 0o755,
-    sha256: hash(expected),
+    sha256: hash(content),
     target,
     targetSha256: hash(readFileSync(target)),
   };
@@ -97,7 +101,8 @@ export function verifyFrameworkPackage(consumer, root, artifact, registry) {
         "bin source bytes changed",
       );
     }
-    generated.push(verifyShim(consumer, root, "next", source, dirname(source), "dist/bin/next"));
+    generated.push(verifyShim(consumer, root, "next", source, dirname(source), "dist/bin/next",
+      join(dirname(dirname(root)), "next")));
     if (manifest.bin) {
       assert.deepEqual(manifest.bin, { "commish-next": "./bin/init.mjs" });
       generated.push(
