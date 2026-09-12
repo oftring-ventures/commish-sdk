@@ -235,7 +235,7 @@ export function archiveFiles(compressed) {
   return files;
 }
 
-export function verifyPackages(files, packages, run, checkout = process.cwd()) {
+export async function verifyPackages(files, packages, run, checkout = process.cwd()) {
   let evidence = { scopes: [] },
     sdkArchive;
   const work = mkdtempSync(join(tmpdir(), "commish-public-source-"));
@@ -322,7 +322,7 @@ export function verifyPackages(files, packages, run, checkout = process.cwd()) {
   }
 }
 
-export function verify(root, expectedSha) {
+export async function verify(root, expectedSha) {
   const git = (...args) => execFileSync("git", args, { cwd: root });
   const head = git("rev-parse", "HEAD").toString().trim();
   assert(
@@ -355,7 +355,7 @@ export function verify(root, expectedSha) {
       "11.1.3",
       "pnpm must be 11.1.3",
     );
-    evidence = verifyPackages(
+    evidence = await verifyPackages(
       files,
       packages,
       (command, args, cwd) =>
@@ -378,7 +378,7 @@ export function verify(root, expectedSha) {
 
 if (import.meta.main) {
   try {
-    console.log(JSON.stringify(verify(process.cwd(), process.env.EXPECTED_SHA)));
+    console.log(JSON.stringify(await verify(process.cwd(), process.env.EXPECTED_SHA)));
   } catch {
     console.error("Public source verification failed; no acceptance receipt issued.");
     process.exitCode = 1;
