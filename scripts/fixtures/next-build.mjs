@@ -69,7 +69,7 @@ export async function GET() {
 `,
 };
 
-export async function cookieRequestProbe(createApp) {
+export async function cookieRequestProbe(createApp, probe) {
   const { default: assert } = await import("node:assert/strict");
   const { createServer } = await import("node:http");
   const next = createApp ?? (await import("next")).default;
@@ -104,6 +104,7 @@ export async function cookieRequestProbe(createApp) {
         } : {}) },
       }, "installed cookie context and metadata wrapper");
     }));
+    if (probe) await probe(new URL(url).origin);
   } finally {
     try {
       if (server?.listening) await new Promise((resolve, reject) => {
