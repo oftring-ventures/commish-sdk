@@ -19,6 +19,7 @@ import {
   frameworkDependencies,
   frameworkLocks,
   frameworkWorkspace,
+  frameworkPairWorkspace,
 } from "./next-framework-lock.mjs";
 import { nextBuildFixture, nextServerBuildFixture } from "./fixtures/next-build.mjs";
 import { metadataProbe, nextMetadataScope } from "./verify-next-browser-consumer.mjs";
@@ -177,6 +178,7 @@ export async function verifyNextBuild(sdk, next, context, execute) {
     // A cold offline store cannot reliably reconstruct optional peer metadata.
     // Install the exact projected closure instead of resolving it a second time.
     writeFileSync(join(consumer, "pnpm-lock.yaml"), locks.paired);
+    writeFileSync(join(consumer, "pnpm-workspace.yaml"), frameworkPairWorkspace);
     await install(["--offline", "--frozen-lockfile"]);
     assert.equal(
       readFileSync(join(consumer, "pnpm-lock.yaml"), "utf8"),
@@ -244,7 +246,7 @@ export async function verifyNextBuild(sdk, next, context, execute) {
     );
     assert.equal(
       readFileSync(join(consumer, "pnpm-workspace.yaml"), "utf8"),
-      frameworkWorkspace,
+      frameworkPairWorkspace,
       "framework workspace changed",
     );
     assert(
