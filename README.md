@@ -10,11 +10,13 @@ parameters without changing their other fields. Both require a Next request cont
 `createAttributionHandler` forwards capture requests to Commish, uses the request cookie
 for previous attribution, and stores successful attribution in an HttpOnly cookie.
 Its server-only `secretKey` option must never come from browser input.
-The React provider and CLI are not available at this source checkpoint.
+`CommishProvider` from `@commish/next/react` captures referrals when its configuration
+or the current route changes, and renders its children inside the application layout.
+The dry-run CLI is not available at this source checkpoint.
 The pinned Next framework dependencies support an isolated installed server-helper
 probe, production build, concurrent cookie requests and capture requests against
-an owned loopback upstream. The React provider consumer
-remains a separate scope.
+an owned loopback upstream. The provider also passes the installed type and production
+framework consumers; controlled hook tests verify its capture configuration and route dependencies.
 No npm publication, release artifact provenance or hosted acceptance is claimed.
 
 With Node 24 and pnpm 11.1.3:

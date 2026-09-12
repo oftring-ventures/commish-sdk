@@ -5,6 +5,7 @@ import { join } from "node:path";
 import test from "node:test";
 import { verifyNextBuild } from "./verify-next-build.mjs";
 import { cookieRequestProbe, nextBuildFixture, nextServerBuildFixture } from "./fixtures/next-build.mjs";
+import { providerProbe } from "./fixtures/next-provider.mjs";
 import { captureRequestProbe } from "./fixtures/next-capture.mjs";
 import { serverMarker } from "./inspect-next-build.mjs";
 
@@ -134,5 +135,18 @@ test("capture upstream closes and restores environment after app or probe failur
     }));
     assert.equal(process.env.COMMISH_CONSUMER_API_URL, original);
     await assert.rejects(() => fetch(url, { signal: AbortSignal.timeout(1_000) }));
+  }
+});
+
+test("provider wiring probe rejects a wrong export and clears controlled hook state", async () => {
+  await assert.rejects(() => providerProbe(async () => {
+    assert.equal(typeof (await import("react/jsx-runtime")).jsx, "function");
+    return { wrong: () => null };
+  }), /CommishProvider/);
+  assert(!Object.hasOwn(globalThis, Symbol.for("commish.provider.probe")));
+  try {
+    assert(!import.meta.resolve("react/jsx-runtime").startsWith("data:"), "controlled JSX hook leaked");
+  } catch (error) {
+    assert.equal(error.code, "ERR_MODULE_NOT_FOUND");
   }
 });

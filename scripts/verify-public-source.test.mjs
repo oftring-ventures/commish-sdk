@@ -45,6 +45,7 @@ function bootstrap() {
     "scripts/next-framework-lock.mjs",
     "scripts/fixtures/next-build.mjs",
   "scripts/fixtures/next-capture.mjs",
+  "scripts/fixtures/next-provider.mjs",
     "scripts/verify-sdk-types.mjs",
     "scripts/verify-sdk-types.test.mjs",
     "scripts/verify-sdk-webhooks.mjs",
@@ -250,6 +251,7 @@ test("Next server metadata may precede CLI without admitting mismatched package 
       "packages/next/src/index.ts",
       "packages/next/src/metadata.ts",
       "packages/next/src/capture.ts",
+      "packages/next/src/provider.tsx",
     ])
       put(files, name, readFileSync(new URL(`../${name}`, import.meta.url)));
     return files;
@@ -266,14 +268,18 @@ test("Next server metadata may precede CLI without admitting mismatched package 
     "./dist/browser.js",
     "./dist/index.d.ts",
     "./dist/index.js",
+    "./dist/provider.d.ts",
+    "./dist/provider.js",
   ]);
   const legacy = nextTree();
   put(legacy, "packages/next/src/index.ts", legacy.get("packages/next/src/metadata.ts").data);
   legacy.delete("packages/next/src/metadata.ts");
   legacy.delete("packages/next/src/capture.ts");
+  legacy.delete("packages/next/src/provider.tsx");
   patch(legacy, (manifest) => {
     for (const name of ["next", "react", "react-dom", "@types/react", "@types/react-dom"])
       delete manifest.devDependencies[name];
+    delete manifest.exports["./react"];
     delete manifest.peerDependencies.next;
     delete manifest.peerDependencies.react;
   });
@@ -284,12 +290,14 @@ test("Next server metadata may precede CLI without admitting mismatched package 
     "    devDependencies:\n      '@commish/sdk':\n        specifier: workspace:*\n        version: link:../sdk\n");
   put(legacy, "pnpm-lock.yaml", sdkLock.replace("  packages/sdk:\n",
     `  packages/next:\n${nextImporter}\n  packages/sdk:\n`));
-  assert.deepEqual(inspect(legacy)[1].targets, inspect(nextTree())[1].targets);
+  assert.deepEqual(inspect(legacy)[1].targets, inspect(nextTree())[1].targets.slice(0, 4));
   const browser = nextTree();
   browser.delete("packages/next/src/index.ts");
   browser.delete("packages/next/src/metadata.ts");
   browser.delete("packages/next/src/capture.ts");
+  browser.delete("packages/next/src/provider.tsx");
   patch(browser, (manifest) => {
+    delete manifest.exports["./react"];
     delete manifest.exports["."];
   });
   assert.equal(inspect(browser)[1].targets.length, 2);
@@ -301,6 +309,8 @@ test("Next server metadata may precede CLI without admitting mismatched package 
   });
   assert(inspect(withCli)[1].targets.includes("./bin/init.mjs"));
   for (const change of [
+    (files) => files.delete("packages/next/src/provider.tsx"),
+    (files) => patch(files, (manifest) => { delete manifest.exports["./react"]; }),
     (files) => files.delete("packages/next/src/index.ts"),
     (files) =>
       patch(files, (manifest) => {
