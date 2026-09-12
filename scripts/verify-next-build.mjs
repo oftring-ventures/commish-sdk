@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { verifyFrameworkPackage } from "./verify-framework-package.mjs";
+import { frameworkRegistryBinHash, verifyFrameworkPackage } from "./verify-framework-package.mjs";
 import { nextCommandScope } from "./next-command-scope.mjs";
 import { createHash } from "node:crypto";
 import {
@@ -74,7 +74,9 @@ function registrySnapshot(consumer, locks, pairRoots = []) {
         files(root)
           .map((file) => [
             relative(root, file),
-            hash(readFileSync(file)),
+            relative(root, file).startsWith("node_modules/.bin/")
+              ? frameworkRegistryBinHash(consumer, root, relative(root, file).slice(18))
+              : hash(readFileSync(file)),
             statSync(file).mode & 0o777,
           ])
           .sort(),

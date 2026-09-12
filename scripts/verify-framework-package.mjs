@@ -59,9 +59,24 @@ fi
     name: relative(root, path),
     mode: 0o755,
     sha256: hash(content),
+    canonicalSha256: hash(expected(target)),
     target,
     targetSha256: hash(readFileSync(target)),
   };
+}
+
+// Normalize only the two exact launcher spellings, never arbitrary registry bytes.
+export function frameworkRegistryBinHash(consumer, root, name) {
+  const owner = JSON.parse(readFileSync(join(root, "package.json"))).name;
+  const dependency = { next: "baseline-browser-mapping", sharp: "semver", postcss: "nanoid" }[owner];
+  assert(dependency && name === dependency, "unexpected framework registry bin");
+  const peer = join(dirname(root), dependency);
+  const source = child(consumer, peer);
+  const manifest = JSON.parse(readFileSync(join(source, "package.json")));
+  assert.equal(manifest.name, dependency, "registry bin source identity differs");
+  const target = typeof manifest.bin === "string" ? manifest.bin : manifest.bin?.[name];
+  assert(typeof target === "string", "missing registry bin declaration");
+  return verifyShim(consumer, root, name, source, dirname(source), target, peer).canonicalSha256;
 }
 
 // Registry bytes are frozen by the caller before extension and compared again after this check.
