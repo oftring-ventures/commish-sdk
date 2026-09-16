@@ -23,6 +23,7 @@ function bootstrap() {
     ".github/workflows/public-review-merge-group.yml",
     "scripts/verify-public-source.mjs",
     "scripts/verify-public-source.test.mjs",
+    "scripts/next-metadata.test.mjs",
     "scripts/verify-sdk-browser-consumer.mjs",
     "scripts/verify-sdk-browser-consumer.test.mjs",
     "scripts/verify-next-browser-consumer.mjs",
@@ -232,6 +233,83 @@ test("package shapes fail closed on missing scaffolding, orphan sources, unsafe 
     put(files, name, value);
     assert.throws(() => inspect(files));
   }
+});
+test("Next server metadata may precede CLI without admitting mismatched package states", () => {
+  const nextTree = () => {
+    const files = packageTree();
+    for (const name of [
+      "package.json",
+      "pnpm-workspace.yaml",
+      "pnpm-lock.yaml",
+      "packages/next/package.json",
+      "packages/next/LICENSE",
+      "packages/next/build.mjs",
+      "packages/next/tsconfig.build.json",
+      "packages/next/src/browser.ts",
+      "packages/next/src/index.ts",
+    ])
+      put(files, name, readFileSync(new URL(`../${name}`, import.meta.url)));
+    return files;
+  };
+  const manifestPath = "packages/next/package.json",
+    binPath = "packages/next/bin/init.mjs";
+  const patch = (files, change) => {
+    const manifest = JSON.parse(files.get(manifestPath).data);
+    change(manifest);
+    put(files, manifestPath, manifest);
+  };
+  assert.deepEqual(inspect(nextTree())[1].targets, [
+    "./dist/browser.d.ts",
+    "./dist/browser.js",
+    "./dist/index.d.ts",
+    "./dist/index.js",
+  ]);
+  const browser = nextTree();
+  browser.delete("packages/next/src/index.ts");
+  patch(browser, (manifest) => {
+    delete manifest.exports["."];
+  });
+  assert.equal(inspect(browser)[1].targets.length, 2);
+  const withCli = nextTree();
+  put(withCli, binPath, "#!/usr/bin/env node\n");
+  withCli.get(binPath).mode = "100755";
+  patch(withCli, (manifest) => {
+    manifest.bin = { "commish-next": "./bin/init.mjs" };
+  });
+  assert(inspect(withCli)[1].targets.includes("./bin/init.mjs"));
+  for (const change of [
+    (files) => files.delete("packages/next/src/index.ts"),
+    (files) =>
+      patch(files, (manifest) => {
+        delete manifest.exports["."];
+      }),
+    (files) =>
+      patch(files, (manifest) => {
+        delete manifest.exports["."].browser;
+      }),
+    (files) =>
+      patch(files, (manifest) => {
+        manifest.bin = { "commish-next": "./bin/init.mjs" };
+      }),
+    (files) => {
+      put(files, binPath, "");
+      files.get(binPath).mode = "100755";
+    },
+    (files) =>
+      patch(files, (manifest) => {
+        manifest.peerDependencies.next = ">=16";
+      }),
+    (files) => put(files, "pnpm-lock.yaml", "different"),
+  ]) {
+    const files = nextTree();
+    change(files);
+    assert.throws(() => inspect(files));
+  }
+  withCli.delete("packages/next/src/index.ts");
+  patch(withCli, (manifest) => {
+    delete manifest.exports["."];
+  });
+  assert.throws(() => inspect(withCli), /Next CLI requires its server source/);
 });
 test("archive inspection rejects traversal, duplicate paths, links and truncated bodies", () => {
   assert.equal(

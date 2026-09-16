@@ -20,6 +20,7 @@ import {
 } from "./provider-types-lock.mjs";
 
 export const nextBrowserScope = "next-browser-node-bridge";
+export const nextMetadataScope = "next-metadata-installed-node";
 export const nextProviderLayoutScope = "next-provider-types-layout";
 const pair = (name, server = false) => ({
   ...(server ? { browser: null } : {}),
@@ -58,6 +59,44 @@ async function probe() {
     "@commish/next/dist/browser.js",
   ])
     await assert.rejects(import(name), { code: "ERR_PACKAGE_PATH_NOT_EXPORTED" });
+}
+
+async function metadataProbe() {
+  const { default: assert } = await import("node:assert/strict");
+  const root = await import("@commish/next");
+  assert.deepEqual(Object.keys(root), ["applyCommishStripeMetadata"], "Next root export names");
+  const apply = root.applyCommishStripeMetadata;
+  for (const mode of ["payment", "subscription"]) {
+    const input = Object.freeze({
+      mode,
+      client_reference_id: "customer_1",
+      metadata: Object.freeze({ order: "keep" }),
+      subscription_data: Object.freeze({
+        trial_period_days: 14,
+        metadata: Object.freeze({ source: "keep" }),
+      }),
+    });
+    assert.equal(apply(input, null), input);
+    assert.deepEqual(
+      apply(input, "attribution_1"),
+      {
+        ...input,
+        metadata: { order: "keep", commish_attribution: "attribution_1" },
+        subscription_data:
+          mode === "payment"
+            ? input.subscription_data
+            : {
+                trial_period_days: 14,
+                metadata: {
+                  source: "keep",
+                  commish_attribution: "attribution_1",
+                  commish_customer_id: "customer_1",
+                },
+              },
+      },
+      "Next installed metadata behavior",
+    );
+  }
 }
 
 // Both archives and their maps have passed the caller's exact archive/target validation.
@@ -215,6 +254,11 @@ function verifyNextConsumer(provider, sdk, next, context, execute = execFileSync
     checkBytes();
     writeFileSync(join(consumer, "probe.mjs"), `await (${probe.toString()})();\n`);
     run(process.execPath, ["--conditions=browser", "probe.mjs"]);
+    const metadata = !provider && Object.hasOwn(manifests[1].exports, ".");
+    if (metadata) {
+      writeFileSync(join(consumer, "metadata.mjs"), `await (${metadataProbe.toString()})();\n`);
+      run(process.execPath, ["metadata.mjs"]);
+    }
     const typeScopes = (provider ? verifyNextProviderTypes : verifyNextBrowserTypes)(
       consumer,
       sdk.packed,
@@ -235,7 +279,11 @@ function verifyNextConsumer(provider, sdk, next, context, execute = execFileSync
         "provider types changed during probe",
       );
     checkBytes();
-    return [provider ? nextProviderLayoutScope : nextBrowserScope, ...typeScopes];
+    return [
+      provider ? nextProviderLayoutScope : nextBrowserScope,
+      ...(metadata ? [nextMetadataScope] : []),
+      ...typeScopes,
+    ];
   } finally {
     rmSync(consumer, { recursive: true, force: true });
   }

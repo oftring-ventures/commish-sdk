@@ -27,6 +27,7 @@ const automation = [
   ".github/workflows/public-review-merge-group.yml",
   "scripts/verify-public-source.mjs",
   "scripts/verify-public-source.test.mjs",
+  "scripts/next-metadata.test.mjs",
   "scripts/verify-sdk-browser-consumer.mjs",
   "scripts/verify-sdk-browser-consumer.test.mjs",
   "scripts/verify-next-browser-consumer.mjs",
@@ -191,7 +192,11 @@ export function inspect(files) {
     if (pkg === "sdk" && has("webhooks")) exports["./webhooks"] = pair("webhooks", true);
     if (pkg === "next" && react) exports["./react"] = pair("provider");
     assert.deepEqual(manifest.exports, exports, "exports do not match present source");
-    const bin = pkg === "next" && has("index") ? { "commish-next": "./bin/init.mjs" } : undefined;
+    const bin =
+      pkg === "next" && files.has(`${dir}/bin/init.mjs`)
+        ? { "commish-next": "./bin/init.mjs" }
+        : undefined;
+    if (bin) assert(has("index"), "Next CLI requires its server source");
     assert.deepEqual(manifest.bin, bin, "bin does not match present source");
     if (bin) bytes(files, `${dir}/bin/init.mjs`);
     const targets = [
