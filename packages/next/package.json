@@ -25,6 +25,10 @@
       "browser": null,
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
+    },
+    "./react": {
+      "types": "./dist/provider.d.ts",
+      "default": "./dist/provider.js"
     }
   },
   "peerDependencies": {
