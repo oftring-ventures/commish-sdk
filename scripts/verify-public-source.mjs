@@ -14,6 +14,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { gunzipSync } from "node:zlib";
 
+import { verifyNextBuild } from "./verify-next-build.mjs";
 import { verifySdkBrowserConsumer } from "./verify-sdk-browser-consumer.mjs";
 import {
   verifyNextBrowserConsumer,
@@ -42,6 +43,10 @@ const automation = [
   "scripts/verify-framework-package.mjs",
   "scripts/verify-framework-package.test.mjs",
   "scripts/fixtures/next-peer-bin.txt",
+  "scripts/verify-next-build.mjs",
+  "scripts/verify-next-build.test.mjs",
+  "scripts/next-framework-lock.mjs",
+  "scripts/fixtures/next-build.mjs",
   "scripts/verify-sdk-types.mjs",
   "scripts/verify-sdk-types.test.mjs",
   "scripts/verify-sdk-webhooks.mjs",
@@ -311,6 +316,17 @@ export async function verifyPackages(files, packages, run, checkout = process.cw
               lock: Buffer.from(bytes(files, "pnpm-lock.yaml")),
             },
           ),
+        );
+        evidence.scopes.push(
+          ...(await verifyNextBuild(
+            sdkArchive,
+            { archive, packed },
+            {
+              build: realpathSync(work),
+              checkout: realpathSync(checkout),
+              lock: Buffer.from(bytes(files, "pnpm-lock.yaml")),
+            },
+          )),
         );
       }
     }
