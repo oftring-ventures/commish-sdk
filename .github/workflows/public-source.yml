@@ -28,7 +28,7 @@ jobs:
           version: 11.1.3
           run_install: false
           dest: ${{ runner.temp }}/setup-pnpm
-      - run: node --test scripts/candidate-ci-receipt.test.mjs scripts/public-candidate.test.mjs scripts/public-package-manifest.test.mjs scripts/next-metadata.test.mjs scripts/verify-public-source.test.mjs scripts/verify-sdk-browser-consumer.test.mjs scripts/verify-sdk-types.test.mjs scripts/verify-sdk-webhooks.test.mjs scripts/verify-sdk-http.test.mjs scripts/verify-sdk-reads.test.mjs scripts/verify-next-browser-consumer.test.mjs scripts/verify-next-types.test.mjs scripts/inspect-next-build.test.mjs scripts/next-command-scope.test.mjs scripts/verify-framework-package.test.mjs scripts/verify-next-build.test.mjs
+      - run: node --test scripts/publication-preflight.test.mjs scripts/candidate-ci-receipt.test.mjs scripts/public-candidate.test.mjs scripts/public-package-manifest.test.mjs scripts/next-metadata.test.mjs scripts/verify-public-source.test.mjs scripts/verify-sdk-browser-consumer.test.mjs scripts/verify-sdk-types.test.mjs scripts/verify-sdk-webhooks.test.mjs scripts/verify-sdk-http.test.mjs scripts/verify-sdk-reads.test.mjs scripts/verify-next-browser-consumer.test.mjs scripts/verify-next-types.test.mjs scripts/inspect-next-build.test.mjs scripts/next-command-scope.test.mjs scripts/verify-framework-package.test.mjs scripts/verify-next-build.test.mjs
       - name: Prepare exact-source candidate
         run: node scripts/verify-public-source.mjs "$RUNNER_TEMP/commish-candidate"
       - name: Bind candidate to this CI run

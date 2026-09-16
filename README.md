@@ -54,3 +54,13 @@ Before accepting a handoff, verify the successful run, source and artifact ident
 against GitHub, then compare both downloaded tarballs byte-for-byte with an
 independent macOS candidate built from the same source. The receipt alone is not
 publication authority. Candidate CI has no publication credentials or write permissions.
+
+The publication preflight library reads only a candidate whose source, manifest
+and CI receipt hashes match a separately accepted handoff. It checks every archive
+and member, and preflights both exact registry versions before planning either
+upload. Identical existing versions are skipped; different bytes or unavailable
+lookups stop the pair. Plans default to npm dry-run and execute no commands.
+A real publication plan additionally requires the public `v0.1.0-beta.10` tag/workflow identity,
+separate exact-candidate approval and a hosted acceptance evidence hash. Protected
+environment configuration, GitHub run/artifact verification and execution remain
+responsibilities of the publishing workflow; a plan alone authorizes no registry write.
