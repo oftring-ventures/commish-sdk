@@ -124,7 +124,10 @@ export function inspect(files) {
     "unsupported root manifest",
   );
   const react = files.has("packages/next/src/provider.tsx");
-  const workspace = `packages:\n${packages.map((name) => `  - packages/${name}\n`).join("")}engineStrict: true\n${react ? "overrides:\n  baseline-browser-mapping: 2.11.18\n  caniuse-lite: 1.0.30001809\n" : ""}`;
+  const framework = packages.includes("next") &&
+    Object.hasOwn(json(files, "packages/next/package.json").devDependencies ?? {}, "next");
+  assert(!react || framework, "Next provider requires its framework dependencies");
+  const workspace = `packages:\n${packages.map((name) => `  - packages/${name}\n`).join("")}engineStrict: true\n${framework ? "overrides:\n  baseline-browser-mapping: 2.11.18\n  caniuse-lite: 1.0.30001809\n" : ""}`;
   assert.equal(
     bytes(files, "pnpm-workspace.yaml").toString(),
     workspace,
@@ -133,7 +136,7 @@ export function inspect(files) {
   const expectedLock =
     packages.length === 1
       ? "7e23bad69c9b8a88d53fc992196178aecdef08a6311e54752201de147b1314f2"
-      : react
+      : framework
         ? "81c9949580d3ed18cfe1c75e3616ef666f403b127a08c39e6899546b6d871f7b"
         : "0c15096dcc1644b3d0e3fd288da4ab13ddef54d9b609bc2a8547cc9d7d88bc3f";
   assert.equal(sha(bytes(files, "pnpm-lock.yaml")), expectedLock, "unsupported lockfile");
@@ -168,7 +171,7 @@ export function inspect(files) {
       dev["@commish/sdk"] = "workspace:*";
       peers["@commish/sdk"] = manifest.version;
     }
-    if (pkg === "next" && react) {
+    if (pkg === "next" && framework) {
       Object.assign(dev, {
         next: "16.3.4",
         react: "19.2.8",
