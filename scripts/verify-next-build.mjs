@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { verifyFrameworkPackage } from "./verify-framework-package.mjs";
+import { frameworkRegistryBinHash, verifyFrameworkPackage } from "./verify-framework-package.mjs";
 import { nextCommandScope } from "./next-command-scope.mjs";
 import { createHash } from "node:crypto";
 import {
@@ -19,8 +19,10 @@ import {
   frameworkDependencies,
   frameworkLocks,
   frameworkWorkspace,
+  frameworkPairWorkspace,
 } from "./next-framework-lock.mjs";
-import { nextBuildFixture } from "./fixtures/next-build.mjs";
+import { nextBuildFixture, nextServerBuildFixture } from "./fixtures/next-build.mjs";
+import { metadataProbe, nextMetadataScope } from "./verify-next-browser-consumer.mjs";
 import {
   inspectNextBuild,
   nextBuildChild as child,
@@ -28,6 +30,7 @@ import {
 } from "./inspect-next-build.mjs";
 
 export const nextBuildScope = "next-production-build-external";
+export const nextServerBuildScope = "next-server-production-build-external";
 const hash = (data) => createHash("sha256").update(data).digest("hex");
 function registrySnapshot(consumer, locks, pairRoots = []) {
   const store = child(consumer, join(consumer, "node_modules/.pnpm"));
@@ -71,7 +74,9 @@ function registrySnapshot(consumer, locks, pairRoots = []) {
         files(root)
           .map((file) => [
             relative(root, file),
-            hash(readFileSync(file)),
+            relative(root, file).startsWith("node_modules/.bin/")
+              ? frameworkRegistryBinHash(consumer, root, relative(root, file).slice(18))
+              : hash(readFileSync(file)),
             statSync(file).mode & 0o777,
           ])
           .sort(),
@@ -86,11 +91,23 @@ function registrySnapshot(consumer, locks, pairRoots = []) {
 // The ordinary gate has already validated the complete pair and every promised target.
 export async function verifyNextBuild(sdk, next, context, execute) {
   const manifest = JSON.parse(next.packed.get("package/package.json").data);
-  if (!Object.hasOwn(manifest.exports, "./react")) return [];
-  assert.deepEqual(manifest.exports["./react"], {
+  const provider = Object.hasOwn(manifest.exports, "./react");
+  const server = Object.hasOwn(manifest.exports, ".") &&
+    Object.hasOwn(manifest.peerDependencies ?? {}, "next");
+  if (!provider && !server) return [];
+  if (provider) assert.deepEqual(manifest.exports["./react"], {
     types: "./dist/provider.d.ts",
     default: "./dist/provider.js",
   });
+  if (server) {
+    assert.deepEqual(manifest.exports["."], {
+      browser: null, types: "./dist/index.d.ts", default: "./dist/index.js",
+    }, "unsupported server root");
+    assert.deepEqual(manifest.peerDependencies, {
+      "@commish/sdk": "0.1.0-beta.9", next: ">=16.2.12 <17", react: ">=19.2.8 <20",
+    }, "unsupported server peers");
+  }
+  const fixture = provider ? nextBuildFixture : nextServerBuildFixture;
   const sdkRoot = JSON.parse(sdk.packed.get("package/package.json").data).exports["."];
   if (sdkRoot?.default !== "./dist/index.js") return [];
   const sources = [context.build, context.checkout].map((path) => realpathSync(path));
@@ -160,7 +177,11 @@ export async function verifyNextBuild(sdk, next, context, execute) {
       "@commish/sdk": "file:./sdk.tgz",
       "@commish/next": "file:./next.tgz",
     });
-    await install(["--offline", "--no-frozen-lockfile"]);
+    // A cold offline store cannot reliably reconstruct optional peer metadata.
+    // Install the exact projected closure instead of resolving it a second time.
+    writeFileSync(join(consumer, "pnpm-lock.yaml"), locks.paired);
+    writeFileSync(join(consumer, "pnpm-workspace.yaml"), frameworkPairWorkspace);
+    await install(["--offline", "--frozen-lockfile"]);
     assert.equal(
       readFileSync(join(consumer, "pnpm-lock.yaml"), "utf8"),
       locks.paired,
@@ -184,6 +205,11 @@ export async function verifyNextBuild(sdk, next, context, execute) {
       );
     };
     verifyBytes();
+    if (server) {
+      writeFileSync(join(consumer, "metadata.mjs"), `await (${metadataProbe.toString()})();\n`);
+      await run(process.execPath, ["metadata.mjs"]);
+      verifyBytes();
+    }
     const require = createRequire(join(consumer, "package.json"));
     for (const [name, version] of Object.entries(frameworkDependencies)) {
       const root = child(consumer, dirname(require.resolve(`${name}/package.json`)));
@@ -200,7 +226,7 @@ export async function verifyNextBuild(sdk, next, context, execute) {
         realpathSync(require.resolve(name)),
         "framework peer identity differs",
       );
-    for (const [name, data] of Object.entries(nextBuildFixture)) {
+    for (const [name, data] of Object.entries(fixture)) {
       mkdirSync(dirname(join(consumer, name)), { recursive: true });
       writeFileSync(join(consumer, name), data);
     }
@@ -212,7 +238,7 @@ export async function verifyNextBuild(sdk, next, context, execute) {
     );
     await run(process.execPath, [executable, "build", "--webpack"], 600_000);
     inspectNextBuild(consumer);
-    for (const [name, data] of Object.entries(nextBuildFixture))
+    for (const [name, data] of Object.entries(fixture))
       assert.equal(readFileSync(join(consumer, name), "utf8"), data, "Next build fixture changed");
     verifyBytes();
     assert.equal(
@@ -222,14 +248,14 @@ export async function verifyNextBuild(sdk, next, context, execute) {
     );
     assert.equal(
       readFileSync(join(consumer, "pnpm-workspace.yaml"), "utf8"),
-      frameworkWorkspace,
+      frameworkPairWorkspace,
       "framework workspace changed",
     );
     assert(
       readFileSync(join(sources[0], "pnpm-lock.yaml")).equals(context.lock),
       "framework source lock changed",
     );
-    return [nextBuildScope];
+    return [provider ? nextBuildScope : nextServerBuildScope, ...(server ? [nextMetadataScope] : [])];
   } catch (error) {
     failure = error;
     throw error;

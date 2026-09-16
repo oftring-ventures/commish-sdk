@@ -4,13 +4,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { verifyNextBuild } from "./verify-next-build.mjs";
-import { nextBuildFixture } from "./fixtures/next-build.mjs";
+import { nextBuildFixture, nextServerBuildFixture } from "./fixtures/next-build.mjs";
 import { serverMarker } from "./inspect-next-build.mjs";
 
-test("absent provider is not a build scope and unsupported input fails before commands", async () => {
-  const packed = (exports) => ({
+test("only declared framework capabilities select a build and invalid inputs fail before commands", async () => {
+  const packed = (exports, peerDependencies) => ({
     archive: Buffer.from("test-only"),
-    packed: new Map([["package/package.json", { data: Buffer.from(JSON.stringify({ exports })) }]]),
+    packed: new Map([["package/package.json", { data: Buffer.from(JSON.stringify({ exports, peerDependencies })) }]]),
   });
   let calls = 0;
   const execute = () => {
@@ -33,6 +33,14 @@ test("absent provider is not a build scope and unsupported input fails before co
   const sdk = packed({
     ".": { browser: null, types: "./dist/index.d.ts", default: "./dist/index.js" },
   });
+  const rootExport = { browser: null, types: "./dist/index.d.ts", default: "./dist/index.js" };
+  const peers = { "@commish/sdk": "0.1.0-beta.9", next: ">=16.2.12 <17", react: ">=19.2.8 <20" };
+  assert.deepEqual(await verifyNextBuild(sdk, packed({ ".": rootExport }), null, execute), []);
+  for (const invalid of [
+    packed({ ".": { ...rootExport, browser: "./dist/index.js" } }, peers),
+    packed({ ".": rootExport }, { ...peers, next: ">=16" }),
+    packed({ ".": rootExport }, { next: peers.next }),
+  ]) await assert.rejects(() => verifyNextBuild(sdk, invalid, null, execute), /unsupported server/);
   const root = mkdtempSync(join(tmpdir(), "commish-next-selection-test-"));
   try {
     writeFileSync(join(root, "pnpm-lock.yaml"), "unapproved source lock");
@@ -59,6 +67,9 @@ test("absent provider is not a build scope and unsupported input fails before co
         ),
       /framework source lock changed/,
     );
+    await assert.rejects(() => verifyNextBuild(sdk, packed({ ".": rootExport }, peers),
+      { build: root, checkout: root, lock: Buffer.from("unapproved source lock") }, execute),
+    /unsupported framework source lock/);
   } finally {
     rmSync(root, { recursive: true, force: true });
     assert(!existsSync(root));
@@ -72,6 +83,9 @@ test("absent provider is not a build scope and unsupported input fails before co
   );
   assert(!nextBuildFixture["app/layout.tsx"].includes('"use client"'));
   assert(nextBuildFixture["app/layout.tsx"].includes("@commish/next/react"));
+  assert(!nextServerBuildFixture["app/layout.tsx"].includes("@commish/next/react"));
+  assert(nextServerBuildFixture["app/api/artifact/route.ts"].includes("@commish/next'"));
+  assert(nextServerBuildFixture["app/api/artifact/route.ts"].includes(serverMarker));
   const options = JSON.parse(nextBuildFixture["tsconfig.json"]).compilerOptions;
   assert.equal(options.skipLibCheck, true);
   assert.equal(options.strict, true);

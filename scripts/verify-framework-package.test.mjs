@@ -6,6 +6,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  realpathSync,
   rmSync,
   symlinkSync,
   writeFileSync,
@@ -13,13 +14,13 @@ import {
 import { tmpdir } from "node:os";
 import { dirname, join, relative } from "node:path";
 import test from "node:test";
-import { verifyFrameworkPackage } from "./verify-framework-package.mjs";
+import { frameworkRegistryBinHash, verifyFrameworkPackage } from "./verify-framework-package.mjs";
 
 const hash = (data) => createHash("sha256").update(data).digest("hex");
 // Fixed pinned-pnpm output, reconstructed independently from the retained actual shim hash.
 const template = readFileSync(new URL("./fixtures/next-peer-bin.txt", import.meta.url), "utf8");
 function fixture(sdk, cli, run) {
-  const consumer = mkdtempSync(join(tmpdir(), "commish-peer-bin-"));
+  const consumer = realpathSync(mkdtempSync(join(tmpdir(), "commish-peer-bin-")));
   const store = join(consumer, "node_modules/.pnpm");
   const modules = join(store, "local-pair/node_modules");
   const root = join(modules, "@commish", sdk ? "sdk" : "next");
@@ -160,5 +161,53 @@ test("bin tampering, extra members, links and changed source or payload cannot b
   fixture(true, false, (f) => {
     f.write(join(f.root, "node_modules/.bin/next"), "unexpected");
     assert.throws(f.verify, /member inventory differs/);
+  });
+});
+
+test("frozen peer-link shim resolves to the same verified executable", () => {
+  fixture(false, false, (f) => {
+    const target = join(f.next, "dist/bin/next");
+    const peer = join(dirname(dirname(f.root)), "next");
+    const program = join(peer, "dist/bin/next");
+    const content = readFileSync(f.bins[0], "utf8")
+      .replaceAll(relative(dirname(f.bins[0]), target), relative(dirname(f.bins[0]), program))
+      .replace(`# cmd-shim-target=${target}`, `# cmd-shim-target=${program}`);
+    f.write(f.bins[0], content);
+    assert.equal(f.verify()[0].target, target);
+    f.write(f.bins[0], content.replace("exec node", "echo changed; exec node"));
+    assert.throws(f.verify, /generated bin content differs/);
+    f.write(f.bins[0], content);
+    rmSync(peer);
+    symlinkSync(f.root, peer);
+    assert.throws(f.verify);
+  });
+});
+
+test("registry launcher normalization preserves code and executable identity checks", () => {
+  fixture(false, false, (f) => {
+    const name = "baseline-browser-mapping";
+    const source = join(f.consumer, "node_modules/.pnpm/baseline/node_modules", name);
+    const peer = join(dirname(f.next), name);
+    f.write(join(source, "package.json"), JSON.stringify({ name, bin: { [name]: "cli.js" } }));
+    f.write(join(source, "cli.js"), "#!/usr/bin/env node\n", 0o755);
+    symlinkSync(source, peer);
+    const bin = join(f.next, "node_modules/.bin", name);
+    const paths = [join(source, "node_modules"), dirname(source),
+      join(f.consumer, "node_modules/.pnpm/node_modules")].join(":");
+    let canonical;
+    for (const target of [join(source, "cli.js"), join(peer, "cli.js")]) {
+      f.write(bin, template.replaceAll("@@NODE_PATH@@", paths)
+        .replaceAll("@@RELATIVE_TARGET@@", relative(dirname(bin), target))
+        .replaceAll("@@TARGET@@", target), 0o755);
+      const actual = frameworkRegistryBinHash(f.consumer, f.next, name);
+      canonical ??= actual;
+      assert.equal(actual, canonical);
+    }
+    f.write(bin, readFileSync(bin, "utf8") + "echo tampered\n");
+    assert.throws(() => frameworkRegistryBinHash(f.consumer, f.next, name), /bin content differs/);
+    assert.throws(() => frameworkRegistryBinHash(f.consumer, f.next, "unknown"), /unexpected/);
+    rmSync(peer);
+    symlinkSync(f.root, peer);
+    assert.throws(() => frameworkRegistryBinHash(f.consumer, f.next, name), /source identity differs/);
   });
 });

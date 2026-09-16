@@ -61,7 +61,7 @@ async function probe() {
     await assert.rejects(import(name), { code: "ERR_PACKAGE_PATH_NOT_EXPORTED" });
 }
 
-async function metadataProbe() {
+export async function metadataProbe() {
   const { default: assert } = await import("node:assert/strict");
   const root = await import("@commish/next");
   assert.deepEqual(Object.keys(root), ["applyCommishStripeMetadata"], "Next root export names");
@@ -257,7 +257,8 @@ function verifyNextConsumer(provider, sdk, next, context, execute = execFileSync
     checkBytes();
     writeFileSync(join(consumer, "probe.mjs"), `await (${probe.toString()})();\n`);
     run(process.execPath, ["--conditions=browser", "probe.mjs"]);
-    const metadata = !provider && Object.hasOwn(manifests[1].exports, ".");
+    const metadata = !provider && Object.hasOwn(manifests[1].exports, ".") &&
+      !Object.hasOwn(manifests[1].peerDependencies, "next");
     if (metadata) {
       writeFileSync(join(consumer, "metadata.mjs"), `await (${metadataProbe.toString()})();\n`);
       run(process.execPath, ["metadata.mjs"]);
