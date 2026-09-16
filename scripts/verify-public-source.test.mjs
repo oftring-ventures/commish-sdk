@@ -46,6 +46,7 @@ function bootstrap() {
     "scripts/fixtures/next-build.mjs",
   "scripts/fixtures/next-capture.mjs",
   "scripts/fixtures/next-provider.mjs",
+  "scripts/fixtures/next-cli.mjs",
     "scripts/verify-sdk-types.mjs",
     "scripts/verify-sdk-types.test.mjs",
     "scripts/verify-sdk-webhooks.mjs",
@@ -254,6 +255,10 @@ test("Next server metadata may precede CLI without admitting mismatched package 
       "packages/next/src/provider.tsx",
     ])
       put(files, name, readFileSync(new URL(`../${name}`, import.meta.url)));
+    // Preserve the pre-CLI stage independently of the current source manifest.
+    const manifest = JSON.parse(files.get("packages/next/package.json").data);
+    delete manifest.bin;
+    put(files, "packages/next/package.json", manifest);
     return files;
   };
   const manifestPath = "packages/next/package.json",
@@ -302,12 +307,15 @@ test("Next server metadata may precede CLI without admitting mismatched package 
   });
   assert.equal(inspect(browser)[1].targets.length, 2);
   const withCli = nextTree();
-  put(withCli, binPath, "#!/usr/bin/env node\n");
+  put(withCli, binPath, readFileSync(new URL(`../${binPath}`, import.meta.url)));
   withCli.get(binPath).mode = "100755";
   patch(withCli, (manifest) => {
     manifest.bin = { "commish-next": "./bin/init.mjs" };
   });
   assert(inspect(withCli)[1].targets.includes("./bin/init.mjs"));
+  withCli.get(binPath).mode = "100644";
+  assert.throws(() => inspect(withCli), /invalid source mode/);
+  withCli.get(binPath).mode = "100755";
   for (const change of [
     (files) => files.delete("packages/next/src/provider.tsx"),
     (files) => patch(files, (manifest) => { delete manifest.exports["./react"]; }),

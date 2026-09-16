@@ -2,12 +2,26 @@ import assert from "node:assert/strict";
 import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import test from "node:test";
 import { verifyNextBuild } from "./verify-next-build.mjs";
 import { cookieRequestProbe, nextBuildFixture, nextServerBuildFixture } from "./fixtures/next-build.mjs";
 import { providerProbe } from "./fixtures/next-provider.mjs";
 import { captureRequestProbe } from "./fixtures/next-capture.mjs";
+import { cliProbe } from "./fixtures/next-cli.mjs";
 import { serverMarker } from "./inspect-next-build.mjs";
+
+test("initializer reports both App Router locations without writes and the probe rejects mutation", async () => {
+  await cliProbe(fileURLToPath(new URL("../packages/next/bin/init.mjs", import.meta.url)));
+  let fixture;
+  await assert.rejects(() => cliProbe(null, (cwd) => {
+    fixture = cwd;
+    writeFileSync(join(cwd, "keep.txt"), "changed");
+    return { status: 1, signal: null, stdout: "", stderr: "" };
+  }), /initializer changed consumer files/);
+  assert(!existsSync(fixture));
+  await assert.rejects(() => cliProbe(null, () => ({ status: 0, signal: null, stdout: "", stderr: "" })));
+});
 
 test("only declared framework capabilities select a build and invalid inputs fail before commands", async () => {
   const packed = (exports, peerDependencies) => ({
