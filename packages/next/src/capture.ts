@@ -1,6 +1,4 @@
-import { createHash } from "node:crypto";
 import { cookies } from "next/headers.js";
-import { NextResponse } from "next/server.js";
 
 export const COMMISH_COOKIE = "commish_attribution";
 
@@ -9,6 +7,10 @@ export function createAttributionHandler(options: {
   secretKey?: string;
 }): (request: Request) => Promise<Response> {
   return async function POST(request: Request) {
+    // Loaded per request so the root module stays importable wherever the
+    // cookie helpers are: only the handler needs the server response builder
+    // and the Node hash implementation.
+    const { NextResponse } = await import("next/server.js");
     const body = await request.text();
     const captureId = request.headers.get("x-commish-capture-id");
     if (!captureId || !/^[a-f\d]{32}$/.test(captureId))
@@ -49,26 +51,43 @@ export function createAttributionHandler(options: {
     } catch {
       // Preserve malformed input for the API contract to reject consistently.
     }
+    const { createHash } = await import("node:crypto");
     const idempotencyKey = `attribution:${createHash("sha256")
       .update(`${captureId}.${idempotencyBody}`)
       .digest("hex")}`;
-    const response = await fetch(`${apiUrl}/attributions/capture`, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        "idempotency-key": idempotencyKey,
-        "x-commish-publishable-key":
-          request.headers.get("x-commish-publishable-key") ?? "",
-        ...(options.secretKey
-          ? { authorization: `Bearer ${options.secretKey}` }
-          : {}),
-        ...(clientIp ? { "x-commish-client-ip": clientIp } : {}),
-        ...(userAgent ? { "user-agent": userAgent } : {}),
-        ...(country ? { "x-vercel-ip-country": country } : {}),
-      },
-      body: forwardedBody,
-    });
-    const responseText = await response.text();
+    let response: Response;
+    let responseText: string;
+    try {
+      response = await fetch(`${apiUrl}/attributions/capture`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "idempotency-key": idempotencyKey,
+          "x-commish-publishable-key":
+            request.headers.get("x-commish-publishable-key") ?? "",
+          ...(options.secretKey
+            ? { authorization: `Bearer ${options.secretKey}` }
+            : {}),
+          ...(clientIp ? { "x-commish-client-ip": clientIp } : {}),
+          ...(userAgent ? { "user-agent": userAgent } : {}),
+          ...(country ? { "x-vercel-ip-country": country } : {}),
+        },
+        body: forwardedBody,
+      });
+      responseText = await response.text();
+    } catch {
+      // An unreachable or truncated upstream is a transport failure, not an
+      // attribution outcome: answer the caller instead of rejecting the route.
+      return NextResponse.json(
+        {
+          error: {
+            code: "attribution_capture_unavailable",
+            message: "Attribution capture is temporarily unavailable.",
+          },
+        },
+        { status: 502 },
+      );
+    }
     let payload: unknown;
     try {
       payload = responseText ? JSON.parse(responseText) : undefined;
