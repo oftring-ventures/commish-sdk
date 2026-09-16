@@ -22,6 +22,7 @@ import {
   frameworkPairWorkspace,
 } from "./next-framework-lock.mjs";
 import { nextBuildFixture, nextCookieBuildFixture, nextServerBuildFixture } from "./fixtures/next-build.mjs";
+import { nextCaptureBuildFixture } from "./fixtures/next-capture.mjs";
 import { metadataProbe, nextMetadataScope } from "./verify-next-browser-consumer.mjs";
 import {
   inspectNextBuild,
@@ -31,6 +32,7 @@ import {
 
 export const nextBuildScope = "next-production-build-external";
 export const nextServerBuildScope = "next-server-production-build-external";
+export const nextCaptureScope = "next-attribution-capture-request-external";
 export const nextCookieScope = "next-cookie-request-context-external";
 const hash = (data) => createHash("sha256").update(data).digest("hex");
 function registrySnapshot(consumer, locks, pairRoots = []) {
@@ -110,8 +112,10 @@ export async function verifyNextBuild(sdk, next, context, execute) {
   }
   const cookieHelpers = next.packed.has("package/dist/metadata.js");
   assert(!cookieHelpers || server, "cookie helpers require the framework server root");
+  const capture = next.packed.has("package/dist/capture.js");
+  assert(!capture || cookieHelpers, "capture requires cookie helpers");
   const fixture = { ...(provider ? nextBuildFixture : nextServerBuildFixture),
-    ...(cookieHelpers ? nextCookieBuildFixture : {}) };
+    ...(cookieHelpers ? nextCookieBuildFixture : {}), ...(capture ? nextCaptureBuildFixture : {}) };
   const sdkRoot = JSON.parse(sdk.packed.get("package/package.json").data).exports["."];
   if (sdkRoot?.default !== "./dist/index.js") return [];
   const sources = [context.build, context.checkout].map((path) => realpathSync(path));
@@ -131,7 +135,7 @@ export async function verifyNextBuild(sdk, next, context, execute) {
           isAbsolute(part) || part === ".." || part.startsWith(`..${sep}`),
           "framework consumer overlaps source",
         );
-    const env = { ...process.env, NEXT_TELEMETRY_DISABLED: "1", NODE_DISABLE_COMPILE_CACHE: "1" };
+    const env = { ...process.env, NEXT_TELEMETRY_DISABLED: "1", NODE_DISABLE_COMPILE_CACHE: "1", NODE_ENV: "production" };
     for (const name of ["NODE_OPTIONS", "NODE_PATH", "NODE_COMPILE_CACHE"]) delete env[name];
     const run = (command, args, timeout = 120_000) =>
       execute(command, args, {
@@ -210,7 +214,7 @@ export async function verifyNextBuild(sdk, next, context, execute) {
     };
     verifyBytes();
     if (server) {
-      writeFileSync(join(consumer, "metadata.mjs"), `await (${metadataProbe.toString()})(${cookieHelpers});\n`);
+      writeFileSync(join(consumer, "metadata.mjs"), `await (${metadataProbe.toString()})(${cookieHelpers}, ${capture});\n`);
       await run(process.execPath, ["metadata.mjs"]);
       verifyBytes();
     }
@@ -264,7 +268,7 @@ export async function verifyNextBuild(sdk, next, context, execute) {
       "framework source lock changed",
     );
     return [provider ? nextBuildScope : nextServerBuildScope, ...(server ? [nextMetadataScope] : []),
-      ...(cookieHelpers ? [nextCookieScope] : [])];
+      ...(cookieHelpers ? [nextCookieScope] : []), ...(capture ? [nextCaptureScope] : [])];
   } catch (error) {
     failure = error;
     throw error;

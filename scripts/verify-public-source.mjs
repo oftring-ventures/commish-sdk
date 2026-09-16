@@ -48,6 +48,7 @@ const automation = [
   "scripts/verify-next-build.test.mjs",
   "scripts/next-framework-lock.mjs",
   "scripts/fixtures/next-build.mjs",
+  "scripts/fixtures/next-capture.mjs",
   "scripts/verify-sdk-types.mjs",
   "scripts/verify-sdk-types.test.mjs",
   "scripts/verify-sdk-webhooks.mjs",
@@ -69,7 +70,7 @@ const roots = [...Object.keys(bootstrap), "package.json", "pnpm-workspace.yaml",
 const common = ["package.json", "LICENSE", "README.md", "build.mjs", "tsconfig.build.json"];
 const sources = {
   sdk: ["browser", "types", "webhooks", "index", "reads"],
-  next: ["browser", "provider", "index", "metadata"],
+  next: ["browser", "provider", "index", "metadata", "capture"],
 };
 const sha = (data) => createHash("sha256").update(data).digest("hex");
 const bytes = (files, name) => {
@@ -204,6 +205,8 @@ export function inspect(files) {
     if (bin) bytes(files, `${dir}/bin/init.mjs`);
     if (pkg === "next" && has("metadata"))
       assert(has("index") && framework, "Next metadata module requires its framework server root");
+    if (pkg === "next" && has("capture"))
+      assert(has("metadata") && has("index") && framework, "Next capture requires its cookie helpers");
     const targets = [
       ...Object.values(exports).flatMap(Object.values),
       ...Object.values(bin ?? {}),

@@ -1,10 +1,12 @@
 import { cookies } from "next/headers.js";
+import { COMMISH_COOKIE } from "./capture.js";
+export { COMMISH_COOKIE, createAttributionHandler } from "./capture.js";
 import { applyCommishStripeMetadata, type StripeCheckoutParams } from "./metadata.js";
 
 export { applyCommishStripeMetadata };
 
 export async function getCommishAttribution(): Promise<string | null> {
-  return (await cookies()).get("commish_attribution")?.value ?? null;
+  return (await cookies()).get(COMMISH_COOKIE)?.value ?? null;
 }
 
 export async function withCommishStripeMetadata<T extends StripeCheckoutParams>(

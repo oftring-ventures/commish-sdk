@@ -5,6 +5,7 @@ import { join } from "node:path";
 import test from "node:test";
 import { verifyNextBuild } from "./verify-next-build.mjs";
 import { cookieRequestProbe, nextBuildFixture, nextServerBuildFixture } from "./fixtures/next-build.mjs";
+import { captureRequestProbe } from "./fixtures/next-capture.mjs";
 import { serverMarker } from "./inspect-next-build.mjs";
 
 test("only declared framework capabilities select a build and invalid inputs fail before commands", async () => {
@@ -119,5 +120,19 @@ test("cookie request probe rejects wrong behavior and closes its loopback server
     else await cookieRequestProbe(createApp);
     assert(closed && port, "request probe must execute and close its app");
     await assert.rejects(() => fetch(`http://127.0.0.1:${port}`, { signal: AbortSignal.timeout(1_000) }));
+  }
+});
+
+test("capture upstream closes and restores environment after app or probe failure", async () => {
+  const original = process.env.COMMISH_CONSUMER_API_URL;
+  for (const failure of ["startup", "request"]) {
+    let url;
+    await assert.rejects(() => captureRequestProbe(async (probe) => {
+      url = process.env.COMMISH_CONSUMER_API_URL;
+      if (failure === "startup") throw new Error("controlled startup failure");
+      await probe(new URL(url).origin);
+    }));
+    assert.equal(process.env.COMMISH_CONSUMER_API_URL, original);
+    await assert.rejects(() => fetch(url, { signal: AbortSignal.timeout(1_000) }));
   }
 });

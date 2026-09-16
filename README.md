@@ -7,9 +7,13 @@ Checkout fields and adds attribution to payment or subscription metadata; it doe
 not create a Checkout session. `getCommishAttribution` reads the current request's
 `commish_attribution` cookie, and `withCommishStripeMetadata` applies it to Checkout
 parameters without changing their other fields. Both require a Next request context.
-Next capture routes, React provider and CLI are not available at this source checkpoint.
+`createAttributionHandler` forwards capture requests to Commish, uses the request cookie
+for previous attribution, and stores successful attribution in an HttpOnly cookie.
+Its server-only `secretKey` option must never come from browser input.
+The React provider and CLI are not available at this source checkpoint.
 The pinned Next framework dependencies support an isolated installed server-helper
-probe, production build and concurrent cookie requests. The React provider consumer
+probe, production build, concurrent cookie requests and capture requests against
+an owned loopback upstream. The React provider consumer
 remains a separate scope.
 No npm publication, release artifact provenance or hosted acceptance is claimed.
 
