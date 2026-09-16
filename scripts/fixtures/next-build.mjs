@@ -68,3 +68,67 @@ export async function GET() {
 }
 `,
 };
+
+export async function cookieRequestProbe(createApp) {
+  const { default: assert } = await import("node:assert/strict");
+  const { createServer } = await import("node:http");
+  const next = createApp ?? (await import("next")).default;
+  const app = next({ dev: false, dir: process.cwd(), hostname: "127.0.0.1" });
+  let server;
+  try {
+    await app.prepare();
+    const handle = app.getRequestHandler();
+    server = createServer((request, response) => {
+      Promise.resolve(handle(request, response)).catch(() => {
+        response.statusCode = 500;
+        response.end("Controlled consumer failure");
+      });
+    });
+    await new Promise((resolve, reject) => {
+      server.once("error", reject);
+      server.listen(0, "127.0.0.1", resolve);
+    });
+    const url = `http://127.0.0.1:${server.address().port}/api/cookies`;
+    await Promise.all([null, "atr_consumer_first", "atr_consumer_second", null].map(async (value) => {
+      const response = await fetch(url, {
+        headers: value === null ? {} : { cookie: `commish_attribution=${value}` },
+        signal: AbortSignal.timeout(10_000),
+      });
+      assert.equal(response.status, 200);
+      assert.deepEqual(await response.json(), {
+        attribution: value,
+        unchanged: value === null,
+        metadata: { keep: "checkout", ...(value ? { commish_attribution: value } : {}) },
+        subscription: { keep: "subscription", ...(value ? {
+          commish_attribution: value, commish_customer_id: "consumer_123",
+        } : {}) },
+      }, "installed cookie context and metadata wrapper");
+    }));
+  } finally {
+    try {
+      if (server?.listening) await new Promise((resolve, reject) => {
+        server.close((error) => error ? reject(error) : resolve());
+        server.closeAllConnections();
+      });
+    } finally {
+      await app.close();
+    }
+    assert(!server?.listening, "owned consumer server remained listening");
+  }
+}
+
+export const nextCookieBuildFixture = {
+  "app/api/cookies/route.ts": `import { getCommishAttribution, withCommishStripeMetadata } from '@commish/next';
+export const dynamic = 'force-dynamic';
+export async function GET() {
+  const attribution = await getCommishAttribution();
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  const input = { mode: 'subscription', client_reference_id: 'consumer_123',
+    metadata: { keep: 'checkout' }, subscription_data: { metadata: { keep: 'subscription' } } };
+  const result = await withCommishStripeMetadata(input);
+  return Response.json({ attribution, unchanged: result === input,
+    metadata: result.metadata, subscription: result.subscription_data.metadata });
+}
+`,
+  "cookie-probe.mjs": `await (${cookieRequestProbe.toString()})();\n`,
+};

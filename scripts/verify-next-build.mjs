@@ -21,7 +21,7 @@ import {
   frameworkWorkspace,
   frameworkPairWorkspace,
 } from "./next-framework-lock.mjs";
-import { nextBuildFixture, nextServerBuildFixture } from "./fixtures/next-build.mjs";
+import { nextBuildFixture, nextCookieBuildFixture, nextServerBuildFixture } from "./fixtures/next-build.mjs";
 import { metadataProbe, nextMetadataScope } from "./verify-next-browser-consumer.mjs";
 import {
   inspectNextBuild,
@@ -31,6 +31,7 @@ import {
 
 export const nextBuildScope = "next-production-build-external";
 export const nextServerBuildScope = "next-server-production-build-external";
+export const nextCookieScope = "next-cookie-request-context-external";
 const hash = (data) => createHash("sha256").update(data).digest("hex");
 function registrySnapshot(consumer, locks, pairRoots = []) {
   const store = child(consumer, join(consumer, "node_modules/.pnpm"));
@@ -107,7 +108,10 @@ export async function verifyNextBuild(sdk, next, context, execute) {
       "@commish/sdk": "0.1.0-beta.9", next: ">=16.2.12 <17", react: ">=19.2.8 <20",
     }, "unsupported server peers");
   }
-  const fixture = provider ? nextBuildFixture : nextServerBuildFixture;
+  const cookieHelpers = next.packed.has("package/dist/metadata.js");
+  assert(!cookieHelpers || server, "cookie helpers require the framework server root");
+  const fixture = { ...(provider ? nextBuildFixture : nextServerBuildFixture),
+    ...(cookieHelpers ? nextCookieBuildFixture : {}) };
   const sdkRoot = JSON.parse(sdk.packed.get("package/package.json").data).exports["."];
   if (sdkRoot?.default !== "./dist/index.js") return [];
   const sources = [context.build, context.checkout].map((path) => realpathSync(path));
@@ -206,7 +210,7 @@ export async function verifyNextBuild(sdk, next, context, execute) {
     };
     verifyBytes();
     if (server) {
-      writeFileSync(join(consumer, "metadata.mjs"), `await (${metadataProbe.toString()})();\n`);
+      writeFileSync(join(consumer, "metadata.mjs"), `await (${metadataProbe.toString()})(${cookieHelpers});\n`);
       await run(process.execPath, ["metadata.mjs"]);
       verifyBytes();
     }
@@ -238,6 +242,10 @@ export async function verifyNextBuild(sdk, next, context, execute) {
     );
     await run(process.execPath, [executable, "build", "--webpack"], 600_000);
     inspectNextBuild(consumer);
+    if (cookieHelpers) {
+      await run(process.execPath, ["cookie-probe.mjs"]);
+      inspectNextBuild(consumer);
+    }
     for (const [name, data] of Object.entries(fixture))
       assert.equal(readFileSync(join(consumer, name), "utf8"), data, "Next build fixture changed");
     verifyBytes();
@@ -255,7 +263,8 @@ export async function verifyNextBuild(sdk, next, context, execute) {
       readFileSync(join(sources[0], "pnpm-lock.yaml")).equals(context.lock),
       "framework source lock changed",
     );
-    return [provider ? nextBuildScope : nextServerBuildScope, ...(server ? [nextMetadataScope] : [])];
+    return [provider ? nextBuildScope : nextServerBuildScope, ...(server ? [nextMetadataScope] : []),
+      ...(cookieHelpers ? [nextCookieScope] : [])];
   } catch (error) {
     failure = error;
     throw error;

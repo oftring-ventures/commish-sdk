@@ -247,6 +247,7 @@ test("Next server metadata may precede CLI without admitting mismatched package 
       "packages/next/tsconfig.build.json",
       "packages/next/src/browser.ts",
       "packages/next/src/index.ts",
+      "packages/next/src/metadata.ts",
     ])
       put(files, name, readFileSync(new URL(`../${name}`, import.meta.url)));
     return files;
@@ -265,6 +266,8 @@ test("Next server metadata may precede CLI without admitting mismatched package 
     "./dist/index.js",
   ]);
   const legacy = nextTree();
+  put(legacy, "packages/next/src/index.ts", legacy.get("packages/next/src/metadata.ts").data);
+  legacy.delete("packages/next/src/metadata.ts");
   patch(legacy, (manifest) => {
     for (const name of ["next", "react", "react-dom", "@types/react", "@types/react-dom"])
       delete manifest.devDependencies[name];
@@ -281,6 +284,7 @@ test("Next server metadata may precede CLI without admitting mismatched package 
   assert.deepEqual(inspect(legacy)[1].targets, inspect(nextTree())[1].targets);
   const browser = nextTree();
   browser.delete("packages/next/src/index.ts");
+  browser.delete("packages/next/src/metadata.ts");
   patch(browser, (manifest) => {
     delete manifest.exports["."];
   });
