@@ -61,6 +61,8 @@ const automation = [
   "scripts/candidate-ci-receipt.test.mjs",
   "scripts/publication-preflight.mjs",
   "scripts/publication-preflight.test.mjs",
+  "scripts/publication-handoff.mjs",
+  "scripts/publication-handoff.test.mjs",
   "scripts/verify-sdk-types.mjs",
   "scripts/verify-sdk-types.test.mjs",
   "scripts/verify-sdk-webhooks.mjs",

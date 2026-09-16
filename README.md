@@ -64,3 +64,10 @@ A real publication plan additionally requires the public `v0.1.0-beta.10` tag/wo
 separate exact-candidate approval and a hosted acceptance evidence hash. Protected
 environment configuration, GitHub run/artifact verification and execution remain
 responsibilities of the publishing workflow; a plan alone authorizes no registry write.
+
+The publication handoff verifier is read-only. Given an accepted `Public source` run
+and its retained candidate artifact, it confirms through the GitHub API that the run
+succeeded from this repository, that its head is an ancestor of `main`, that the
+artifact is unexpired and its bytes match the API digest, and that the candidate
+inside binds that exact run, source and manifest. It then writes the approval digests
+the preflight library consumes. It needs only a read token and performs no publication.
