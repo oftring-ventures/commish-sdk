@@ -51,6 +51,8 @@ function bootstrap() {
   "scripts/public-package-manifest.test.mjs",
   "scripts/public-candidate.mjs",
   "scripts/public-candidate.test.mjs",
+  "scripts/candidate-ci-receipt.mjs",
+  "scripts/candidate-ci-receipt.test.mjs",
     "scripts/verify-sdk-types.mjs",
     "scripts/verify-sdk-types.test.mjs",
     "scripts/verify-sdk-webhooks.mjs",
