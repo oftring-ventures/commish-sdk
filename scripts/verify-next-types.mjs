@@ -54,7 +54,7 @@ function verifyNextTypes(kind, consumer, sdk, next, context, execute = execFileS
     const name = index ? "next" : "sdk";
     const item = JSON.parse(packed.get("package/package.json").data);
     assert.equal(item.name, `@commish/${name}`);
-    assert.equal(item.version, "0.1.0-beta.9");
+    assert.equal(item.version, "0.1.0-beta.10");
     const entry = kind === "provider" && index ? "provider" : "browser";
     assert.deepEqual(item.exports[entry === "provider" ? "./react" : "./browser"], {
       types: `./dist/${entry}.d.ts`,

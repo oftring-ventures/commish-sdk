@@ -27,4 +27,7 @@ pnpm install --frozen-lockfile --ignore-scripts --registry=https://registry.npmj
 pnpm build
 ```
 
-Only the entry points described above are available at this source checkpoint.
+The complete source pair targets `0.1.0-beta.10`. Both packages include MIT LICENSE
+and setup documentation, and Next requires that exact SDK version. Release candidate
+preparation and hosted acceptance remain separate steps; use an accepted artifact
+receipt before installing the pair.

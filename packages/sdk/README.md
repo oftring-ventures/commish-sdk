@@ -1,7 +1,8 @@
 # @commish/sdk
 
-Commish's test-money pilot SDK for Node 24. This prerelease is distributed as an
-exact tarball until npm publication is separately authorized. Source is licensed under the MIT License; see LICENSE.
+Commish's test-money pilot SDK for Node 24. Install exact paired tarballs only
+after an accepted candidate handoff; npm publication remains separately authorized.
+Source is licensed under the MIT License; see LICENSE.
 
 ```ts
 import { Commish } from "@commish/sdk";
@@ -23,14 +24,14 @@ Only test-money pilot behavior is supported; renewal ingress is deferred.
 
 ## Install and configure
 
-Install both exact `0.1.0-beta.9` tarballs from the candidate handoff after
+Install both exact `0.1.0-beta.10` tarballs from the candidate handoff after
 checking its `SHA512SUMS`; keep the consumer lockfile. No Commish checkout or
 database credentials are required. A tarball is a release candidate, not proof
 of npm publication or hosted acceptance.
 
 ```sh
-pnpm add /absolute/candidate/commish-sdk-0.1.0-beta.9.tgz \
-  /absolute/candidate/commish-next-0.1.0-beta.9.tgz
+pnpm add /absolute/candidate/commish-sdk-0.1.0-beta.10.tgz \
+  /absolute/candidate/commish-next-0.1.0-beta.10.tgz
 ```
 
 Obtain a test secret key scoped to the verified application, a publishable key,
