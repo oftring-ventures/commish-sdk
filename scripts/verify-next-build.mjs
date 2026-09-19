@@ -33,7 +33,7 @@ import {
 } from "./inspect-next-build.mjs";
 
 export const nextProviderWiringScope = "next-provider-installed-hook-wiring";
-export const nextCliScope = "next-cli-installed-dry-run";
+export const nextCliScope = "next-cli-installed-setup";
 export const nextBuildScope = "next-production-build-external";
 export const nextServerBuildScope = "next-server-production-build-external";
 export const nextCaptureScope = "next-attribution-capture-request-external";
@@ -253,6 +253,22 @@ export async function verifyNextBuild(sdk, next, context, execute) {
     for (const [name, data] of Object.entries(fixture)) {
       mkdirSync(dirname(join(consumer, name)), { recursive: true });
       writeFileSync(join(consumer, name), data);
+    }
+    if (manifest.bin && provider && capture) {
+      // Exercise generated product files, not a handwritten equivalent.
+      rmSync(join(consumer, "app/api/commish/attribution/route.ts"));
+      await run(join(consumer, "node_modules/.bin/commish-next"), ["--write", "--json"]);
+      for (const name of ["app/api/commish/attribution/route.ts", "app/commish-provider.tsx"])
+        fixture[name] = readFileSync(join(consumer, name), "utf8");
+      fixture["app/layout.tsx"] = `import CommishRootProvider from './commish-provider';
+import type { ReactNode } from 'react';
+export default function Layout({ children }: { children: ReactNode }) {
+  return <html><body><CommishRootProvider>{children}</CommishRootProvider></body></html>;
+}
+`;
+      writeFileSync(join(consumer, "app/layout.tsx"), fixture["app/layout.tsx"]);
+      env.NEXT_PUBLIC_COMMISH_PUBLISHABLE_KEY = "cm_test_pk_123456789012";
+      env.NEXT_PUBLIC_COMMISH_APPLICATION_ID = "app_123456789012";
     }
     const executable = child(consumer, require.resolve("next/dist/bin/next"));
     assert.equal(

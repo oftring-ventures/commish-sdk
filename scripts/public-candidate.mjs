@@ -9,7 +9,7 @@ export const candidateScopes = [
   "sdk-webhook-node", "sdk-http-node-fetch", "sdk-reads-node-fetch", "next-browser-node-bridge",
   "next-browser-types-external-ts", "next-provider-types-layout", "next-provider-types-external-ts",
   "next-production-build-external", "next-metadata-installed-node", "next-cookie-request-context-external",
-  "next-attribution-capture-request-external", "next-provider-installed-hook-wiring", "next-cli-installed-dry-run",
+  "next-attribution-capture-request-external", "next-provider-installed-hook-wiring", "next-cli-installed-setup",
 ];
 
 export function portablePackageArchive(bytes) {
