@@ -119,8 +119,8 @@ format/mode is checked locally; its server-side application binding is **not** p
 The API defaults to `https://app.commish.sh/api/v1`. Set `COMMISH_API_URL` only to a
 Commish deployment you trust: this destination receives the secret key. Custom
 bases require HTTPS, except explicit loopback development addresses. Redirects are
-rejected; responses and request duration are bounded. The CLI never writes remote
-state, prints credentials/provider bodies, or retries a request. Invalid configuration,
+rejected; responses and request duration are bounded. The CLI does not provision resources or issue mutation requests. Authentication
+may update key-usage metadata. It never prints credentials/provider bodies or retries a request. Invalid configuration,
 denied/revoked keys, inaccessible programs, mismatches and unavailable responses exit
 with code 1 and a stable JSON error code. On older deployments that reject LIVE reads,
 verification fails with `access_denied`; it never falls back to TEST.
