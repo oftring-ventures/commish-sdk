@@ -99,3 +99,28 @@ the installer will not overwrite it or guess at customer code.
 Package installation does not connect a Stripe account, configure a program,
 activate a creator, or prove a conversion. Complete the hosted TEST setup and
 record its acceptance separately from package build and installation evidence.
+
+## Verify configuration from the CLI
+
+With the installed packages and configured environment, set `COMMISH_PROGRAM_ID`
+to your existing program ID and run `pnpm exec commish-next verify --json`.
+The command reads `COMMISH_SECRET_KEY`, `NEXT_PUBLIC_COMMISH_PUBLISHABLE_KEY`,
+`NEXT_PUBLIC_COMMISH_APPLICATION_ID` and `COMMISH_PROGRAM_ID` from the process
+environment. Use Node's `--env-file` support or your existing environment runner
+if needed; the CLI does not search for or change dotenv files.
+
+It performs one authenticated, read-only program lookup in the key's TEST or LIVE
+mode. `configuration_verified` means the key can read that program and its
+application/mode match the configured values. The receipt includes program status;
+a paused or draft program is not declared ready for transactions. Publishable-key
+format/mode is checked locally; its server-side application binding is **not** proved.
+`integrationVerified: false` and `unverified` identify the remaining real journey.
+
+The API defaults to `https://app.commish.sh/api/v1`. Set `COMMISH_API_URL` only to a
+Commish deployment you trust: this destination receives the secret key. Custom
+bases require HTTPS, except explicit loopback development addresses. Redirects are
+rejected; responses and request duration are bounded. The CLI never writes remote
+state, prints credentials/provider bodies, or retries a request. Invalid configuration,
+denied/revoked keys, inaccessible programs, mismatches and unavailable responses exit
+with code 1 and a stable JSON error code. On older deployments that reject LIVE reads,
+verification fails with `access_denied`; it never falls back to TEST.
