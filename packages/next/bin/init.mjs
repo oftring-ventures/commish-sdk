@@ -17,7 +17,8 @@ if (args[0] === "verify") {
     const programId = env.COMMISH_PROGRAM_ID;
     if (!key || !publishable || !/^app_[A-Za-z0-9_-]{12,}$/.test(applicationId ?? "") ||
         !/^prg_[A-Za-z0-9_-]{12,}$/.test(programId ?? "")) fail("invalid_configuration");
-    if (key[1] !== publishable[1]) fail("key_mode_mismatch");
+    const mode = key[1] === "live" ? "live" : "test";
+    if (mode !== publishable[1]) fail("key_mode_mismatch");
     let api;
     try { api = new URL(env.COMMISH_API_URL ?? "https://app.commish.sh/api/v1"); }
     catch { fail("invalid_api_url"); }
@@ -47,9 +48,9 @@ if (args[0] === "verify") {
         !["test", "live"].includes(program.mode) ||
         !["draft", "active", "paused", "suspended", "archived"].includes(program.status)) fail("invalid_response");
     if (program.applicationId !== applicationId) fail("application_mismatch");
-    if (program.mode !== key[1]) fail("program_mode_mismatch");
+    if (program.mode !== mode) fail("program_mode_mismatch");
     const result = {
-      status: "configuration_verified", mode: key[1], applicationId, programId,
+      status: "configuration_verified", mode, applicationId, programId,
       programStatus: program.status,
       checks: ["secret_key_authenticated", "program_accessible", "application_matches", "mode_matches", "publishable_key_mode_matches"],
       unverified: ["publishable_key_binding", "consumer_wiring", "attribution", "checkout", "webhooks", "refunds", "renewals", "payouts"],
