@@ -100,6 +100,40 @@ Package installation does not connect a Stripe account, configure a program,
 activate a creator, or prove a conversion. Complete the hosted TEST setup and
 record its acceptance separately from package build and installation evidence.
 
+## Provision TEST credentials from the CLI
+
+An owner or admin can authorize an agent-driven setup without copying a secret
+from the dashboard:
+
+```sh
+pnpm exec commish-next setup \
+  --workspace wrk_your_workspace_id \
+  --application-name "Your product" \
+  --key-label "Local agent setup" \
+  --output .env.commish \
+  --json
+```
+
+The command generates the TEST secret and publishable key on the developer's
+machine, opens a ten-minute approval page on `https://app.commish.sh`, and polls
+for the approved exchange. The browser requires an authenticated workspace owner
+or admin with a recent authenticator check. Only hashes and the publishable key
+cross the browser boundary; Commish never receives or stores the raw secret.
+
+After approval, the CLI atomically creates the explicitly named output with mode
+`0600`. It never overwrites an existing path. The file contains
+`COMMISH_API_URL`, `COMMISH_SECRET_KEY`,
+`NEXT_PUBLIC_COMMISH_PUBLISHABLE_KEY`, and
+`NEXT_PUBLIC_COMMISH_APPLICATION_ID`. Add that path to the product's local secret
+handling policy; do not commit it. An interrupted exchange can safely retry the
+same verifier and receives the same application and key.
+
+Use `--no-open` when the controlling agent will present the printed approval URL
+itself. For a trusted local Commish runtime, `--app-url` accepts an explicit
+loopback HTTP origin; other custom origins require HTTPS. Setup creates TEST
+application credentials only. Program configuration and the complete transaction
+journey remain separate verification steps.
+
 ## Verify configuration from the CLI
 
 With the installed packages and configured environment, set `COMMISH_PROGRAM_ID`
