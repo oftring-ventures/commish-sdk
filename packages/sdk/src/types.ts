@@ -182,7 +182,7 @@ export type PublicProgram = {
   applicationId: string;
   name: string;
   slug: string;
-  mode: "test";
+  mode: "test" | "live";
   status: "draft" | "active" | "paused" | "suspended" | "archived";
   attributionPolicy: "first_click" | "last_click";
   terms: ProgramTerm | null;

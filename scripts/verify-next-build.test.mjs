@@ -8,7 +8,7 @@ import { verifyNextBuild } from "./verify-next-build.mjs";
 import { cookieRequestProbe, nextBuildFixture, nextServerBuildFixture } from "./fixtures/next-build.mjs";
 import { providerProbe } from "./fixtures/next-provider.mjs";
 import { captureRequestProbe } from "./fixtures/next-capture.mjs";
-import { cliProbe } from "./fixtures/next-cli.mjs";
+import { cliProbe, verifyCliProbe } from "./fixtures/next-cli.mjs";
 import { serverMarker } from "./inspect-next-build.mjs";
 
 test("initializer installs idempotently, refuses conflicts and unsafe paths, and the probe rejects mutation", async () => {
@@ -21,6 +21,10 @@ test("initializer installs idempotently, refuses conflicts and unsafe paths, and
   }), /initializer changed consumer files/);
   assert(!existsSync(fixture));
   await assert.rejects(() => cliProbe(null, () => ({ status: 0, signal: null, stdout: "", stderr: "" })));
+});
+
+test("verification CLI checks both modes and fails closed without writes or credential disclosure", async () => {
+  await verifyCliProbe(fileURLToPath(new URL("../packages/next/bin/init.mjs", import.meta.url)));
 });
 
 test("only declared framework capabilities select a build and invalid inputs fail before commands", async () => {
