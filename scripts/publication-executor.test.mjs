@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test from "node:test";
 import { gzipSync } from "node:zlib";
@@ -139,4 +141,22 @@ test("candidate tampering between uploads is detected and temporary files are re
   };
   await assert.rejects(executePublication(f.options, { ...f.deps, run }), /candidate bytes changed|strictly equal/);
   assert.equal(f.calls.filter((a) => a[0] === "publish").length, 1); assert(!existsSync(f.directory()));
+});
+
+test("every npm invocation overrides inherited scoped registry configuration", async () => {
+  const f = fixture(); await executePublication({ ...f.options, publish: true }, f.deps);
+  const directory = mkdtempSync(join(tmpdir(), "commish-registry-config-"));
+  try {
+    writeFileSync(join(directory, ".npmrc"), "@commish:registry=https://untrusted.invalid\nregistry=https://untrusted.invalid\n");
+    for (const args of f.calls) {
+      const registries = args.filter((arg) => arg.startsWith("--registry=") || arg.startsWith("--@commish:registry="));
+      assert.deepEqual(registries, ["--registry=https://registry.npmjs.org", "--@commish:registry=https://registry.npmjs.org"]);
+      // npm config is local-only; this verifies npm's real scoped configuration precedence.
+      const result = spawnSync("npm", ["config", "get", "@commish:registry", ...registries], {
+        cwd: directory, encoding: "utf8", timeout: 10_000,
+        env: { ...process.env, npm_config_userconfig: join(directory, ".npmrc"), npm_config_registry: "https://untrusted.invalid" },
+      });
+      assert.equal(result.status, 0); assert.equal(result.stdout.trim(), "https://registry.npmjs.org");
+    }
+  } finally { rmSync(directory, { recursive: true, force: true }); }
 });

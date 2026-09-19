@@ -4,9 +4,8 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { acceptHandoff, fetchEvidence, readZipMembers } from "./publication-handoff.mjs";
-import { publicationPlan, readPublicationCandidate, requirePublicationApproval } from "./publication-preflight.mjs";
+import { publicRegistryArgs, publicationPlan, readPublicationCandidate, requirePublicationApproval } from "./publication-preflight.mjs";
 
-const registry = "--registry=https://registry.npmjs.org";
 const succeeded = (result) => result.status === 0 && !result.signal && !result.error;
 const npm = (args) => {
   // Capture diagnostics: subprocess output may contain authentication material.
@@ -34,7 +33,7 @@ export async function executePublication({ runId, artifactId, publish = false, e
     for (const [name, bytes] of readZipMembers(fetched.zip))
       writeFileSync(join(directory, name), bytes, { flag: "wx", mode: 0o600 });
     const candidate = readPublicationCandidate(directory, approved);
-    const lookup = (item) => run(["view", `${item.name}@${item.version}`, "dist.integrity", "--json", registry]);
+    const lookup = (item) => run(["view", `${item.name}@${item.version}`, "dist.integrity", "--json", ...publicRegistryArgs]);
     // Both versions must pass before the first upload; unknown lookup is not absence.
     const plan = publicationPlan(candidate, candidate.artifacts.map(lookup), { publish, env });
     const uploaded = [];
