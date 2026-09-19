@@ -6,6 +6,7 @@ import { archiveFiles } from "./verify-public-source.mjs";
 import { candidateScopes } from "./public-candidate.mjs";
 
 const repository = "oftring-ventures/commish-sdk";
+export const publicRegistryArgs = ["--registry=https://registry.npmjs.org", "--@commish:registry=https://registry.npmjs.org"];
 const hash = (bytes, algorithm = "sha256", encoding = "hex") => createHash(algorithm).update(bytes).digest(encoding);
 
 // Approval digests come from the separately accepted handoff, never from these files themselves.
@@ -92,5 +93,5 @@ export function publicationPlan(candidate, registryResults, { publish = false, e
     assert(isMissingRegistryVersion(result), "registry lookup unavailable; refuse publication"); return true;
   });
   return pending.map((item) => ({ name: item.name, integrity: item.integrity, argv: ["publish", join(candidate.directory, item.file),
-    "--ignore-scripts", "--access=public", "--tag=beta", publish ? "--provenance" : "--dry-run", "--registry=https://registry.npmjs.org"] }));
+    "--ignore-scripts", "--access=public", "--tag=beta", publish ? "--provenance" : "--dry-run", ...publicRegistryArgs] }));
 }

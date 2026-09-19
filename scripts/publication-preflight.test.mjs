@@ -47,7 +47,7 @@ function fixture(run) {
 test("accepted candidate binds pair, every member and CI receipt; plans default to dry-run", () => fixture(({ directory, approved }) => {
   const candidate = readPublicationCandidate(directory, approved), plan = publicationPlan(candidate, [missing, missing]);
   assert.deepEqual(plan.map((p) => p.name), ["@commish/sdk", "@commish/next"]);
-  for (const item of plan) assert.deepEqual(item.argv.slice(2), ["--ignore-scripts", "--access=public", "--tag=beta", "--dry-run", "--registry=https://registry.npmjs.org"]);
+  for (const item of plan) assert.deepEqual(item.argv.slice(2), ["--ignore-scripts", "--access=public", "--tag=beta", "--dry-run", "--registry=https://registry.npmjs.org", "--@commish:registry=https://registry.npmjs.org"]);
   assert.throws(() => publicationPlan(candidate, [missing, missing], { publish: true }));
 }));
 
