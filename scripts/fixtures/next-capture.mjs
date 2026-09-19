@@ -16,18 +16,18 @@ export async function captureRequestProbe(runApp) {
     response.writeHead(reply.status, { "content-type": "application/json" });
     response.end(reply.body);
   });
-  const previous = process.env.COMMISH_CONSUMER_API_URL;
+  const previous = process.env.COMMISH_API_URL;
   const upstreamPath = "/".repeat(2_048) + "api/v1";
   try {
     await new Promise((resolve, reject) => {
       upstream.once("error", reject);
       upstream.listen(0, "127.0.0.1", resolve);
     });
-    process.env.COMMISH_CONSUMER_API_URL = `http://127.0.0.1:${upstream.address().port}${upstreamPath}${"/".repeat(2_048)}`;
+    process.env.COMMISH_API_URL = `http://127.0.0.1:${upstream.address().port}${upstreamPath}${"/".repeat(2_048)}`;
     await runApp(async (origin) => {
       const captureId = "a".repeat(32), clean = { token: "ref_consumer", applicationId: "app_consumer" };
       const body = JSON.stringify({ ...clean, previousAttributionId: "atr_browser_forgery" });
-      const send = (headers = {}, input = body) => fetch(`${origin}/api/capture`, {
+      const send = (headers = {}, input = body) => fetch(`${origin}/api/commish/attribution`, {
         method: "POST", body: input, signal: AbortSignal.timeout(10_000),
         headers: { "x-commish-capture-id": captureId, ...headers },
       });
@@ -62,7 +62,7 @@ export async function captureRequestProbe(runApp) {
         assert.equal(forwarded.headers["x-commish-publishable-key"], "cm_test_pk_consumer");
         assert.equal(forwarded.headers["x-vercel-ip-country"], "US");
         assert.equal(forwarded.headers["user-agent"], "commish-consumer");
-        assert.equal(forwarded.headers.authorization, `Bearer ${process.env.COMMISH_CONSUMER_SECRET}`);
+        assert.equal(forwarded.headers.authorization, `Bearer ${process.env.COMMISH_SECRET_KEY}`);
       }
       for (const prior of [null, "invalid"]) {
         const response = await send({ ...(prior ? { cookie: `commish_attribution=${prior}` } : {}),
@@ -94,8 +94,8 @@ export async function captureRequestProbe(runApp) {
       }
     });
   } finally {
-    if (previous === undefined) delete process.env.COMMISH_CONSUMER_API_URL;
-    else process.env.COMMISH_CONSUMER_API_URL = previous;
+    if (previous === undefined) delete process.env.COMMISH_API_URL;
+    else process.env.COMMISH_API_URL = previous;
     if (upstream.listening) await new Promise((resolve, reject) => {
       upstream.close((error) => error ? reject(error) : resolve());
       upstream.closeAllConnections();
@@ -105,12 +105,12 @@ export async function captureRequestProbe(runApp) {
 }
 
 export const nextCaptureBuildFixture = {
-  "app/api/capture/route.ts": `import { createAttributionHandler } from '@commish/next';
+  "app/api/commish/attribution/route.ts": `import { createAttributionHandler } from '@commish/next';
 export async function POST(request: Request) {
-  return createAttributionHandler({ apiUrl: process.env.COMMISH_CONSUMER_API_URL,
+  return createAttributionHandler({ apiUrl: process.env.COMMISH_API_URL,
     secretKey: '${serverMarker}' })(request);
 }
 `,
-  "cookie-probe.mjs": `process.env.COMMISH_CONSUMER_SECRET = '${serverMarker}';
+  "cookie-probe.mjs": `process.env.COMMISH_SECRET_KEY = '${serverMarker}';
 await (${captureRequestProbe.toString()})(probe => (${cookieRequestProbe.toString()})(undefined, probe));\n`,
 };

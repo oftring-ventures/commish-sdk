@@ -57,7 +57,7 @@ Set `capturePath` on the provider if that route uses another same-origin path.
 Successful capture removes `commish_ref` while preserving navigation state;
 failure keeps the referral for retry. Wait for capture before starting Checkout.
 
-## Server Checkout and dry-run setup
+## Agent-driven installation and Checkout
 
 In your existing authenticated server Checkout route, await
 `withCommishStripeMetadata(params)` from `@commish/next` before passing the result
@@ -68,10 +68,33 @@ require a Next request context. The root export is blocked in browser builds.
 The provider belongs at `@commish/next/react`; `@commish/next/browser` also exports
 `captureReferral` for direct browser integration.
 
-After installing an accepted pair, run `pnpm exec commish-next` from the consumer
-project root. It prints the route/layout changes above, prefers `src/app` when
-both App Router locations exist, and never writes files. Missing App Router
-directories produce an error and exit status 1. Review and apply the setup manually.
+After installing an accepted pair, run from the consumer project root:
+
+```sh
+pnpm exec commish-next --json          # inspect the plan; no writes
+pnpm exec commish-next --write --json  # install the integration files
+```
+
+The CLI creates the capture route above and `app/commish-provider.tsx` (under
+`src/app` when there is no root `app`). JavaScript apps receive `.js`/`.jsx`
+files; the installer does not enable TypeScript. Repeated runs preserve identical files;
+custom files, conflicting extensions and symbolic links stop installation before
+writing. It never reads or writes credentials. Supply matching application keys
+for the selected mode through your environment configuration.
+
+The coding agent must finish these existing application edits:
+
+1. Import `CommishRootProvider` from `./commish-provider` in the root layout and
+   wrap its existing children. Preserve other providers, metadata and layout content.
+2. Add the awaited metadata helper to the authenticated Checkout handler as above.
+3. Build, then exercise a TEST referral through capture and Checkout. Successful
+   capture must set the HttpOnly cookie; Checkout must carry its attribution.
+
+JSON output lists file outcomes, required environment variable names and next
+steps. `files_installed` means those files exist; `integrationVerified: false`
+explicitly leaves wiring, configuration and end-to-end verification outstanding.
+If a custom route/provider already exists, integrate using the examples above;
+the installer will not overwrite it or guess at customer code.
 
 Package installation does not connect a Stripe account, configure a program,
 activate a creator, or prove a conversion. Complete the hosted TEST setup and

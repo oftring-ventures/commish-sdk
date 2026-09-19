@@ -11,13 +11,13 @@ import { captureRequestProbe } from "./fixtures/next-capture.mjs";
 import { cliProbe } from "./fixtures/next-cli.mjs";
 import { serverMarker } from "./inspect-next-build.mjs";
 
-test("initializer reports both App Router locations without writes and the probe rejects mutation", async () => {
+test("initializer installs idempotently, refuses conflicts and unsafe paths, and the probe rejects mutation", async () => {
   await cliProbe(fileURLToPath(new URL("../packages/next/bin/init.mjs", import.meta.url)));
   let fixture;
   await assert.rejects(() => cliProbe(null, (cwd) => {
     fixture = cwd;
     writeFileSync(join(cwd, "keep.txt"), "changed");
-    return { status: 1, signal: null, stdout: "", stderr: "" };
+    return { status: 1, signal: null, stdout: "", stderr: '{"status":"error"}' };
   }), /initializer changed consumer files/);
   assert(!existsSync(fixture));
   await assert.rejects(() => cliProbe(null, () => ({ status: 0, signal: null, stdout: "", stderr: "" })));
@@ -139,15 +139,15 @@ test("cookie request probe rejects wrong behavior and closes its loopback server
 });
 
 test("capture upstream closes and restores environment after app or probe failure", async () => {
-  const original = process.env.COMMISH_CONSUMER_API_URL;
+  const original = process.env.COMMISH_API_URL;
   for (const failure of ["startup", "request"]) {
     let url;
     await assert.rejects(() => captureRequestProbe(async (probe) => {
-      url = process.env.COMMISH_CONSUMER_API_URL;
+      url = process.env.COMMISH_API_URL;
       if (failure === "startup") throw new Error("controlled startup failure");
       await probe(new URL(url).origin);
     }));
-    assert.equal(process.env.COMMISH_CONSUMER_API_URL, original);
+    assert.equal(process.env.COMMISH_API_URL, original);
     await assert.rejects(() => fetch(url, { signal: AbortSignal.timeout(1_000) }));
   }
 });
