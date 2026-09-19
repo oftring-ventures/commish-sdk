@@ -1,0 +1,55 @@
+name: Publish approved packages
+on:
+  workflow_dispatch:
+    inputs:
+      candidate_run_id:
+        description: Accepted Public source run ID
+        required: true
+        type: string
+      candidate_artifact_id:
+        description: Accepted candidate artifact ID from that run
+        required: true
+        type: string
+permissions:
+  contents: read
+concurrency:
+  group: npm-publication-beta10
+  cancel-in-progress: false
+jobs:
+  publish:
+    if: github.repository == 'oftring-ventures/commish-sdk' && github.ref == 'refs/tags/v0.1.0-beta.10'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    environment: npm-publication
+    permissions:
+      contents: read
+      actions: read
+      id-token: write
+    env:
+      COMMISH_NPM_ENVIRONMENT: npm-publication
+      COMMISH_NPM_APPROVED_SOURCE: ${{ vars.COMMISH_NPM_APPROVED_SOURCE }}
+      COMMISH_NPM_APPROVED_MANIFEST_SHA256: ${{ vars.COMMISH_NPM_APPROVED_MANIFEST_SHA256 }}
+      COMMISH_NPM_APPROVED_CI_RECEIPT_SHA256: ${{ vars.COMMISH_NPM_APPROVED_CI_RECEIPT_SHA256 }}
+      COMMISH_NPM_HOSTED_ACCEPTANCE_SHA256: ${{ vars.COMMISH_NPM_HOSTED_ACCEPTANCE_SHA256 }}
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
+        with:
+          node-version: 24.15.0
+      - name: Verify and publish the approved archives
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          CANDIDATE_RUN_ID: ${{ inputs.candidate_run_id }}
+          CANDIDATE_ARTIFACT_ID: ${{ inputs.candidate_artifact_id }}
+        run: node scripts/publication-executor.mjs "$CANDIDATE_RUN_ID" "$CANDIDATE_ARTIFACT_ID" --publish > "$RUNNER_TEMP/publication-receipt.json"
+      - name: Retain publication integrity receipt
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: npm-publication-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/publication-receipt.json
+          if-no-files-found: error
+          overwrite: false
+          retention-days: 30

@@ -24,6 +24,8 @@ import {
 } from "./verify-next-browser-consumer.mjs";
 
 const automation = [
+  ".github/workflows/publish-packages.yml",
+  "scripts/publication-workflow.test.mjs",
   ".github/workflows/public-source.yml",
   ".github/workflows/public-review.yml",
   ".github/workflows/public-review-merge-group.yml",

@@ -71,3 +71,38 @@ succeeded from this repository, that its head is an ancestor of `main`, that the
 artifact is unexpired and its bytes match the API digest, and that the candidate
 inside binds that exact run, source and manifest. It then writes the approval digests
 the preflight library consumes. It needs only a read token and performs no publication.
+
+The protected `Publish approved packages` workflow publishes only from the immutable
+`v0.1.0-beta.10` tag, by manual dispatch. Its executor defaults to dry-run outside
+that workflow and never retries an upload automatically. Both exact registry
+versions are preflighted before uploading SDK then Next; existing identical versions
+are skipped. Each upload gets an immediate registry integrity readback. Missing or
+different evidence stops the pair. A failed/uncertain run may have published one
+package: inspect both registry versions before authorizing another attempt.
+
+Before dispatch, the release owner must complete this handoff:
+
+1. Merge the publishing source and qualify a fresh candidate from that exact commit.
+   Independently compare its Linux and macOS archives. The candidate, release tag,
+   and workflow revision must share one SHA; an older pre-workflow candidate cannot
+   be published by this workflow.
+2. Record approved hosted TEST acceptance, then explicitly authorize these two
+   archives. Configure the GitHub `npm-publication` environment with required
+   reviewers, self-review prevention, and a deployment rule allowing only
+   `v0.1.0-beta.10`. Keep the tag immutable. Do not dispatch while publication is held.
+3. Save independently approved values as environment variables in that GitHub
+   environment (configuration variables, not secrets):
+   `COMMISH_NPM_APPROVED_SOURCE`, `COMMISH_NPM_APPROVED_MANIFEST_SHA256`,
+   `COMMISH_NPM_APPROVED_CI_RECEIPT_SHA256`, and
+   `COMMISH_NPM_HOSTED_ACCEPTANCE_SHA256`. Never derive approval inside the job.
+4. Verify both npm package trusted-publisher bindings name this repository,
+   `publish-packages.yml`, and `npm-publication`. The workflow uses Node 24.15.0's
+   bundled npm and GitHub OIDC; no npm token or dependency installation is needed.
+   See [npm trusted publishing](https://docs.npmjs.com/trusted-publishers/).
+5. Dispatch on the tag with the accepted candidate run and artifact IDs; review the
+   protected job. Retain its integrity receipt, verify registry provenance, and run
+   clean external installations of the exact package versions. A registry integrity
+   receipt does not establish hosted/live acceptance or release readiness.
+
+Source preparation, tests and PR publication do not configure this environment,
+create a tag, authorize registry writes or lift the founder's publication hold.
