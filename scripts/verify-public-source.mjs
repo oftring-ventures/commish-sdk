@@ -82,7 +82,7 @@ const automation = [
 const bootstrap = {
   ".gitignore": "e8e70120c7fb8891ed746bb896e739a62f7f6ea1df6225461506760c146f6614",
   LICENSE: "03f0077d06d3281e364be7f1cbb440d6996c65d3a6a19a73de41a7c6d02be702",
-  "README.md": "e54066163aa6be032484c7193f096cbcd0d9a57b55d65a9b4d4c8bc27382972e",
+  "README.md": "63d2b78b672460c3e4c586c35ad4b261645570a0c6914ddb96f1fb74aee7f380",
 };
 const roots = [...Object.keys(bootstrap), "package.json", "pnpm-workspace.yaml", "pnpm-lock.yaml"];
 const common = ["package.json", "LICENSE", "README.md", "build.mjs", "tsconfig.build.json"];
