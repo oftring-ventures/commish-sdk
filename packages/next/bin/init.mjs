@@ -36,7 +36,7 @@ const responseJson = async (response) => {
   catch { throw new Error("invalid_response"); }
 };
 const setupOptions = (values) => {
-  const result = { appUrl: "https://app.commish.sh", keyLabel: "Agent setup", open: true };
+  const result = { appUrl: "https://app.commish.sh", keyLabel: "Agent setup", mode: "test", open: true };
   const keys = new Set();
   for (let index = 0; index < values.length; index++) {
     const name = values[index];
@@ -50,7 +50,7 @@ const setupOptions = (values) => {
     const fields = {
       "--workspace": "workspaceId", "--output": "output",
       "--application-name": "applicationName", "--key-label": "keyLabel",
-      "--app-url": "appUrl",
+      "--app-url": "appUrl", "--mode": "mode",
     };
     const field = fields[name], value = values[++index];
     if (!field || keys.has(name) || !value || value.startsWith("--"))
@@ -59,7 +59,8 @@ const setupOptions = (values) => {
   }
   if (!/^wrk_[A-Za-z0-9_-]{12,}$/.test(result.workspaceId ?? "") ||
       !result.output || !result.applicationName?.trim() || result.applicationName.length > 100 ||
-      !result.keyLabel.trim() || result.keyLabel.length > 100)
+      !result.keyLabel.trim() || result.keyLabel.length > 100 ||
+      !["test", "live"].includes(result.mode))
     throw new Error("invalid_arguments");
   result.applicationName = result.applicationName.trim();
   result.keyLabel = result.keyLabel.trim();
@@ -105,7 +106,8 @@ const setupReceipt = (body, expected) => {
       typeof value.replayed !== "boolean" || !/^app_[A-Za-z0-9_-]{12,}$/.test(app?.id ?? "") ||
       app?.name !== expected.applicationName || !Array.isArray(app?.verifiedOrigins) ||
       typeof app?.createdAt !== "string" || !/^key_[A-Za-z0-9_-]{12,}$/.test(key?.id ?? "") ||
-      key?.applicationId !== app.id || key?.mode !== "test" ||
+      key?.applicationId !== app.id || key?.mode !== expected.mode ||
+      (value.mode ?? "test") !== expected.mode ||
       key?.publishableKey !== expected.publishableKey || key?.label !== expected.keyLabel ||
       typeof key?.createdAt !== "string" || key?.lastUsedAt !== null || key?.revokedAt !== null)
     throw new Error("invalid_response");
@@ -114,16 +116,16 @@ const setupReceipt = (body, expected) => {
 const setup = async (values) => {
   const options = setupOptions(values), output = credentialTarget(options.output),
     verifier = randomBytes(32).toString("base64url"),
-    publishableKey = `cm_test_pk_${token()}`, secretKey = `cm_test_sk_${token()}`,
+    publishableKey = `cm_${options.mode}_pk_${token()}`, secretKey = `cm_${options.mode}_sk_${token()}`,
     expiresAt = new Date(Date.now() + 570_000).toISOString(),
     request = {
-      workspaceId: options.workspaceId, challengeHash: hash(verifier),
+      workspaceId: options.workspaceId, mode: options.mode, challengeHash: hash(verifier),
       applicationName: options.applicationName, keyLabel: options.keyLabel,
       publishableKey, secretHash: hash(secretKey),
       idempotencyKey: `cli-setup:${randomUUID()}`, expiresAt,
     }, approval = new URL("/cli/setup", options.appUrl);
   approval.search = new URLSearchParams(request).toString();
-  process.stderr.write(`Authorize TEST setup in your browser:\n${approval.href}\n`);
+  process.stderr.write(`Authorize ${options.mode.toUpperCase()} setup in your browser:\n${approval.href}\n`);
   if (options.open) openBrowser(approval.href);
   const exchange = new URL("/api/cli/setup-grants/exchange", options.appUrl);
   let receipt;
@@ -153,10 +155,10 @@ const setup = async (values) => {
     NEXT_PUBLIC_COMMISH_APPLICATION_ID: receipt.application.id,
   });
   return {
-    status: "test_credentials_configured", mode: "test", workspaceId: options.workspaceId,
+    status: `${options.mode}_credentials_configured`, mode: options.mode, workspaceId: options.workspaceId,
     applicationId: receipt.application.id, apiKeyId: receipt.apiKey.id, output: file,
     replayed: receipt.replayed, integrationVerified: false,
-    next: "Configure a TEST program, then run commish-next verify --json with COMMISH_PROGRAM_ID.",
+    next: `Configure a ${options.mode.toUpperCase()} program, then run commish-next verify --json with COMMISH_PROGRAM_ID.`,
   };
 };
 
@@ -166,7 +168,7 @@ if (args[0] === "setup") {
   try {
     const result = await setup(args.slice(1));
     console.log(json ? JSON.stringify(result) :
-      `Commish TEST credentials saved to ${result.output}.\n${result.next}`);
+      `Commish ${result.mode.toUpperCase()} credentials saved to ${result.output}.\n${result.next}`);
   } catch (error) {
     const code = ["invalid_arguments", "invalid_app_url", "unsafe_output_path", "invalid_response",
       "setup_expired", "setup_denied"].includes(error?.message) ? error.message :

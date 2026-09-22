@@ -99,7 +99,7 @@ Package installation does not connect a Stripe account, configure a program,
 activate a creator, or prove a conversion. Complete the hosted TEST setup and
 record its acceptance separately from package build and installation evidence.
 
-## Provision TEST credentials from the CLI
+## Provision TEST or LIVE credentials from the CLI
 
 An owner or admin can authorize an agent-driven setup without copying a secret
 from the dashboard:
@@ -113,7 +113,9 @@ pnpm exec commish-next setup \
   --json
 ```
 
-The command generates the TEST secret and publishable key on the developer's
+The command defaults to TEST; add `--mode live` for LIVE credentials. LIVE requires
+current workspace eligibility and provider readiness at approval and exchange;
+it never falls back to TEST. The command generates the selected mode's keys on the developer's
 machine, opens a ten-minute approval page on `https://app.commish.sh`, and polls
 for the approved exchange. The browser requires an authenticated workspace owner
 or admin with a recent authenticator check. Only hashes and the publishable key
@@ -129,8 +131,8 @@ same verifier and receives the same application and key.
 
 Use `--no-open` when the controlling agent will present the printed approval URL
 itself. For a trusted local Commish runtime, `--app-url` accepts an explicit
-loopback HTTP origin; other custom origins require HTTPS. Setup creates TEST
-application credentials only. Program configuration and the complete transaction
+loopback HTTP origin; other custom origins require HTTPS. Setup creates application
+credentials in the approved mode. Program configuration and the complete transaction
 journey remain separate verification steps.
 
 ## Verify configuration from the CLI
