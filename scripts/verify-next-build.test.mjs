@@ -27,8 +27,11 @@ test("verification CLI checks both modes and fails closed without writes or cred
   await verifyCliProbe(fileURLToPath(new URL("../packages/next/bin/init.mjs", import.meta.url)));
 });
 
-test("setup CLI exchanges browser consent and saves replay-safe TEST credentials", async () => {
-  await setupCliProbe(fileURLToPath(new URL("../packages/next/bin/init.mjs", import.meta.url)));
+test("setup CLI exchanges mode-bound consent and rejects mismatched receipts", async () => {
+  const executable = fileURLToPath(new URL("../packages/next/bin/init.mjs", import.meta.url));
+  await setupCliProbe(executable);
+  await setupCliProbe(executable, "live");
+  await setupCliProbe(executable, "live", "test");
 });
 
 test("only declared framework capabilities select a build and invalid inputs fail before commands", async () => {

@@ -184,7 +184,7 @@ export async function verifyCliProbe(executable) {
   }
 }
 
-export async function setupCliProbe(executable) {
+export async function setupCliProbe(executable, mode = "test", responseMode = mode) {
   const { default: assert } = await import("node:assert/strict");
   const { spawn, spawnSync } = await import("node:child_process");
   const { createHash } = await import("node:crypto");
@@ -212,14 +212,14 @@ export async function setupCliProbe(executable) {
     }
     const body = {
       data: {
-        protocol: "commish-cli-setup-v1", status: "complete", workspaceId,
+        protocol: "commish-cli-setup-v1", status: "complete", workspaceId, mode: responseMode,
         application: {
           id: "app_fixture_only_123456", name: "Lockin",
           verifiedOrigins: [], createdAt: "2026-09-19T12:00:00.000Z",
         },
         apiKey: {
           id: "key_fixture_only_123456", applicationId: "app_fixture_only_123456",
-          mode: "test", publishableKey: approval.searchParams.get("publishableKey"),
+          mode: responseMode, publishableKey: approval.searchParams.get("publishableKey"),
           label: "Lockin agent setup", lastUsedAt: null, revokedAt: null,
           createdAt: "2026-09-19T12:00:00.000Z",
         },
@@ -250,20 +250,30 @@ export async function setupCliProbe(executable) {
     const origin = `http://127.0.0.1:${server.address().port}`;
     const result = await run([
       "setup", "--workspace", workspaceId, "--application-name", "Lockin",
+      ...(mode === "live" ? ["--mode", "live"] : []),
       "--key-label", "Lockin agent setup", "--output", output,
       "--app-url", origin, "--no-open", "--json",
     ]);
     assert.equal(result.signal, null);
+    if (responseMode !== mode) {
+      assert.equal(result.code, 1);
+      assert.equal(JSON.parse(result.stderr.split("\n").filter(Boolean).at(-1)).code, "invalid_response");
+      assert.deepEqual(readdirSync(cwd), [], "mismatched receipt saved credentials");
+      return;
+    }
     assert.equal(result.code, 0, result.stderr);
+    assert.equal(approval.searchParams.get("mode"), mode);
     assert.equal(requests, 2, "lost exchange response was not replayed exactly");
     const receipt = JSON.parse(result.stdout);
     assert.deepEqual(receipt, {
-      status: "test_credentials_configured", mode: "test", workspaceId,
+      status: `${mode}_credentials_configured`, mode, workspaceId,
       applicationId: "app_fixture_only_123456", apiKeyId: "key_fixture_only_123456",
       output, replayed: true, integrationVerified: false,
-      next: "Configure a TEST program, then run commish-next verify --json with COMMISH_PROGRAM_ID.",
+      next: `Configure a ${mode.toUpperCase()} program, then run commish-next verify --json with COMMISH_PROGRAM_ID.`,
     });
     const environment = Object.fromEntries(readFileSync(output, "utf8").trim().split("\n").map((line) => line.split("=")));
+    assert(environment.COMMISH_SECRET_KEY.startsWith(`cm_${mode}_sk_`));
+    assert(environment.NEXT_PUBLIC_COMMISH_PUBLISHABLE_KEY.startsWith(`cm_${mode}_pk_`));
     assert.equal(environment.COMMISH_API_URL, `${origin}/api/v1`);
     assert.equal(environment.NEXT_PUBLIC_COMMISH_APPLICATION_ID, receipt.applicationId);
     assert.equal(environment.NEXT_PUBLIC_COMMISH_PUBLISHABLE_KEY, approval.searchParams.get("publishableKey"));
