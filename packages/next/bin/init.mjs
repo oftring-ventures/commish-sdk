@@ -1,10 +1,180 @@
 #!/usr/bin/env node
-import { lstatSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { spawn } from "node:child_process";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
+import {
+  linkSync,
+  lstatSync,
+  mkdirSync,
+  readFileSync,
+  unlinkSync,
+  writeFileSync,
+} from "node:fs";
+import { basename, dirname, join, resolve } from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
+
+const hash = (value) => createHash("sha256").update(value).digest("hex");
+const token = () => randomBytes(24).toString("base64url");
+const safeUrl = (raw) => {
+  let value;
+  try { value = new URL(raw); } catch { throw new Error("invalid_app_url"); }
+  if (value.username || value.password || value.search || value.hash || value.pathname !== "/" ||
+      !(value.protocol === "https:" || value.protocol === "http:" &&
+        ["127.0.0.1", "[::1]", "localhost"].includes(value.hostname)))
+    throw new Error("invalid_app_url");
+  return value;
+};
+const responseJson = async (response) => {
+  if (Number(response.headers.get("content-length")) > 65_536 || !response.body)
+    throw new Error("invalid_response");
+  const chunks = []; let size = 0;
+  for await (const chunk of response.body) {
+    size += chunk.byteLength;
+    if (size > 65_536) throw new Error("invalid_response");
+    chunks.push(chunk);
+  }
+  try { return JSON.parse(Buffer.concat(chunks).toString("utf8")); }
+  catch { throw new Error("invalid_response"); }
+};
+const setupOptions = (values) => {
+  const result = { appUrl: "https://app.commish.sh", keyLabel: "Agent setup", open: true };
+  const keys = new Set();
+  for (let index = 0; index < values.length; index++) {
+    const name = values[index];
+    if (name === "--json" || name === "--no-open") {
+      if (keys.has(name)) throw new Error("invalid_arguments");
+      keys.add(name);
+      if (name === "--json") result.json = true;
+      else result.open = false;
+      continue;
+    }
+    const fields = {
+      "--workspace": "workspaceId", "--output": "output",
+      "--application-name": "applicationName", "--key-label": "keyLabel",
+      "--app-url": "appUrl",
+    };
+    const field = fields[name], value = values[++index];
+    if (!field || keys.has(name) || !value || value.startsWith("--"))
+      throw new Error("invalid_arguments");
+    keys.add(name); result[field] = value;
+  }
+  if (!/^wrk_[A-Za-z0-9_-]{12,}$/.test(result.workspaceId ?? "") ||
+      !result.output || !result.applicationName?.trim() || result.applicationName.length > 100 ||
+      !result.keyLabel.trim() || result.keyLabel.length > 100)
+    throw new Error("invalid_arguments");
+  result.applicationName = result.applicationName.trim();
+  result.keyLabel = result.keyLabel.trim();
+  result.appUrl = safeUrl(result.appUrl);
+  return result;
+};
+const openBrowser = (url) => {
+  const command = process.platform === "darwin" ? ["open", [url]]
+    : process.platform === "win32" ? ["rundll32", ["url.dll,FileProtocolHandler", url]]
+      : ["xdg-open", [url]];
+  const child = spawn(command[0], command[1], { detached: true, stdio: "ignore" });
+  child.on("error", () => {}); child.unref();
+};
+const credentialTarget = (output) => {
+  const target = resolve(output), parent = dirname(target);
+  const parentEntry = lstatSync(parent);
+  if (!parentEntry.isDirectory() || parentEntry.isSymbolicLink())
+    throw new Error("unsafe_output_path");
+  try {
+    lstatSync(target);
+    const error = new Error("output_exists"); error.code = "EEXIST"; throw error;
+  } catch (error) {
+    if (error.code !== "ENOENT") throw error;
+  }
+  return target;
+};
+const saveCredentials = (output, values) => {
+  const target = credentialTarget(output), parent = dirname(target);
+  const temporary = join(parent, `.${basename(target)}.${randomUUID()}.tmp`);
+  const body = Object.entries(values).map(([name, value]) => `${name}=${value}\n`).join("");
+  try {
+    writeFileSync(temporary, body, { flag: "wx", mode: 0o600 });
+    linkSync(temporary, target);
+  } finally {
+    try { unlinkSync(temporary); } catch {}
+  }
+  return target;
+};
+const setupReceipt = (body, expected) => {
+  const value = body?.data, app = value?.application, key = value?.apiKey;
+  if (value?.protocol !== "commish-cli-setup-v1" || value.status !== "complete" ||
+      value.workspaceId !== expected.workspaceId || typeof value.expiresAt !== "string" ||
+      typeof value.replayed !== "boolean" || !/^app_[A-Za-z0-9_-]{12,}$/.test(app?.id ?? "") ||
+      app?.name !== expected.applicationName || !Array.isArray(app?.verifiedOrigins) ||
+      typeof app?.createdAt !== "string" || !/^key_[A-Za-z0-9_-]{12,}$/.test(key?.id ?? "") ||
+      key?.applicationId !== app.id || key?.mode !== "test" ||
+      key?.publishableKey !== expected.publishableKey || key?.label !== expected.keyLabel ||
+      typeof key?.createdAt !== "string" || key?.lastUsedAt !== null || key?.revokedAt !== null)
+    throw new Error("invalid_response");
+  return value;
+};
+const setup = async (values) => {
+  const options = setupOptions(values), output = credentialTarget(options.output),
+    verifier = randomBytes(32).toString("base64url"),
+    publishableKey = `cm_test_pk_${token()}`, secretKey = `cm_test_sk_${token()}`,
+    expiresAt = new Date(Date.now() + 570_000).toISOString(),
+    request = {
+      workspaceId: options.workspaceId, challengeHash: hash(verifier),
+      applicationName: options.applicationName, keyLabel: options.keyLabel,
+      publishableKey, secretHash: hash(secretKey),
+      idempotencyKey: `cli-setup:${randomUUID()}`, expiresAt,
+    }, approval = new URL("/cli/setup", options.appUrl);
+  approval.search = new URLSearchParams(request).toString();
+  process.stderr.write(`Authorize TEST setup in your browser:\n${approval.href}\n`);
+  if (options.open) openBrowser(approval.href);
+  const exchange = new URL("/api/cli/setup-grants/exchange", options.appUrl);
+  let receipt;
+  while (Date.now() < Date.parse(expiresAt)) {
+    let response;
+    try {
+      response = await fetch(exchange, {
+        method: "POST", headers: { "content-type": "application/json", accept: "application/json" },
+        body: JSON.stringify({ verifier }), redirect: "error", cache: "no-store",
+        signal: AbortSignal.timeout(10_000),
+      });
+      const body = await responseJson(response);
+      if (response.ok) { receipt = setupReceipt(body, { ...options, publishableKey }); break; }
+      if (response.status !== 408 && response.status !== 429 && response.status !== 428 &&
+          response.status < 500)
+        throw new Error(body?.error?.code === "setup_grant_expired" ? "setup_expired" : "setup_denied");
+    } catch (error) {
+      if (["setup_expired", "setup_denied", "invalid_response"].includes(error.message)) throw error;
+    }
+    await delay(2_000);
+  }
+  if (!receipt) throw new Error("setup_expired");
+  const file = saveCredentials(output, {
+    COMMISH_API_URL: new URL("/api/v1", options.appUrl).href,
+    COMMISH_SECRET_KEY: secretKey,
+    NEXT_PUBLIC_COMMISH_PUBLISHABLE_KEY: publishableKey,
+    NEXT_PUBLIC_COMMISH_APPLICATION_ID: receipt.application.id,
+  });
+  return {
+    status: "test_credentials_configured", mode: "test", workspaceId: options.workspaceId,
+    applicationId: receipt.application.id, apiKeyId: receipt.apiKey.id, output: file,
+    replayed: receipt.replayed, integrationVerified: false,
+    next: "Configure a TEST program, then run commish-next verify --json with COMMISH_PROGRAM_ID.",
+  };
+};
 
 const args = process.argv.slice(2);
 const json = args.includes("--json");
-if (args[0] === "verify") {
+if (args[0] === "setup") {
+  try {
+    const result = await setup(args.slice(1));
+    console.log(json ? JSON.stringify(result) :
+      `Commish TEST credentials saved to ${result.output}.\n${result.next}`);
+  } catch (error) {
+    const code = ["invalid_arguments", "invalid_app_url", "unsafe_output_path", "invalid_response",
+      "setup_expired", "setup_denied"].includes(error?.message) ? error.message :
+      error?.code === "EEXIST" ? "output_exists" : "setup_unavailable";
+    console.error(json ? JSON.stringify({ status: "error", code }) : `Setup failed: ${code}.`);
+    process.exitCode = 1;
+  }
+} else if (args[0] === "verify") {
   const fail = (code) => { throw new Error(code); };
   try {
     if (args.slice(1).some((arg) => arg !== "--json") || new Set(args).size !== args.length)

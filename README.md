@@ -14,6 +14,10 @@ Its server-only `secretKey` option must never come from browser input.
 or the current route changes, and renders its children inside the application layout.
 `commish-next --write --json` installs the capture route and provider component,
 with structured instructions for the coding agent to finish layout and Checkout wiring.
+`commish-next setup` creates TEST application credentials through a short browser
+approval and saves them only to an explicit local file; the raw secret remains on
+the developer's machine. This is the normal agent-driven provisioning path rather
+than a dashboard credential-copy step.
 See [Next setup](packages/next/README.md) for the route and layout changes.
 The pinned Next framework dependencies support an isolated installed server-helper
 probe, production build, concurrent cookie requests and capture requests against
