@@ -1,7 +1,7 @@
 {
   "name": "@commish/next",
   "version": "0.1.0-beta.10",
-  "description": "Next.js referral capture and Stripe metadata helpers for the Commish test-money pilot",
+  "description": "Next.js referral capture and Stripe metadata helpers for Commish",
   "license": "MIT",
   "repository": {
     "type": "git",

@@ -1,7 +1,8 @@
 # @commish/sdk
 
-Commish's test-money pilot SDK for Node 24. Install exact paired tarballs only
-after an accepted candidate handoff; npm publication remains separately authorized.
+Commish's Node 24 SDK for permanent TEST and LIVE integrations. Install an exact
+paired release from npm; use accepted candidate tarballs only for prepublication
+qualification.
 Source is licensed under the MIT License; see LICENSE.
 
 ```ts
@@ -20,22 +21,19 @@ uses a publishable key. Verify raw webhook bodies with
 
 Artifacts contain ESM JavaScript and declarations with no production dependencies
 or private Commish imports. Preserve write idempotency keys across retries.
-Only test-money pilot behavior is supported; renewal ingress is deferred.
 
 ## Install and configure
 
-Install both exact `0.1.0-beta.10` tarballs from the candidate handoff after
-checking its `SHA512SUMS`; keep the consumer lockfile. No Commish checkout or
-database credentials are required. A tarball is a release candidate, not proof
-of npm publication or hosted acceptance.
+Install both exact `0.1.0-beta.10` packages from npm and keep the consumer lockfile.
+No Commish checkout or database credentials are required. For prepublication
+qualification, install the accepted candidate tarballs after checking `SHA512SUMS`.
 
 ```sh
-pnpm add /absolute/candidate/commish-sdk-0.1.0-beta.10.tgz \
-  /absolute/candidate/commish-next-0.1.0-beta.10.tgz
+pnpm add @commish/sdk@0.1.0-beta.10 @commish/next@0.1.0-beta.10
 ```
 
-Obtain a test secret key scoped to the verified application, a publishable key,
-program ID and endpoint signing secret from hosted setup. The API URL includes
+Obtain a mode-matched secret key scoped to the verified application, a publishable
+key, program ID and endpoint signing secret from hosted setup. The API URL includes
 `/api/v1`; the public-site URL is separate. Use HTTPS for hosted origins. Never
 put the secret key or endpoint signing secret in `NEXT_PUBLIC_*`, browser props,
 logs or source control. A deployment must contain the candidate read routes;

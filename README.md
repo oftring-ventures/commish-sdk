@@ -1,6 +1,6 @@
 # Commish public packages
 
-MIT-licensed source for the Commish test-money pilot.
+MIT-licensed source for integrating applications with Commish in TEST and LIVE modes.
 Available: the complete SDK, the `@commish/next/browser` bridge, and the server-only
 `applyCommishStripeMetadata` helper from `@commish/next`. The helper preserves existing
 Checkout fields and adds attribution to payment or subscription metadata; it does
@@ -23,7 +23,7 @@ The pinned Next framework dependencies support an isolated installed server-help
 probe, production build, concurrent cookie requests and capture requests against
 an owned loopback upstream. The provider also passes the installed type and production
 framework consumers; controlled hook tests verify its capture configuration and route dependencies.
-No npm publication, release artifact provenance or hosted acceptance is claimed.
+Verify npm availability, provenance and hosted acceptance separately from this source checkout.
 
 With Node 24 and pnpm 11.1.3:
 
@@ -92,22 +92,31 @@ Before dispatch, the release owner must complete this handoff:
    and workflow revision must share one SHA; an older pre-workflow candidate cannot
    be published by this workflow.
 2. Record approved hosted TEST acceptance, then explicitly authorize these two
-   archives. Configure the GitHub `npm-publication` environment with required
-   reviewers, self-review prevention, and a deployment rule allowing only
-   `v0.1.0-beta.10`. Keep the tag immutable. Do not dispatch while publication is held.
+   archives. Configure the GitHub `npm-publication` environment with the required
+   reviewer and the founder-approved single-owner manual approval model, plus a
+   deployment rule allowing only `v0.1.0-beta.10`. Keep the tag immutable. Do not
+   dispatch while publication is held.
 3. Save independently approved values as environment variables in that GitHub
    environment (configuration variables, not secrets):
    `COMMISH_NPM_APPROVED_SOURCE`, `COMMISH_NPM_APPROVED_MANIFEST_SHA256`,
    `COMMISH_NPM_APPROVED_CI_RECEIPT_SHA256`, and
    `COMMISH_NPM_HOSTED_ACCEPTANCE_SHA256`. Never derive approval inside the job.
-4. Verify both npm package trusted-publisher bindings name this repository,
-   `publish-packages.yml`, and `npm-publication`. The workflow uses Node 24.15.0's
-   bundled npm and GitHub OIDC; no npm token or dependency installation is needed.
-   See [npm trusted publishing](https://docs.npmjs.com/trusted-publishers/).
+4. For the first release only, npm requires each package to exist before it can
+   accept a trusted-publisher binding. After explicit publication authorization,
+   authenticate the release owner with npm and bootstrap-publish the two approved
+   archives in SDK-then-Next order. Verify each registry integrity before continuing.
+   Then configure each package's GitHub Actions trusted publisher with organization
+   `oftring-ventures`, repository `commish-sdk`, workflow `publish-packages.yml`,
+   environment `npm-publication`, and direct `npm publish` permission. Restrict
+   traditional package publishing to require 2FA and disallow tokens. Later releases
+   use GitHub OIDC and need no npm token. See
+   [npm trusted publishing](https://docs.npmjs.com/trusted-publishers/).
 5. Dispatch on the tag with the accepted candidate run and artifact IDs; review the
-   protected job. Retain its integrity receipt, verify registry provenance, and run
-   clean external installations of the exact package versions. A registry integrity
-   receipt does not establish hosted/live acceptance or release readiness.
+   protected job. Retain its integrity receipt and run clean external installations
+   of the exact package versions. The manually bootstrapped first version has registry
+   integrity evidence but no GitHub OIDC provenance; provenance begins with the first
+   version uploaded by the trusted publisher. A registry integrity receipt does not
+   establish hosted/live acceptance or release readiness.
 
 Source preparation, tests and PR publication do not configure this environment,
 create a tag, authorize registry writes or lift the founder's publication hold.

@@ -1,16 +1,15 @@
 # @commish/next
 
-MIT-licensed Next.js App Router integration for the Commish test-money pilot.
+MIT-licensed Next.js App Router integration for permanent Commish TEST and LIVE modes.
 This source checkpoint is verified with Node 24.15.0, Next 16.3.4 and React 19.2.8.
 It does not establish npm availability or acceptance against a hosted Commish API.
-Use the exact paired `0.1.0-beta.10` SDK/Next artifacts and consumer lockfile from your accepted
-candidate receipt; the release workflow and registry install instructions follow
-in separate release preparation work.
+Use the exact paired `0.1.0-beta.10` SDK/Next packages and keep the consumer lockfile.
+Accepted candidate tarballs remain available for prepublication qualification.
 
 ## Capture route
 
-Set `COMMISH_API_URL` to the supplied TEST API base, including `/api/v1`, and
-`COMMISH_SECRET_KEY` to the application-scoped TEST secret. Keep both on the server.
+Set `COMMISH_API_URL` to the selected mode's API base, including `/api/v1`, and
+`COMMISH_SECRET_KEY` to its application-scoped secret. Keep both on the server.
 Only the publishable key and application ID belong in the public variables below.
 Create `app/api/commish/attribution/route.ts` (or under `src/app`):
 
@@ -25,7 +24,7 @@ export const POST = createAttributionHandler({
 ```
 
 The route exchanges the referral with Commish and stores successful attribution
-in an HttpOnly cookie. Configure the API base explicitly for the TEST deployment;
+in an HttpOnly cookie. Configure the API base explicitly for the selected deployment;
 the helper otherwise uses its default Commish API origin.
 
 ## Application layout
@@ -61,7 +60,7 @@ failure keeps the referral for retry. Wait for capture before starting Checkout.
 
 In your existing authenticated server Checkout route, await
 `withCommishStripeMetadata(params)` from `@commish/next` before passing the result
-to your existing Stripe **test** Checkout integration. The helper preserves other
+to your existing Stripe Checkout integration. The helper preserves other
 parameters and applies the request's attribution to payment or subscription
 metadata. `getCommishAttribution()` reads that cookie directly; both helpers
 require a Next request context. The root export is blocked in browser builds.
