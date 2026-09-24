@@ -80,7 +80,7 @@ jobs:
       checks: write
       pull-requests: read
       statuses: write
-    uses: oftring-ventures/.github/.github/workflows/codex-pr-review.yml@fdd93807ece89f1d1de6df6007a4ef9ccabb2e83
+    uses: oftring-ventures/.github/.github/workflows/codex-pr-review.yml@0b8c58b73fddadaa69ce46deaec79c4ef63513d0
     with:
       mode: pr
       pr_number: ${{ needs.admit.outputs.pr_number }}
