@@ -1,3 +1,4 @@
+import { releaseVersion } from "./stable-release.mjs";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import {
@@ -100,7 +101,7 @@ export function verifySdkBrowserConsumer(
 ) {
   const manifest = JSON.parse(packed.get("package/package.json").data);
   assert.equal(manifest.name, "@commish/sdk");
-  assert.equal(manifest.version, "0.1.0-beta.10");
+  assert.equal(manifest.version, releaseVersion);
   for (const field of ["dependencies", "optionalDependencies", "peerDependencies"])
     assert.deepEqual(manifest[field] ?? {}, {}, "SDK consumer requires an empty runtime closure");
   assert.deepEqual(manifest.exports["./browser"], {

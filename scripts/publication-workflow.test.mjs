@@ -3,13 +3,13 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 
 const workflow = readFileSync(new URL("../.github/workflows/publish-packages.yml", import.meta.url), "utf8");
-test("publication requires manual fixed-tag dispatch and the protected environment", () => {
+test("publication requires manual release-tag dispatch and the protected environment", () => {
   const triggers = workflow.split("on:\n")[1].split("permissions:\n")[0];
   assert.match(triggers, /^  workflow_dispatch:\n/);
   assert.doesNotMatch(triggers, /^  (push|pull_request|pull_request_target|schedule|workflow_run|workflow_call):/m);
-  assert.match(workflow, /if: github.repository == 'oftring-ventures\/commish-sdk' && github.ref == 'refs\/tags\/v0\.1\.0-beta\.10'/);
+  assert(workflow.includes("if: github.repository == 'oftring-ventures/commish-sdk' && startsWith(github.ref, 'refs/tags/v')"));
   assert.match(workflow, /environment: npm-publication\n/);
-  assert.match(workflow, /group: npm-publication-beta10\n  cancel-in-progress: false/);
+  assert.match(workflow, /group: npm-publication\n  cancel-in-progress: false/);
   assert.match(workflow, /jobs:\n  publish:/);
 });
 

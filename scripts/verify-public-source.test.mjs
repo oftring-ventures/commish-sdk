@@ -18,6 +18,8 @@ function bootstrap() {
     "# Commish public packages\n\nMIT-licensed source for integrating applications with Commish in TEST and LIVE modes.\n\nThis repository is receiving independently buildable source layers.\nVerify npm availability, provenance and hosted acceptance separately from this source checkout.\n\nSee LICENSE for copyright and permission terms.\n",
   );
   for (const name of [
+    "scripts/stable-release.mjs",
+    "scripts/stable-release.test.mjs",
     ".github/workflows/publish-packages.yml",
     "scripts/publication-workflow.test.mjs",
     ".github/workflows/public-source.yml",
@@ -142,7 +144,7 @@ snapshots:
   );
   put(files, "packages/sdk/package.json", {
     name: "@commish/sdk",
-    version: "0.1.0-beta.10",
+    version: "0.1.0",
     type: "module",
     scripts: {
       build: "node build.mjs",

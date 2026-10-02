@@ -1,3 +1,4 @@
+import { releaseVersion } from "./stable-release.mjs";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { writeFileSync } from "node:fs";
@@ -70,7 +71,7 @@ export function verifyArtifact(artifact, accepted) {
 }
 
 export function acceptCandidate(members, accepted) {
-  const files = ["manifest.json", "ci-receipt.json", "SHA512SUMS", "commish-sdk-0.1.0-beta.10.tgz", "commish-next-0.1.0-beta.10.tgz"];
+  const files = ["manifest.json", "ci-receipt.json", "SHA512SUMS", `commish-sdk-${releaseVersion}.tgz`, `commish-next-${releaseVersion}.tgz`];
   assert.deepEqual([...members.keys()].sort(), [...files].sort(), "unexpected candidate inventory");
   const manifestBytes = members.get("manifest.json"), ciBytes = members.get("ci-receipt.json");
   const manifest = JSON.parse(manifestBytes), ci = JSON.parse(ciBytes);

@@ -1,3 +1,4 @@
+import { releaseVersion } from "./stable-release.mjs";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { lstatSync, mkdirSync, readFileSync, readdirSync, realpathSync, writeFileSync } from "node:fs";
@@ -71,7 +72,7 @@ export function writeCandidate(root, output, source, artifacts, scopes, manifest
   const records = artifacts.map(({ archive }, index) => {
     const packed = parseArchive(archive);
     const manifest = JSON.parse(packed.get("package/package.json").data), name = `@commish/${index ? "next" : "sdk"}`;
-    assert.equal(manifest.name, name); assert.equal(manifest.version, "0.1.0-beta.10");
+    assert.equal(manifest.name, name); assert.equal(manifest.version, releaseVersion);
     assert.deepEqual(manifest, manifests[index], "candidate manifest differs from normalized source");
     if (index) assert.equal(manifest.peerDependencies["@commish/sdk"], manifest.version);
     const hash = digest(archive);

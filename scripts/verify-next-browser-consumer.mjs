@@ -1,3 +1,4 @@
+import { releaseVersion } from "./stable-release.mjs";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import {
@@ -128,7 +129,7 @@ function verifyNextConsumer(provider, sdk, next, context, execute = execFileSync
   );
   for (const [index, manifest] of manifests.entries()) {
     assert.equal(manifest.name, index ? "@commish/next" : "@commish/sdk");
-    assert.equal(manifest.version, "0.1.0-beta.10");
+    assert.equal(manifest.version, releaseVersion);
     for (const field of ["dependencies", "optionalDependencies"])
       assert.deepEqual(manifest[field] ?? {}, {}, "unexpected paired runtime dependency");
     assert.deepEqual(manifest.exports["./browser"], pair("browser"));

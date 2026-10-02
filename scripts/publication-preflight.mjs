@@ -1,3 +1,4 @@
+import { releaseVersion } from "./stable-release.mjs";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { lstatSync, readFileSync, readdirSync } from "node:fs";
@@ -14,7 +15,7 @@ export function readPublicationCandidate(directory, approved) {
   assert.match(approved.source, /^[a-f0-9]{40}$/);
   for (const key of ["manifestSha256", "ciReceiptSha256"]) assert.match(approved[key], /^[a-f0-9]{64}$/);
   directory = resolve(directory); assert(lstatSync(directory).isDirectory());
-  const files = ["manifest.json", "ci-receipt.json", "SHA512SUMS", "commish-sdk-0.1.0-beta.10.tgz", "commish-next-0.1.0-beta.10.tgz"];
+  const files = ["manifest.json", "ci-receipt.json", "SHA512SUMS", `commish-sdk-${releaseVersion}.tgz`, `commish-next-${releaseVersion}.tgz`];
   assert.deepEqual(readdirSync(directory).sort(), [...files].sort());
   for (const file of files) assert(lstatSync(join(directory, file)).isFile(), "candidate files must be regular");
   const read = (file) => readFileSync(join(directory, file));
@@ -28,7 +29,7 @@ export function readPublicationCandidate(directory, approved) {
   assert.deepEqual([...manifest.consumerScopes].sort(), [...candidateScopes].sort());
   assert.equal(manifest.artifacts.length, 2);
   for (const [index, item] of manifest.artifacts.entries()) {
-    assert.equal(item.name, `@commish/${index ? "next" : "sdk"}`); assert.equal(item.version, "0.1.0-beta.10");
+    assert.equal(item.name, `@commish/${index ? "next" : "sdk"}`); assert.equal(item.version, releaseVersion);
     assert.equal(item.file, files[index + 3]);
     const bytes = read(item.file); assert.equal(bytes.length, item.bytes);
     assert.equal(hash(bytes, "sha512"), item.sha512, "candidate bytes changed");
@@ -40,7 +41,7 @@ export function readPublicationCandidate(directory, approved) {
     const metadata = JSON.parse(packed.get("package/package.json").data);
     assert.equal(metadata.name, item.name); assert.equal(metadata.version, item.version);
     assert.equal(metadata.license, "MIT"); assert.equal(metadata.repository.url, `git+https://github.com/${repository}.git`);
-    assert.deepEqual(metadata.publishConfig, { access: "public", tag: "beta" });
+    assert.deepEqual(metadata.publishConfig, { access: "public", tag: "latest" });
     for (const key of ["private", "scripts", "dependencies", "devDependencies", "optionalDependencies"])
       assert(!Object.hasOwn(metadata, key), "unexpected publication metadata");
     if (index) assert.equal(metadata.peerDependencies["@commish/sdk"], item.version);
@@ -63,7 +64,7 @@ export function requirePublicationApproval(candidate, env) {
   assert.equal(env.RUNNER_OS, "Linux"); assert.equal(env.RUNNER_ARCH, "X64");
   assert.equal(env.COMMISH_NPM_ENVIRONMENT, "npm-publication");
   assert.equal(env.GITHUB_SHA, candidate.source); assert.equal(env.GITHUB_WORKFLOW_SHA, candidate.source);
-  assert.equal(env.GITHUB_REF, "refs/tags/v0.1.0-beta.10");
+  assert.equal(env.GITHUB_REF, `refs/tags/v${releaseVersion}`);
   assert.equal(env.GITHUB_WORKFLOW_REF, `${repository}/.github/workflows/publish-packages.yml@${env.GITHUB_REF}`);
   for (const [field, name] of [["source", "SOURCE"], ["manifestSha256", "MANIFEST_SHA256"], ["ciReceiptSha256", "CI_RECEIPT_SHA256"]])
     assert.equal(env[`COMMISH_NPM_APPROVED_${name}`], candidate[field], "separate exact-candidate approval required");
@@ -93,5 +94,5 @@ export function publicationPlan(candidate, registryResults, { publish = false, e
     assert(isMissingRegistryVersion(result), "registry lookup unavailable; refuse publication"); return true;
   });
   return pending.map((item) => ({ name: item.name, integrity: item.integrity, argv: ["publish", join(candidate.directory, item.file),
-    "--ignore-scripts", "--access=public", "--tag=beta", publish ? "--provenance" : "--dry-run", ...publicRegistryArgs] }));
+    "--ignore-scripts", "--access=public", "--tag=latest", publish ? "--provenance" : "--dry-run", ...publicRegistryArgs] }));
 }
