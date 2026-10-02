@@ -86,7 +86,7 @@ export async function cliProbe(executable, invoke) {
   }
 }
 
-export async function verifyCliProbe(executable) {
+export async function verifyCliProbe(executable, { generic = false } = {}) {
   const { default: assert } = await import("node:assert/strict");
   const { execFile } = await import("node:child_process");
   const { createServer } = await import("node:http");
@@ -109,7 +109,14 @@ export async function verifyCliProbe(executable) {
     COMMISH_PROGRAM_ID: "prg_fixture_only_123456",
   };
   const run = (changes = {}, args = ["verify", "--json"]) => new Promise((resolve, reject) => {
-    execFile(executable, args, { cwd, env: { ...env, ...changes }, timeout: 15_000, maxBuffer: 65_536 },
+    const variables = { ...env, ...changes };
+    if (generic) {
+      variables.COMMISH_PUBLISHABLE_KEY = variables.NEXT_PUBLIC_COMMISH_PUBLISHABLE_KEY;
+      variables.COMMISH_APPLICATION_ID = variables.NEXT_PUBLIC_COMMISH_APPLICATION_ID;
+      delete variables.NEXT_PUBLIC_COMMISH_PUBLISHABLE_KEY;
+      delete variables.NEXT_PUBLIC_COMMISH_APPLICATION_ID;
+    }
+    execFile(executable, args, { cwd, env: variables, timeout: 15_000, maxBuffer: 65_536 },
       (error, stdout, stderr) => {
         try {
           assert(!error?.killed);
@@ -121,6 +128,13 @@ export async function verifyCliProbe(executable) {
       });
   });
   try {
+    if (generic) {
+      const help = await run({}, ["--help", "--json"]);
+      assert.equal(help.code, 0); assert.equal(help.body.status, "help");
+      assert(help.body.requiredEnvironment.includes("COMMISH_APPLICATION_ID"));
+      assert.equal((await run({}, ["--unknown", "--json"])).body.code, "invalid_arguments");
+      assert.equal(requests.length, 0);
+    }
     await new Promise((resolve, reject) => { server.once("error", reject); server.listen(0, "127.0.0.1", resolve); });
     env.COMMISH_API_URL = `http://127.0.0.1:${server.address().port}/api/v1`;
     for (const mode of ["test", "live"]) {

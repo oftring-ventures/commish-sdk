@@ -80,7 +80,7 @@ export function frameworkRegistryBinHash(consumer, root, name) {
 }
 
 // Registry bytes are frozen by the caller before extension and compared again after this check.
-export function verifyFrameworkPackage(consumer, root, artifact, registry) {
+export function verifyFrameworkPackage(consumer, root, artifact, registry, sdk) {
   consumer = realpathSync(consumer);
   root = child(consumer, root);
   const members = files(root);
@@ -119,11 +119,25 @@ export function verifyFrameworkPackage(consumer, root, artifact, registry) {
     }
     generated.push(verifyShim(consumer, root, "next", source, dirname(source), "dist/bin/next",
       join(dirname(dirname(root)), "next")));
+    if (sdk && JSON.parse(sdk.packed.get("package/package.json").data).bin) {
+      const peer = join(dirname(root), "sdk"), sdkRoot = child(consumer, peer);
+      assert.equal(sdkRoot, child(consumer, join(consumer, "node_modules/@commish/sdk")));
+      const metadata = readFileSync(join(sdkRoot, "package.json"));
+      assert(metadata.equals(sdk.packed.get("package/package.json").data));
+      assert.deepEqual(JSON.parse(metadata).bin, { commish: "./bin/init.mjs" });
+      assert(readFileSync(join(sdkRoot, "bin/init.mjs")).equals(sdk.packed.get("package/bin/init.mjs").data));
+      generated.push(verifyShim(consumer, root, "commish", sdkRoot,
+        dirname(dirname(sdkRoot)), "bin/init.mjs", peer));
+    }
     if (manifest.bin) {
       assert.deepEqual(manifest.bin, { "commish-next": "./bin/init.mjs" });
       consumerCli = verifyShim(consumer, consumer, "commish-next", root,
         dirname(dirname(root)), "bin/init.mjs");
     }
+  } else if (manifest.bin) {
+    assert.deepEqual(manifest.bin, { commish: "./bin/init.mjs" });
+    consumerCli = verifyShim(consumer, consumer, "commish", root,
+      dirname(dirname(root)), "bin/init.mjs");
   }
   const names = new Set(generated.map((entry) => entry.name));
   assert.deepEqual(

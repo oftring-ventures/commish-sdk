@@ -19,7 +19,7 @@ import { frameworkRegistryBinHash, verifyFrameworkPackage } from "./verify-frame
 const hash = (data) => createHash("sha256").update(data).digest("hex");
 // Fixed pinned-pnpm output, reconstructed independently from the retained actual shim hash.
 const template = readFileSync(new URL("./fixtures/next-peer-bin.txt", import.meta.url), "utf8");
-function fixture(sdk, cli, run) {
+function fixture(sdk, cli, run, sdkCli = false) {
   const consumer = realpathSync(mkdtempSync(join(tmpdir(), "commish-peer-bin-")));
   const store = join(consumer, "node_modules/.pnpm");
   const modules = join(store, "local-pair/node_modules");
@@ -90,7 +90,20 @@ function fixture(sdk, cli, run) {
     };
     const bins = sdk ? [] : [shim("next", next, dirname(next), "dist/bin/next")];
     if (cli) bins.push(shim("commish-next", root, modules, "bin/init.mjs", consumer));
-    const verify = () => verifyFrameworkPackage(consumer, root, { packed }, registry);
+    let sdkArtifact;
+    if (sdkCli) {
+      const source = join(modules, "@commish/sdk");
+      sdkArtifact = { packed: new Map([
+        ["package/package.json", { data: Buffer.from(JSON.stringify({ name: "@commish/sdk", bin: { commish: "./bin/init.mjs" } })) }],
+        ["package/bin/init.mjs", { data: Buffer.from("#!/usr/bin/env node\n// SDK fixture.\n") }],
+      ]) };
+      for (const [name, member] of sdkArtifact.packed)
+        write(join(source, name.slice(8)), member.data, name.endsWith(".mjs") ? 0o755 : 0o644);
+      mkdirSync(join(consumer, "node_modules/@commish"), { recursive: true });
+      symlinkSync(source, join(consumer, "node_modules/@commish/sdk"));
+      bins.push(shim("commish", source, modules, "bin/init.mjs"));
+    }
+    const verify = () => verifyFrameworkPackage(consumer, root, { packed }, registry, sdkArtifact);
     run({ consumer, root, next, bins, verify, write });
   } finally {
     rmSync(consumer, { recursive: true, force: true });
@@ -117,6 +130,14 @@ test("exact SDK payload and S7/S9 installer bins retain complete archive verific
         assert(entry.target.startsWith(consumer + "/"));
       }
     });
+});
+
+test("Next's SDK peer launcher is bound to the exact verified SDK artifact", () => {
+  fixture(false, true, ({ bins, verify, write }) => {
+    assert(verify().some((entry) => entry.name === "node_modules/.bin/commish"));
+    write(bins[2], readFileSync(bins[2], "utf8") + "echo changed\n", 0o755);
+    assert.throws(verify, /generated bin content differs/);
+  }, true);
 });
 
 test("bin tampering, extra members, links and changed source or payload cannot be ignored", () => {

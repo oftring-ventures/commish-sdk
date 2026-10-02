@@ -1,6 +1,6 @@
 {
   "name": "@commish/sdk",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Public server, browser and webhook interfaces for Commish",
   "license": "MIT",
   "repository": {
@@ -15,7 +15,8 @@
   "files": [
     "dist",
     "README.md",
-    "LICENSE"
+    "LICENSE",
+    "bin"
   ],
   "exports": {
     ".": {
@@ -45,5 +46,8 @@
   "devDependencies": {
     "typescript": "5.9.2",
     "@types/node": "24.13.3"
+  },
+  "bin": {
+    "commish": "./bin/init.mjs"
   }
 }

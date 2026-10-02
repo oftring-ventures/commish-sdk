@@ -144,7 +144,7 @@ snapshots:
   );
   put(files, "packages/sdk/package.json", {
     name: "@commish/sdk",
-    version: "0.1.0",
+    version: "0.2.0",
     type: "module",
     scripts: {
       build: "node build.mjs",
@@ -373,7 +373,7 @@ test("Next server metadata may precede CLI without admitting mismatched package 
   patch(withCli, (manifest) => {
     delete manifest.exports["."];
   });
-  assert.throws(() => inspect(withCli), /Next CLI requires its server source/);
+  assert.throws(() => inspect(withCli), /CLI requires its server source/);
 });
 test("archive inspection rejects traversal, duplicate paths, links and truncated bodies", () => {
   assert.equal(

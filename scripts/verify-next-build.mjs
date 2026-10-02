@@ -209,7 +209,7 @@ export async function verifyNextBuild(sdk, next, context, execute) {
           readFileSync(join(consumer, `${index ? "next" : "sdk"}.tgz`)).equals(artifact.archive),
           "framework archive changed",
         );
-        verifyFrameworkPackage(consumer, pairRoots[index], artifact, registry);
+        verifyFrameworkPackage(consumer, pairRoots[index], artifact, registry, sdk);
       }
       assert.deepEqual(
         registrySnapshot(consumer, locks, pairRoots),
