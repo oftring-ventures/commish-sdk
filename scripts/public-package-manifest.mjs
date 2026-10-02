@@ -31,7 +31,7 @@ export function publicPackageManifests(files) {
     const peers = pkg === "sdk" ? undefined
       : { "@commish/sdk": common.version, next: ">=16.2.12 <17", react: ">=19.2.8 <20" };
     assert.deepEqual(manifest.peerDependencies, peers, "unsupported release peers");
-    const bin = pkg === "sdk" ? undefined : { "commish-next": "./bin/init.mjs" };
+    const bin = pkg === "sdk" ? { commish: "./bin/init.mjs" } : { "commish-next": "./bin/init.mjs" };
     assert.deepEqual(manifest.bin, bin, "incomplete release bin");
     assert.deepEqual(manifest.files, ["dist", "README.md", "LICENSE", ...(bin ? ["bin"] : [])]);
     for (const name of ["dependencies", "optionalDependencies", "bundledDependencies", "bundleDependencies"])

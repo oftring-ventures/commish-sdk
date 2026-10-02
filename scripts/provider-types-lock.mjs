@@ -92,7 +92,7 @@ ${manifests[1].bin ? "    hasBin: true\n" : ""}    peerDependencies:
     resolution: {integrity: ${sri(sdk.archive)}, tarball: file:sdk.tgz}
     version: ${releaseVersion}
     engines: {node: '>=24 <25'}
-
+${manifests[0].bin ? '    hasBin: true\n' : ''}
 ${typeRecords}
 
 snapshots:

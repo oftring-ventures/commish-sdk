@@ -7,7 +7,7 @@ function source() {
   const files = new Map();
   for (const pkg of ["sdk", "next"]) {
     const root = `packages/${pkg}`;
-    const names = ["package.json", "LICENSE", "README.md", ...["src", ...(pkg === "next" ? ["bin"] : [])]
+    const names = ["package.json", "LICENSE", "README.md", ...["src", "bin"]
       .flatMap((dir) => readdirSync(new URL(`../${root}/${dir}/`, import.meta.url)).map((name) => `${dir}/${name}`))];
     for (const name of names) {
       const path = `${root}/${name}`, url = new URL(`../${path}`, import.meta.url), stat = statSync(url);
@@ -27,7 +27,7 @@ test("complete public pair normalizes metadata without source build configuratio
   assert.equal(pair.length, 2);
   assert.equal(pair[1].peerDependencies["@commish/sdk"], pair[0].version);
   assert.deepEqual(pair.map((m) => Object.keys(m).sort()), [
-    ["description", "engines", "exports", "license", "name", "publishConfig", "repository", "type", "version"],
+    ["bin", "description", "engines", "exports", "license", "name", "publishConfig", "repository", "type", "version"],
     ["bin", "description", "engines", "exports", "license", "name", "peerDependencies", "publishConfig", "repository", "type", "version"],
   ]);
 });
@@ -35,7 +35,7 @@ test("complete public pair normalizes metadata without source build configuratio
 test("private, mismatched and incomplete release source is rejected before normalization", () => {
   for (const pkg of ["sdk", "next"]) for (const patch of [
     (m) => { m.private = true; }, (m) => { m.private = false; },
-    (m) => { m.version = "0.1.0-beta.9"; }, (m) => { m.license = "UNLICENSED"; },
+    (m) => { m.version = "0.2.0-beta.9"; }, (m) => { m.license = "UNLICENSED"; },
     (m) => { m.repository.directory = "private"; }, (m) => { delete m.exports["."]; },
     (m) => { m.publishConfig.tag = "beta"; }, (m) => { m.dependencies = {}; },
     (m) => { m.peerDependencies = {}; }, (m) => { m.files.push("src"); },

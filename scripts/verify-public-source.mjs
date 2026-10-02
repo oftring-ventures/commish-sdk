@@ -110,6 +110,7 @@ export function inspect(files) {
     ...roots,
     ...automation,
     "packages/next/bin/init.mjs",
+    "packages/sdk/bin/init.mjs",
     ...Object.entries(sources).flatMap(([pkg, names]) =>
       [...common, ...names.map((name) => `src/${name}.${name === "provider" ? "tsx" : "ts"}`)].map(
         (name) => `packages/${pkg}/${name}`,
@@ -120,7 +121,7 @@ export function inspect(files) {
     assert(allowed.has(name), "unexpected source path");
     assert.equal(
       file.mode,
-      name === "packages/next/bin/init.mjs" ? "100755" : "100644",
+      /^packages\/(sdk|next)\/bin\/init\.mjs$/.test(name) ? "100755" : "100644",
       "invalid source mode",
     );
   }
@@ -220,10 +221,10 @@ export function inspect(files) {
     if (pkg === "next" && react) exports["./react"] = pair("provider");
     assert.deepEqual(manifest.exports, exports, "exports do not match present source");
     const bin =
-      pkg === "next" && files.has(`${dir}/bin/init.mjs`)
-        ? { "commish-next": "./bin/init.mjs" }
+      files.has(`${dir}/bin/init.mjs`)
+        ? { [pkg === "sdk" ? "commish" : "commish-next"]: "./bin/init.mjs" }
         : undefined;
-    if (bin) assert(has("index"), "Next CLI requires its server source");
+    if (bin) assert(has("index"), "CLI requires its server source");
     assert.deepEqual(manifest.bin, bin, "bin does not match present source");
     if (bin) bytes(files, `${dir}/bin/init.mjs`);
     if (pkg === "next" && has("metadata"))
