@@ -105,17 +105,19 @@ export function acceptHandoff({ run, comparison, artifact, zip, mainHead }) {
 }
 
 export async function fetchEvidence({ runId, artifactId, token, fetch: fetcher = fetch }) {
-  const api = async (path, accept = "application/vnd.github+json") => {
-    const response = await fetcher(`https://api.github.com${path}`, { headers: { accept, "x-github-api-version": "2022-11-28",
+  const api = async (path, archive = false) => {
+    // GitHub's archive endpoint requires its API media type before redirecting
+    // to ZIP bytes. The response parser must not determine the Accept header.
+    const response = await fetcher(`https://api.github.com${path}`, { headers: { accept: "application/vnd.github+json", "x-github-api-version": "2022-11-28",
       ...(token ? { authorization: `Bearer ${token}` } : {}) } });
     assert.equal(response.status, 200, `GitHub API ${path} answered ${response.status}`);
-    return accept.endsWith("json") ? response.json() : Buffer.from(await response.arrayBuffer());
+    return archive ? Buffer.from(await response.arrayBuffer()) : response.json();
   };
   const run = await api(`/repos/${repository}/actions/runs/${runId}`);
   const main = await api(`/repos/${repository}/branches/main`);
   const comparison = await api(`/repos/${repository}/compare/main...${run.head_sha}`);
   const artifact = await api(`/repos/${repository}/actions/artifacts/${artifactId}`);
-  const zip = await api(`/repos/${repository}/actions/artifacts/${artifactId}/zip`, "application/zip");
+  const zip = await api(`/repos/${repository}/actions/artifacts/${artifactId}/zip`, true);
   return { run, comparison, artifact, zip, mainHead: main.commit.sha };
 }
 
