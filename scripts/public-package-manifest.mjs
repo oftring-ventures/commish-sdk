@@ -1,3 +1,4 @@
+import { releaseVersion } from "./stable-release.mjs";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 
@@ -15,10 +16,10 @@ export function publicPackageManifests(files) {
     const root = `packages/${pkg}`, manifest = JSON.parse(read(`${root}/package.json`));
     assert(!Object.hasOwn(manifest, "private"), "release source must not be private");
     const common = {
-      name: `@commish/${pkg}`, version: "0.1.0-beta.10", license: "MIT",
+      name: `@commish/${pkg}`, version: releaseVersion, license: "MIT",
       repository: { type: "git", url: "git+https://github.com/oftring-ventures/commish-sdk.git", directory: root },
       type: "module", engines: { node: ">=24 <25" },
-      publishConfig: { access: "public", tag: "beta" },
+      publishConfig: { access: "public", tag: "latest" },
     };
     for (const [name, value] of Object.entries(common))
       assert.deepEqual(manifest[name], value, `unsupported release ${name}`);

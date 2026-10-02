@@ -13,9 +13,9 @@ const missing = { status: 1, stdout: JSON.stringify({ error: { code: "E404" } })
 function fixture(run) {
   const directory = mkdtempSync(join(tmpdir(), "commish-publication-test-")), source = "a".repeat(40);
   const artifacts = ["sdk", "next"].map((pkg) => {
-    const metadata = { name: `@commish/${pkg}`, version: "0.1.0-beta.10", license: "MIT",
-      repository: { url: "git+https://github.com/oftring-ventures/commish-sdk.git" }, publishConfig: { access: "public", tag: "beta" },
-      ...(pkg === "next" ? { peerDependencies: { "@commish/sdk": "0.1.0-beta.10" } } : {}) };
+    const metadata = { name: `@commish/${pkg}`, version: "0.1.0", license: "MIT",
+      repository: { url: "git+https://github.com/oftring-ventures/commish-sdk.git" }, publishConfig: { access: "public", tag: "latest" },
+      ...(pkg === "next" ? { peerDependencies: { "@commish/sdk": "0.1.0" } } : {}) };
     const payload = Buffer.from(JSON.stringify(metadata)), header = Buffer.alloc(512);
     header.write("package/package.json"); header.write("0000644", 100);
     header.write(payload.length.toString(8).padStart(11, "0"), 124); header.write("0", 156); header.fill(32, 148, 156);
@@ -38,7 +38,7 @@ function fixture(run) {
   const approved = { source, manifestSha256: ci.manifestSha256, ciReceiptSha256: hash(readFileSync(join(directory, "ci-receipt.json"))) };
   const env = { GITHUB_ACTIONS: "true", GITHUB_REPOSITORY: ci.repository, GITHUB_EVENT_NAME: "workflow_dispatch", GITHUB_JOB: "publish",
     RUNNER_OS: "Linux", RUNNER_ARCH: "X64", COMMISH_NPM_ENVIRONMENT: "npm-publication", GITHUB_SHA: source, GITHUB_WORKFLOW_SHA: source,
-    GITHUB_REF: "refs/tags/v0.1.0-beta.10", GITHUB_WORKFLOW_REF: `${ci.repository}/.github/workflows/publish-packages.yml@refs/tags/v0.1.0-beta.10`,
+    GITHUB_REF: "refs/tags/v0.1.0", GITHUB_WORKFLOW_REF: `${ci.repository}/.github/workflows/publish-packages.yml@refs/tags/v0.1.0`,
     COMMISH_NPM_APPROVED_SOURCE: source, COMMISH_NPM_APPROVED_MANIFEST_SHA256: approved.manifestSha256,
     COMMISH_NPM_APPROVED_CI_RECEIPT_SHA256: approved.ciReceiptSha256, COMMISH_NPM_HOSTED_ACCEPTANCE_SHA256: "b".repeat(64) };
   try { run({ directory, approved, env, manifest, save }); } finally { rmSync(directory, { recursive: true, force: true }); }
@@ -47,7 +47,7 @@ function fixture(run) {
 test("accepted candidate binds pair, every member and CI receipt; plans default to dry-run", () => fixture(({ directory, approved }) => {
   const candidate = readPublicationCandidate(directory, approved), plan = publicationPlan(candidate, [missing, missing]);
   assert.deepEqual(plan.map((p) => p.name), ["@commish/sdk", "@commish/next"]);
-  for (const item of plan) assert.deepEqual(item.argv.slice(2), ["--ignore-scripts", "--access=public", "--tag=beta", "--dry-run", "--registry=https://registry.npmjs.org", "--@commish:registry=https://registry.npmjs.org"]);
+  for (const item of plan) assert.deepEqual(item.argv.slice(2), ["--ignore-scripts", "--access=public", "--tag=latest", "--dry-run", "--registry=https://registry.npmjs.org", "--@commish:registry=https://registry.npmjs.org"]);
   assert.throws(() => publicationPlan(candidate, [missing, missing], { publish: true }));
 }));
 
@@ -70,6 +70,11 @@ test("publication requires each exact protected identity and separate acceptance
   for (const key of Object.keys(env)) assert.throws(() => requirePublicationApproval(candidate, { ...env, [key]: "wrong" }), key);
   assert.throws(() => requirePublicationApproval(candidate, { ...env, GITHUB_REF: "refs/tags/unrelated",
     GITHUB_WORKFLOW_REF: "oftring-ventures/commish-sdk/.github/workflows/publish-packages.yml@refs/tags/unrelated" }));
+  for (const version of ["0.1.0-beta.10", "0.1.1", "01.0.0"]) {
+    const ref = `refs/tags/v${version}`;
+    assert.throws(() => requirePublicationApproval(candidate, { ...env, GITHUB_REF: ref,
+      GITHUB_WORKFLOW_REF: `oftring-ventures/commish-sdk/.github/workflows/publish-packages.yml@${ref}` }));
+  }
   const plan = publicationPlan(candidate, [missing, missing], { publish: true, env });
   assert(plan.every((p) => p.argv.includes("--provenance") && !p.argv.includes("--dry-run")));
 }));

@@ -32,7 +32,9 @@ pnpm install --frozen-lockfile --ignore-scripts --registry=https://registry.npmj
 pnpm build
 ```
 
-The complete source pair targets `0.1.0-beta.10`. Both packages include MIT LICENSE
+The complete source pair targets stable version `0.1.0` on npm's `latest` tag.
+Package stability is independent of TEST/LIVE mode and workspace eligibility.
+Both packages include MIT LICENSE
 and setup documentation, and Next requires that exact SDK version. Release candidate
 preparation and hosted acceptance remain separate steps; use an accepted artifact
 receipt before installing the pair.
@@ -65,7 +67,7 @@ and CI receipt hashes match a separately accepted handoff. It checks every archi
 and member, and preflights both exact registry versions before planning either
 upload. Identical existing versions are skipped; different bytes or unavailable
 lookups stop the pair. Plans default to npm dry-run and execute no commands.
-A real publication plan additionally requires the public `v0.1.0-beta.10` tag/workflow identity,
+A real publication plan additionally requires the public `v0.1.0` tag/workflow identity,
 separate exact-candidate approval and a hosted acceptance evidence hash. Protected
 environment configuration, GitHub run/artifact verification and execution remain
 responsibilities of the publishing workflow; a plan alone authorizes no registry write.
@@ -77,8 +79,10 @@ artifact is unexpired and its bytes match the API digest, and that the candidate
 inside binds that exact run, source and manifest. It then writes the approval digests
 the preflight library consumes. It needs only a read token and performs no publication.
 
-The protected `Publish approved packages` workflow publishes only from the immutable
-`v0.1.0-beta.10` tag, by manual dispatch. Its executor defaults to dry-run outside
+The protected `Publish approved packages` workflow requires an immutable release
+tag matching `scripts/stable-release.mjs` (currently `v0.1.0`), by manual dispatch.
+Prerelease versions and mismatched source, pair or tag identities are rejected.
+Its executor defaults to dry-run outside
 that workflow and never retries an upload automatically. Both exact registry
 versions are preflighted before uploading SDK then Next; existing identical versions
 are skipped. Each upload gets an immediate registry integrity readback. Missing or
@@ -94,8 +98,7 @@ Before dispatch, the release owner must complete this handoff:
 2. Record approved hosted TEST acceptance, then explicitly authorize these two
    archives. Configure the GitHub `npm-publication` environment with the required
    reviewer and the founder-approved single-owner manual approval model, plus a
-   deployment rule allowing only `v0.1.0-beta.10`. Keep the tag immutable. Do not
-   dispatch while publication is held.
+   deployment rule allowing only the approved release tag. Keep the tag immutable.
 3. Save independently approved values as environment variables in that GitHub
    environment (configuration variables, not secrets):
    `COMMISH_NPM_APPROVED_SOURCE`, `COMMISH_NPM_APPROVED_MANIFEST_SHA256`,
@@ -118,5 +121,6 @@ Before dispatch, the release owner must complete this handoff:
    version uploaded by the trusted publisher. A registry integrity receipt does not
    establish hosted/live acceptance or release readiness.
 
-Source preparation, tests and PR publication do not configure this environment,
-create a tag, authorize registry writes or lift the founder's publication hold.
+For each subsequent stable release, update the reviewed release version, both
+package manifests, exact consumer fixtures and documentation together. Preserve
+the separate candidate approval, hosted evidence and registry verification gates.

@@ -24,12 +24,12 @@ or private Commish imports. Preserve write idempotency keys across retries.
 
 ## Install and configure
 
-Install both exact `0.1.0-beta.10` packages from npm and keep the consumer lockfile.
+Install both exact `0.1.0` packages from npm and keep the consumer lockfile.
 No Commish checkout or database credentials are required. For prepublication
 qualification, install the accepted candidate tarballs after checking `SHA512SUMS`.
 
 ```sh
-pnpm add @commish/sdk@0.1.0-beta.10 @commish/next@0.1.0-beta.10
+pnpm add @commish/sdk@0.1.0 @commish/next@0.1.0
 ```
 
 Obtain a mode-matched secret key scoped to the verified application, a publishable

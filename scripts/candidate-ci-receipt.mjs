@@ -1,3 +1,4 @@
+import { releaseVersion } from "./stable-release.mjs";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { lstatSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
@@ -27,7 +28,7 @@ export function writeCiReceipt(directory, env) {
   assert.equal(manifest.artifacts.length, 2);
   const artifacts = manifest.artifacts.map((item, index) => {
     const pkg = index ? "next" : "sdk";
-    assert.equal(item.name, `@commish/${pkg}`); assert.equal(item.version, "0.1.0-beta.10");
+    assert.equal(item.name, `@commish/${pkg}`); assert.equal(item.version, releaseVersion);
     assert.equal(item.file, `commish-${pkg}-${item.version}.tgz`);
     const archive = readFileSync(join(directory, item.file));
     assert.equal(archive.length, item.bytes);

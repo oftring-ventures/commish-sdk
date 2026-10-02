@@ -1,3 +1,4 @@
+import { releaseVersion } from "./stable-release.mjs";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -24,6 +25,8 @@ import {
 } from "./verify-next-browser-consumer.mjs";
 
 const automation = [
+  "scripts/stable-release.mjs",
+  "scripts/stable-release.test.mjs",
   ".github/workflows/publish-packages.yml",
   "scripts/publication-workflow.test.mjs",
   ".github/workflows/public-source.yml",
@@ -171,7 +174,7 @@ export function inspect(files) {
     bytes(files, `${dir}/src/browser.ts`);
     const manifest = json(files, `${dir}/package.json`);
     assert.equal(manifest.name, `@commish/${pkg}`);
-    assert.equal(manifest.version, "0.1.0-beta.10");
+    assert.equal(manifest.version, releaseVersion);
     assert.equal(manifest.type, "module");
     assert.deepEqual(
       manifest.scripts,

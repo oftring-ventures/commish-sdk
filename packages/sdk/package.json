@@ -1,6 +1,6 @@
 {
   "name": "@commish/sdk",
-  "version": "0.1.0-beta.10",
+  "version": "0.1.0",
   "description": "Public server, browser and webhook interfaces for Commish",
   "license": "MIT",
   "repository": {
@@ -35,7 +35,7 @@
   },
   "publishConfig": {
     "access": "public",
-    "tag": "beta"
+    "tag": "latest"
   },
   "scripts": {
     "build": "node build.mjs",

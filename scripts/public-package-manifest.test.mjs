@@ -37,7 +37,7 @@ test("private, mismatched and incomplete release source is rejected before norma
     (m) => { m.private = true; }, (m) => { m.private = false; },
     (m) => { m.version = "0.1.0-beta.9"; }, (m) => { m.license = "UNLICENSED"; },
     (m) => { m.repository.directory = "private"; }, (m) => { delete m.exports["."]; },
-    (m) => { m.publishConfig.tag = "latest"; }, (m) => { m.dependencies = {}; },
+    (m) => { m.publishConfig.tag = "beta"; }, (m) => { m.dependencies = {}; },
     (m) => { m.peerDependencies = {}; }, (m) => { m.files.push("src"); },
   ]) {
     const files = source(); change(files, pkg, patch);
