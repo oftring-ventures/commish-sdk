@@ -25,6 +25,7 @@ import {
 } from "./verify-next-browser-consumer.mjs";
 
 const automation = [
+  "scripts/setup-session.test.mjs",
   "scripts/stable-release.mjs",
   "scripts/stable-release.test.mjs",
   ".github/workflows/publish-packages.yml",
@@ -111,6 +112,7 @@ export function inspect(files) {
     ...automation,
     "packages/next/bin/init.mjs",
     "packages/sdk/bin/init.mjs",
+    "packages/sdk/bin/setup-session.mjs",
     ...Object.entries(sources).flatMap(([pkg, names]) =>
       [...common, ...names.map((name) => `src/${name}.${name === "provider" ? "tsx" : "ts"}`)].map(
         (name) => `packages/${pkg}/${name}`,
@@ -254,7 +256,7 @@ export function archiveFiles(compressed) {
       size = Number.parseInt(field(124, 12).trim(), 8);
     const mode = Number.parseInt(field(100, 8).trim(), 8);
     assert(
-      /^(package\/(?:dist\/)?[a-zA-Z0-9_.-]+|package\/bin\/init.mjs)$/.test(name) &&
+      /^(package\/(?:dist\/)?[a-zA-Z0-9_.-]+|package\/bin\/(?:init|setup-session)\.mjs)$/.test(name) &&
         !files.has(name),
       "unsafe archive entry",
     );

@@ -18,6 +18,7 @@ function bootstrap() {
     "# Commish public packages\n\nMIT-licensed source for integrating applications with Commish in TEST and LIVE modes.\n\nThis repository is receiving independently buildable source layers.\nVerify npm availability, provenance and hosted acceptance separately from this source checkout.\n\nSee LICENSE for copyright and permission terms.\n",
   );
   for (const name of [
+    "scripts/setup-session.test.mjs",
     "scripts/stable-release.mjs",
     "scripts/stable-release.test.mjs",
     ".github/workflows/publish-packages.yml",
@@ -725,4 +726,9 @@ test("skipped model jobs cannot impersonate the required gate and group bridging
   assert.match(group, /^  codex_review:$/m);
   assert.match(group, /mode: merge_group/);
   assert.doesNotMatch(group, /pull_request:|pull_request_target:|\n\s+if:|secrets:/);
+});
+
+test("archive admits only reviewed CLI modules", () => {
+  assert.equal(archiveFiles(tar([["package/bin/setup-session.mjs", "// reviewed module"]])).size, 1);
+  assert.throws(() => archiveFiles(tar([["package/bin/arbitrary.mjs", "extra"]])));
 });
