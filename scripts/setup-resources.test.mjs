@@ -160,3 +160,67 @@ test("webhook registration projects only exact endpoint metadata and secret down
   for (const url of ["https:guestbook.example/hook", "https://guestbook.example/hook?token=hidden", "https://127.0.0.1/hook", "https://user:secret@guestbook.example/hook"])
     await assert.rejects(resources.createWebhook({ ...hookInput, url }), /invalid_request/);
 });
+
+function readinessFixture(mode = "test") {
+  const context = { ...bound, mode, operations: ["readiness.read", "stripe.connect"] }, calls = [];
+  const input = { programId: program.id, credentialId: "key_123456789012" };
+  const data = { ...context, replayed: true, program: { id: program.id, applicationId: app.id, status: "draft", activeTermVersion: null, availableTermVersion: 1 },
+    destinationVerified: true, credentialActive: true, webhookActive: null, stripeConnection: { mode, status: "not_connected" },
+    integrationDiagnostics: mode === "test" ? { programId: program.id, mode, status: "blocked", unmetGates: ["attributed_checkout"] } : null,
+    liveAccess: mode === "live" ? { workspaceId: bound.workspaceId, effectiveLiveAccess: "disabled" } : null,
+    actions: ["connect_stripe"], path: `/dashboard/workspace/${bound.workspaceId}/settings?mode=${mode}`, action: "connect_stripe_in_browser" };
+  return { context, data, input, calls, resources: createSetupResources(async (...args) => { calls.push(args); return data; }, () => context) };
+}
+test("readiness separates TEST evidence from LIVE eligibility and redacts nested extras", async () => {
+  for (const mode of ["test", "live"]) {
+    const f = readinessFixture(mode); f.data.providerSecret = "do-not-output"; f.data.program.secret = "do-not-output";
+    const result = await f.resources.readReadiness(f.input);
+    assert.equal(result.integrationVerified, false); assert.equal(result.stripeStatus, "not_connected");
+    assert.deepEqual(result.testEvidence, mode === "test" ? { status: "blocked", unmetGates: ["attributed_checkout"] } : null);
+    assert.equal(result.liveAccess, mode === "live" ? "disabled" : null);
+    assert(!JSON.stringify(result).includes("do-not-output"));
+    assert.deepEqual(f.calls[0], ["POST", "/api/cli/setup/readiness", f.input]);
+  }
+});
+test("readiness rejects changed scope, mismatched evidence and fabricated recovery actions", async () => {
+  for (const patch of [{ mode: "live" }, { workspaceId: "wrk_abcdefghijkl" }, { webhookActive: false },
+    { program: { ...readinessFixture().data.program, id: "prg_abcdefghijkl" } },
+    { stripeConnection: { mode: "live", status: "connected" } }, { actions: ["send-private-secret"] },
+    { integrationDiagnostics: { programId: program.id, mode: "test", status: "ready", unmetGates: ["attributed_checkout"] } }]) {
+    const f = readinessFixture(); Object.assign(f.data, patch);
+    await assert.rejects(f.resources.readReadiness(f.input), /invalid_response/);
+  }
+  const f = readinessFixture(); f.context.operations = [];
+  await assert.rejects(f.resources.readReadiness(f.input), /access_denied/);
+  await assert.rejects(f.resources.stripeHandoff(), /access_denied/); assert.equal(f.calls.length, 0);
+});
+test("Stripe handoff contains only the current workspace and mode settings path", async () => {
+  for (const mode of ["test", "live"]) {
+    const f = readinessFixture(mode);
+    assert.equal((await f.resources.stripeHandoff()).path, f.data.path);
+    assert.deepEqual(f.calls[0], ["POST", "/api/cli/setup/stripe", undefined]);
+    f.data.path = "https://connect.stripe.com/oauth?state=private";
+    await assert.rejects(f.resources.stripeHandoff(), /invalid_response/);
+  }
+});
+test("configuration transport accepts the server's bounded large program receipt", async () => {
+  const input = { ...programInput, eligibleStripeProductIds: Array.from({ length: 100 }, (_, i) => `prod_${i}_${"a".repeat(700)}`) };
+  const now = Date.now(), operations = ["program.write"]; let hash, oversized = false;
+  const session = createSetupSession({ operations }, { fetcher: async (url, options) => {
+    if (url.endsWith("/programs")) return oversized ? new Response("x".repeat(1_048_577)) : Response.json({ data: {
+      protocol: "commish-cli-setup-v2", requestId: hash, ...bound, replayed: false,
+      program: { ...program, ...input, eligibleStripeProductIds: [...input.eligibleStripeProductIds].sort() },
+    } });
+    if (options.method === "POST") {
+      hash = JSON.parse(options.body).challengeHash;
+      return Response.json({ data: { protocol: "commish-cli-setup-v2", requestId: hash, mode: "test", operations,
+        decision: "pending", workspaceRequest: null, requestExpiresAt: new Date(now + 3600000).toISOString(),
+        pairingCode: `${hash.slice(0, 4)}-${hash.slice(4, 8)}`.toUpperCase() } });
+    }
+    return Response.json({ data: { protocol: "commish-cli-setup-v2", requestId: hash, ...bound, operations,
+      status: "authorized", expiresAt: new Date(now + 600000).toISOString() } });
+  } });
+  await session.begin(); await session.poll();
+  assert.equal((await session.createProgram(input)).program.eligibleStripeProductIds.length, 100);
+  oversized = true; await assert.rejects(session.createProgram(input), /invalid_response/);
+});

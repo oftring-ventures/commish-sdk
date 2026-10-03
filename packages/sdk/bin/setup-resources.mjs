@@ -98,6 +98,40 @@ export function createSetupResources(request, context) {
       verifiedAt: value.verifiedAt, challenge } };
   }
   return {
+    async stripeHandoff() {
+      const { result, receipt } = await call("stripe.connect", "/api/cli/setup/stripe", "POST");
+      const path = `/dashboard/workspace/${receipt.workspaceId}/settings?mode=${receipt.mode}`;
+      if (result.path !== path || result.action !== "connect_stripe_in_browser") fail("invalid_response");
+      return { ...receipt, path, action: "connect_stripe_in_browser" };
+    },
+    async readReadiness(input) {
+      if (!record(input) || !keys(input, ["programId", "credentialId", ...(Object.hasOwn(input, "webhookId") ? ["webhookId"] : [])]) ||
+          !id(input.programId, "prg") || !id(input.credentialId, "key") || input.webhookId !== undefined && !id(input.webhookId, "whe")) fail("invalid_request");
+      const { result, receipt } = await call("readiness.read", "/api/cli/setup/readiness", "POST", { ...input });
+      const p = result.program, stripe = result.stripeConnection, diagnostics = result.integrationDiagnostics, live = result.liveAccess;
+      const statuses = ["draft", "active", "paused", "suspended", "archived"], gates = ["verified_origin", "stripe_connection",
+        "eligible_products", "stable_customer_identity", "attributed_checkout", "provider_event_receipt"];
+      const actions = ["verify_destination", "replace_revoked_credential", "enable_webhook", "configure_effective_terms", "activate_program",
+        "review_program_status", "connect_stripe", "enable_live_access", "complete_attributed_test_conversion"];
+      if (!record(p) || p.id !== input.programId || !id(p.applicationId, "app") || !statuses.includes(p.status) ||
+          [p.activeTermVersion, p.availableTermVersion].some(v => v !== null && !integer(v, 1_000_000)) ||
+          typeof result.destinationVerified !== "boolean" || typeof result.credentialActive !== "boolean" ||
+          (input.webhookId === undefined ? result.webhookActive !== null : typeof result.webhookActive !== "boolean") ||
+          !record(stripe) || stripe.mode !== receipt.mode || !["connected", "not_connected"].includes(stripe.status) ||
+          !Array.isArray(result.actions) || new Set(result.actions).size !== result.actions.length || result.actions.some(a => !actions.includes(a))) fail("invalid_response");
+      if (receipt.mode === "test" ? live !== null || !record(diagnostics) || diagnostics.programId !== p.id || diagnostics.mode !== "test" ||
+          !["ready", "blocked"].includes(diagnostics.status) || !Array.isArray(diagnostics.unmetGates) || new Set(diagnostics.unmetGates).size !== diagnostics.unmetGates.length || diagnostics.unmetGates.some(g => !gates.includes(g)) ||
+          diagnostics.status !== (diagnostics.unmetGates.length ? "blocked" : "ready") :
+          diagnostics !== null || !record(live) || live.workspaceId !== receipt.workspaceId || !["enabled", "disabled"].includes(live.effectiveLiveAccess)) fail("invalid_response");
+      // Select only fixed identifiers, flags and enumerations. Nested provider or
+      // future server fields cannot enter a persisted receipt or terminal output.
+      return { ...receipt, program: { id: p.id, applicationId: p.applicationId, status: p.status,
+        activeTermVersion: p.activeTermVersion, availableTermVersion: p.availableTermVersion },
+        destinationVerified: result.destinationVerified, credentialActive: result.credentialActive, webhookActive: result.webhookActive,
+        stripeStatus: stripe.status, liveAccess: receipt.mode === "live" ? live.effectiveLiveAccess : null,
+        testEvidence: receipt.mode === "test" ? { status: diagnostics.status, unmetGates: [...diagnostics.unmetGates] } : null,
+        actions: [...result.actions] };
+    },
     async createWebhook(input) {
       const expected = webhookInput(input);
       const { result, receipt } = await call("webhook.write", "/api/cli/setup/webhooks", "POST", expected);
