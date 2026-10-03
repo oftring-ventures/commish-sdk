@@ -101,6 +101,15 @@ record its acceptance separately from package build and installation evidence.
 
 ## Provision TEST or LIVE credentials from the CLI
 
+For a new integration, use the framework-independent
+[`commish setup` workflow](../sdk/README.md#set-up-from-your-repository) from
+`@commish/sdk`. It supports workspace creation/selection, program and terms
+configuration, destination verification, webhooks and resumable progress. Then
+run the Next installer above and complete layout and Checkout wiring. Map its
+public `COMMISH_PUBLISHABLE_KEY` and `COMMISH_APPLICATION_ID` values to the
+corresponding `NEXT_PUBLIC_*` variables; keep `COMMISH_SECRET_KEY` server-only.
+
+The existing `commish-next setup` credential-only command remains compatible.
 An owner or admin can authorize an agent-driven setup without copying a secret
 from the dashboard:
 
