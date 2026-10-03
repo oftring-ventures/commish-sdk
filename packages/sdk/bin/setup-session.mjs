@@ -4,7 +4,7 @@ import { createHash, randomBytes } from "node:crypto";
 const operations = new Set(["workspace.read", "application.write", "destination.write",
   "credential.write", "program.write", "terms.write", "webhook.write", "stripe.connect", "readiness.read"]);
 const codes = new Set(["invalid_request", "authorization_required", "access_denied", "mfa_required",
-  "recent_auth_required", "setup_expired", "setup_conflict", "setup_not_found", "rate_limited", "service_unavailable", "challenge_mismatch", "origin_not_public", "verification_unavailable"]);
+  "recent_auth_required", "live_access_required", "setup_expired", "setup_conflict", "setup_not_found", "rate_limited", "service_unavailable", "challenge_mismatch", "origin_not_public", "verification_unavailable"]);
 const fail = (code) => { throw new Error(code); };
 const record = (value) => value && typeof value === "object" && !Array.isArray(value);
 const keys = (value, names) => record(value) && Object.keys(value).sort().join() === [...names].sort().join();
