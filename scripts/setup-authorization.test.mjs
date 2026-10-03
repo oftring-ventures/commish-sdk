@@ -86,3 +86,10 @@ test("interruption during an in-flight authorization revokes the approved sessio
   assert.equal(f.revoked(), 1);
   assert(!f.notifications.some((item) => item.status === "authorized"));
 });
+test("opens only the exact TEST or LIVE Stripe settings handoff", async () => {
+  const path = "https://app.commish.sh/dashboard/workspace/wrk_123456789012/settings";
+  const launch = () => { const child = new EventEmitter(); queueMicrotask(() => child.emit("exit", 0)); return child; };
+  for (const mode of ["test", "live"]) assert.equal(await openSetupBrowser(`${path}?mode=${mode}`, { launch }), true);
+  for (const suffix of ["", "?mode=live&state=private", "?mode=test&mode=live", "?mode=test#private"])
+    assert.equal(await openSetupBrowser(path + suffix, { launch: () => assert.fail("must not open") }), false);
+});

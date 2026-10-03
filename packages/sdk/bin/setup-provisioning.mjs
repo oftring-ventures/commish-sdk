@@ -4,7 +4,9 @@ import { provisionSetupCredential, persistSetupWebhookSecret } from "./setup-sec
 
 // Resume from immutable resource identities; each server command rechecks the
 // current grant. Replays never replace customized resources or local files.
-export async function provisionSetup(root, input, progress, session, authorization) {
+export async function provisionSetup(root, input, progress, session, authorization, { signal } = {}) {
+  const active = () => { if (signal?.aborted) throw new Error("setup_interrupted"); };
+  active();
   const parsed = parseSetupConfig(input);
   if (parsed.kind !== "ready") throw new Error("invalid_setup_config");
   const config = parsed.config;
@@ -14,20 +16,24 @@ export async function provisionSetup(root, input, progress, session, authorizati
   progress.save("workspace", { id: authorization.workspaceId });
   let application = progress.read("application");
   if (!application) {
+    active();
     const receipt = await session.createApplication(config.application);
     application = { id: receipt.application.id }; progress.save("application", application);
   }
   const destinationInput = { applicationId: application.id, origin: config.destination.origin };
+  active();
   const registered = await session.registerDestination(destinationInput);
+  active();
   let proof = null;
   if (registered.destination.status === "pending") {
     writeSetupFile(root, config.destination.proofFile, `${registered.destination.challenge.value}\n`);
-    try { await session.verifyDestination(destinationInput); }
+    try { active(); await session.verifyDestination(destinationInput); }
     catch (error) {
       if (!["challenge_mismatch", "verification_unavailable", "origin_not_public"].includes(error?.message)) throw error;
       proof = { path: config.destination.proofFile, url: `${config.destination.origin}/.well-known/commish-verification.txt`, code: error.message };
     }
   }
+  active();
   let program = progress.read("program");
   if (!program) {
     const receipt = await session.createProgram({ ...config.program, applicationId: application.id });
@@ -37,20 +43,26 @@ export async function provisionSetup(root, input, progress, session, authorizati
       credentialId: progress.read("credential")?.id ?? "key_cli_setup_unissued" });
     if (current.program.applicationId !== application.id) throw new Error("setup_config_conflict");
   }
+  active();
   const terms = await session.createTerms({ ...config.terms, programId: program.id });
+  active();
   const credentials = await provisionSetupCredential(root, progress, session, {
     mode: config.mode, applicationId: application.id, programId: program.id,
   });
+  active();
   let webhook = null;
   if (config.webhook) {
     const input = { ...config.webhook, idempotencyKey: progress.idempotencyKey("webhook") };
     const receipt = await session.createWebhook(input);
     progress.save("webhook", { id: receipt.endpoint.id });
+    active();
     webhook = await persistSetupWebhookSecret(root, progress, session, { mode: config.mode, endpointId: receipt.endpoint.id, input });
   }
   const readinessInput = { programId: program.id, credentialId: credentials.credentialId,
     ...(webhook ? { webhookId: webhook.endpointId } : {}) };
+  active();
   const readiness = await session.readReadiness(readinessInput);
+  active();
   if (readiness.program.applicationId !== application.id) throw new Error("setup_config_conflict");
   return { status: "configured", mode: config.mode, workspaceId: authorization.workspaceId, applicationId: application.id,
     programId: program.id, termVersion: terms.term.version, effectiveAt: terms.term.effectiveAt,
