@@ -5,8 +5,9 @@ import { createSetupSession } from "./setup-session.mjs";
 export function openSetupBrowser(url, { platform = process.platform, launch = spawn } = {}) {
   let parsed;
   try { parsed = new URL(url); } catch { return Promise.resolve(false); }
-  if (parsed.username || parsed.password || parsed.search || parsed.hash ||
-      !/^\/cli\/authorize\/[a-f0-9]{64}$/.test(parsed.pathname) ||
+  const pairing = /^\/cli\/authorize\/[a-f0-9]{64}$/.test(parsed.pathname) && !parsed.search;
+  const stripe = /^\/dashboard\/workspace\/wrk_[A-Za-z0-9_-]{12,}\/settings$/.test(parsed.pathname) && /^\?mode=(test|live)$/.test(parsed.search);
+  if (parsed.username || parsed.password || parsed.hash || !(pairing || stripe) ||
       !(parsed.protocol === "https:" || parsed.protocol === "http:" &&
         ["127.0.0.1", "[::1]", "localhost"].includes(parsed.hostname))) return Promise.resolve(false);
   const command = platform === "darwin" ? ["open", url] : platform === "win32"

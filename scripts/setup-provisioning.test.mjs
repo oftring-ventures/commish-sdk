@@ -64,3 +64,10 @@ test("refuses a resumed program moved to another application", async t => {
   await assert.rejects(provisionSetup(f.root, config, f.progress(), f.session, authorization), /setup_config_conflict/);
   assert.equal(f.calls.filter(c => ["terms", "credential", "webhook"].includes(c.name)).length, 0);
 });
+
+test("interruption during a resource request saves its identity but stops later writes", async t => {
+  const f = fixture(t), controller = new AbortController(), progress = f.progress();
+  f.session.createApplication = async () => { controller.abort(); return { application: { id: applicationId } }; };
+  await assert.rejects(provisionSetup(f.root, config, progress, f.session, authorization, { signal: controller.signal }), /setup_interrupted/);
+  assert.deepEqual(progress.read("application"), { id: applicationId }); assert.equal(f.calls.length, 0);
+});
