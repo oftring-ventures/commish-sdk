@@ -90,6 +90,51 @@ test("bounds response bodies and accepts only known server error codes", async (
   }
 });
 
+async function webhookDownloadFixture(alter = response => response) {
+  const now = Date.now(), calls = [], workspaceId = "wrk_123456789012", endpointId = "whe_123456789012";
+  const signingSecret = `whsec_${"z".repeat(43)}`, input = { url: "https://guestbook.example/hook", eventTypes: ["commission.payable"], idempotencyKey: "guestbook-hook" };
+  let hash;
+  const session = createSetupSession({ operations: ["webhook.write"] }, { fetcher: async (url, options) => {
+    calls.push({ url, ...options });
+    if (url.endsWith("/secret")) return alter(new Response(signingSecret, { headers: {
+      "content-type": "application/octet-stream", "x-commish-setup-request-id": hash,
+      "x-commish-workspace-id": workspaceId, "x-commish-mode": "test", "x-commish-webhook-id": endpointId,
+    } }));
+    let data;
+    if (options.method === "POST") {
+      hash = JSON.parse(options.body).challengeHash;
+      data = { decision: "pending", mode: "test", operations: ["webhook.write"], workspaceRequest: null,
+        pairingCode: `${hash.slice(0, 4)}-${hash.slice(4, 8)}`.toUpperCase(), requestExpiresAt: new Date(now + 3600000).toISOString() };
+    } else data = { status: "authorized", workspaceId, mode: "test", operations: ["webhook.write"], expiresAt: new Date(now + 600000).toISOString() };
+    return Response.json({ data: { ...data, protocol: "commish-cli-setup-v2", requestId: hash } });
+  } });
+  await assert.rejects(session.downloadWebhookSecret(input, endpointId), /authorization_required/);
+  await session.begin(); await session.poll();
+  return { calls, session, input, endpointId, signingSecret };
+}
+test("downloads signing material only through a bound authenticated binary response", async () => {
+  const f = await webhookDownloadFixture();
+  assert.equal(await f.session.downloadWebhookSecret(f.input, f.endpointId), f.signingSecret);
+  const sent = f.calls.at(-1);
+  assert.equal(sent.headers.authorization, f.calls[1].headers.authorization);
+  assert.equal(sent.redirect, "error"); assert.deepEqual(JSON.parse(sent.body), f.input);
+  assert(!JSON.stringify(f.calls.map(c => [c.url, c.body])).includes(f.signingSecret));
+  assert.equal(JSON.stringify(f.session), "{}");
+});
+test("rejects crossed secret bindings, JSON secrets, invalid encoding and oversized transfers without echoing bytes", async () => {
+  for (const [name, value] of [["x-commish-setup-request-id", "wrong"], ["x-commish-workspace-id", "wrk_other123456"],
+    ["x-commish-mode", "live"], ["x-commish-webhook-id", "whe_other123456"], ["content-type", "application/json"]]) {
+    const f = await webhookDownloadFixture(r => { r.headers.set(name, value); return r; });
+    await assert.rejects(f.session.downloadWebhookSecret(f.input, f.endpointId), { message: "invalid_response" });
+  }
+  for (const bytes of ["whsec_" + "a".repeat(513), "private bad body", new Uint8Array([0xff])]) {
+    const f = await webhookDownloadFixture(r => new Response(bytes, { headers: r.headers }));
+    await assert.rejects(f.session.downloadWebhookSecret(f.input, f.endpointId), { message: "invalid_response" });
+  }
+  const f = await webhookDownloadFixture(() => Response.json({ error: { code: "setup_expired", message: "private detail" } }, { status: 410 }));
+  await assert.rejects(f.session.downloadWebhookSecret(f.input, f.endpointId), { message: "setup_expired" });
+});
+
 test("does not conflate multiple scopes with one comma-containing operation", async () => {
   const { session, change } = fixture({ operations: ["application.write", "workspace.read"] });
   change((value) => ({ ...value, operations: ["application.write,workspace.read"] }));

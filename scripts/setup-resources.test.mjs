@@ -140,3 +140,23 @@ test("credential responses must preserve identity, scope, label, mode and usable
     await assert.rejects(f.resources.createCredential(f.input), /invalid_response/);
   }
 });
+
+const hookInput = { url: "https://guestbook.example/hook", eventTypes: ["payout.paid", "commission.payable"], idempotencyKey: "guestbook-hook" };
+test("webhook registration projects only exact endpoint metadata and secret download uses a fixed route", async () => {
+  const context = { ...bound, operations: ["webhook.write"] }, calls = [];
+  const endpoint = { id: "whe_123456789012", mode: "test", url: hookInput.url, eventTypes: [...hookInput.eventTypes].sort(), disabledAt: null, createdAt: app.createdAt };
+  let value = { ...context, replayed: true, endpoint: { ...endpoint, signingSecret: "never-in-receipt" }, secretHash: "never-in-receipt" };
+  const resources = createSetupResources(async (...args) => { calls.push(args); return value; }, () => context);
+  const receipt = await resources.createWebhook(hookInput);
+  assert.deepEqual(receipt.endpoint, endpoint); assert.equal(receipt.integrationVerified, false);
+  assert(!JSON.stringify(receipt).includes("never-in-receipt"));
+  assert.deepEqual(calls[0].slice(0, 2), ["POST", "/api/cli/setup/webhooks"]);
+  for (const change of [{ mode: "live" }, { url: "https://other.example/hook" }, { eventTypes: ["payout.paid"] }, { disabledAt: app.createdAt }]) {
+    value = { ...context, replayed: true, endpoint: { ...endpoint, ...change } };
+    await assert.rejects(resources.createWebhook(hookInput), /invalid_response/);
+  }
+  context.operations = [];
+  await assert.rejects(resources.downloadWebhookSecret(hookInput, endpoint.id), /access_denied/);
+  for (const url of ["https:guestbook.example/hook", "https://guestbook.example/hook?token=hidden", "https://127.0.0.1/hook", "https://user:secret@guestbook.example/hook"])
+    await assert.rejects(resources.createWebhook({ ...hookInput, url }), /invalid_request/);
+});
