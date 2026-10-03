@@ -58,6 +58,21 @@ export function createSetupResources(request, context) {
       verifiedAt: value.verifiedAt, challenge } };
   }
   return {
+    async createCredential(input) {
+      const mode = context().mode;
+      if (!keys(input, ["applicationId", "label", "publishableKey", "secretHash", "idempotencyKey"]) ||
+          !id(input.applicationId, "app") || !name(input.label) ||
+          typeof input.publishableKey !== "string" || !new RegExp(`^cm_${mode}_pk_[A-Za-z0-9_-]{12,}$`).test(input.publishableKey) ||
+          typeof input.secretHash !== "string" || !/^[a-f0-9]{64}$/.test(input.secretHash) || !text(input.idempotencyKey, 255, 1)) fail("invalid_request");
+      const expected = { ...input };
+      const { result, receipt } = await call("credential.write", "/api/cli/setup/credentials", "POST", expected);
+      const value = result.apiKey;
+      if (!record(value) || !id(value.id, "key") || value.applicationId !== expected.applicationId || value.mode !== mode ||
+          value.publishableKey !== expected.publishableKey || value.label !== expected.label || value.revokedAt !== null ||
+          value.lastUsedAt !== null && !date(value.lastUsedAt) || !date(value.createdAt)) fail("invalid_response");
+      return { ...receipt, apiKey: { id: value.id, applicationId: value.applicationId, mode: value.mode,
+        publishableKey: value.publishableKey, label: value.label, revokedAt: null, lastUsedAt: value.lastUsedAt, createdAt: value.createdAt } };
+    },
     async createApplication(input) {
       if (!keys(input, ["name"]) || !name(input.name)) fail("invalid_request");
       const expectedName = input.name;

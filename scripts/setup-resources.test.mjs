@@ -102,3 +102,41 @@ test("rejects changed economics or program bindings and excludes unknown server 
   const f = financialFixture(); f.change({ program: { ...program, secret: "never output" }, term: { ...terms, createdAt: app.createdAt, secret: "never output" } });
   assert(!JSON.stringify([await f.resources.createProgram(programInput), await f.resources.createTerms(terms)]).includes("never output"));
 });
+
+const credential = { applicationId: app.id, label: "Guestbook", publishableKey: "cm_test_pk_guestbook123456",
+  secretHash: "b".repeat(64), idempotencyKey: "guestbook-key-1" };
+function credentialFixture(mode = "test") {
+  const input = { ...credential, publishableKey: `cm_${mode}_pk_guestbook123456` }, calls = [];
+  const context = { ...bound, mode, operations: ["credential.write"] };
+  let value = { ...context, replayed: true, apiKey: { id: "key_123456789012", ...input, mode,
+    revokedAt: null, lastUsedAt: null, createdAt: app.createdAt, secretKey: "never-output-raw-material" } };
+  return { input, calls, context, set: patch => { value = { ...value, ...patch }; }, value,
+    resources: createSetupResources(async (...args) => { calls.push(args); return value; }, () => context) };
+}
+test("credential provisioning sends only the locally computed hash and projects safe TEST/LIVE metadata", async () => {
+  for (const mode of ["test", "live"]) {
+    const f = credentialFixture(mode), receipt = await f.resources.createCredential(f.input);
+    assert.deepEqual(f.calls, [["POST", "/api/cli/setup/credentials", f.input]]);
+    assert.equal(receipt.mode, mode); assert.equal(receipt.replayed, true);
+    assert.equal(receipt.apiKey.id, "key_123456789012");
+    assert(!JSON.stringify(receipt).includes(credential.secretHash));
+    assert(!JSON.stringify(receipt).includes("never-output-raw-material"));
+    assert(!Object.hasOwn(receipt.apiKey, "idempotencyKey"));
+  }
+});
+test("credentials require explicit scope, consent and mode-bound material before a request", async () => {
+  const f = credentialFixture();
+  for (const input of [{ ...f.input, applicationId: null }, { ...f.input, secretHash: "invalid" },
+    { ...f.input, publishableKey: "cm_live_pk_guestbook123456" }, { ...f.input, secretKey: "do-not-send" }])
+    await assert.rejects(f.resources.createCredential(input), /invalid_request/);
+  f.context.operations = [];
+  await assert.rejects(f.resources.createCredential(f.input), /access_denied/);
+  assert.equal(f.calls.length, 0);
+});
+test("credential responses must preserve identity, scope, label, mode and usable material", async () => {
+  for (const patch of [{ applicationId: "app_abcdefghijkl" }, { mode: "live" }, { label: "Changed" },
+    { publishableKey: "cm_test_pk_changed123456" }, { revokedAt: app.createdAt }, { createdAt: "invalid" }]) {
+    const f = credentialFixture(); f.set({ apiKey: { ...f.value.apiKey, ...patch } });
+    await assert.rejects(f.resources.createCredential(f.input), /invalid_response/);
+  }
+});
