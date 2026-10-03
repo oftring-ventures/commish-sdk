@@ -40,18 +40,18 @@ function recoverPublication(target, fd, entry) {
   } finally { directory.closeSync(); }
   if (fstatSync(fd).nlink !== 1) fail("unsafe_file_permissions");
 }
-function readFile(target, privateFile) {
+function readFile(target, privateFile, maximum = limit) {
   let fd;
   try {
     if (lstatSync(target).isSymbolicLink()) fail("unsafe_file_path");
     if (!Number.isInteger(constants.O_NOFOLLOW)) fail("unsupported_file_safety");
     fd = openSync(target, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
     const entry = fstatSync(fd);
-    if (!entry.isFile() || entry.size > limit) fail("invalid_setup_file");
+    if (!entry.isFile() || entry.size > maximum) fail("invalid_setup_file");
     if (privateFile && (entry.mode & 0o077) !== 0) fail("unsafe_file_permissions");
     if (privateFile && entry.nlink !== 1) recoverPublication(target, fd, entry);
-    const bytes = Buffer.alloc(limit + 1), length = readSync(fd, bytes, 0, bytes.length, 0);
-    if (length > limit) fail("invalid_setup_file");
+    const bytes = Buffer.alloc(maximum + 1), length = readSync(fd, bytes, 0, bytes.length, 0);
+    if (length > maximum) fail("invalid_setup_file");
     try { return new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(bytes.subarray(0, length)); }
     catch { fail("invalid_setup_file"); }
   } finally { if (fd !== undefined) closeSync(fd); }
@@ -62,8 +62,11 @@ function sanitized(error) { fail(known.has(error?.message) ? error.message :
 
 // Callers validate file contents before using them. Files stay within the
 // selected repository; symlink components and special files are rejected.
-export function readSetupFile(root, filename, { privateFile = false } = {}) {
-  try { return readFile(targetPath(root, filename, false).target, privateFile); }
+export function readSetupFile(root, filename, { privateFile = false, profile = "state" } = {}) {
+  try {
+    if (!["state", "configuration"].includes(profile) || privateFile && profile !== "state") fail("invalid_setup_file");
+    return readFile(targetPath(root, filename, false).target, privateFile, profile === "configuration" ? 1_048_576 : limit);
+  }
   catch (error) { sanitized(error); }
 }
 

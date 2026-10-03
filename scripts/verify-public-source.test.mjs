@@ -25,6 +25,7 @@ function bootstrap() {
     "scripts/setup-progress.test.mjs",
     "scripts/setup-secrets.test.mjs",
     "scripts/setup-provisioning.test.mjs",
+    "scripts/setup-arguments.test.mjs",
     "scripts/setup-authorization.test.mjs",
     "scripts/stable-release.mjs",
     "scripts/stable-release.test.mjs",
