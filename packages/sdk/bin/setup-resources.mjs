@@ -29,6 +29,28 @@ const kit = (v) => keys(v, ["summary", "talkingPoints", "assets"]) && text(v.sum
   });
 const selected = (source, fields) => Object.fromEntries(fields.map(key => [key, source[key]]));
 
+export function validateSetupProgram(input) {
+  if (!keys(input, programFields) || !id(input.applicationId, "app") || !name(input.name) ||
+      typeof input.slug !== "string" || input.slug.length < 3 || input.slug.length > 80 || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(input.slug) ||
+      !text(input.description, 2000) || !text(input.category, 50, 1) ||
+      !["public", "unlisted", "private"].includes(input.visibility) || !["instant", "approval"].includes(input.joinPolicy) ||
+      !["first_click", "last_click"].includes(input.attributionPolicy) || !Array.isArray(input.eligibleStripeProductIds) || input.eligibleStripeProductIds.length > 100 ||
+      input.eligibleStripeProductIds.some(v => typeof v !== "string" || !/^prod_[A-Za-z0-9_-]+$/.test(v)) ||
+      !kit(input.creatorKit)) fail("invalid_request");
+}
+export function validateSetupTerms(input) {
+  const commission = input?.commission, recurrence = input?.recurrence;
+  if (!keys(input, termFields) || !id(input.programId, "prg") || !integer(input.version, 1_000_000) ||
+      !(keys(commission, ["type", "basisPoints"]) && commission.type === "percentage" && integer(commission.basisPoints, 10_000) ||
+    keys(commission, ["type", "amount", "currency"]) && commission.type === "fixed" && usd({ amount: commission.amount, currency: commission.currency })) ||
+      !(keys(recurrence, ["kind"]) && ["first_payment", "lifetime"].includes(recurrence.kind) ||
+    keys(recurrence, ["kind", "months"]) && recurrence.kind === "fixed_months" && integer(recurrence.months, 120)) ||
+      input.perSaleCap !== null && !usd(input.perSaleCap) || !text(input.disclosureText, 2000, 1) ||
+      !Array.isArray(input.prohibitedClaims) || input.prohibitedClaims.length > 20 || input.prohibitedClaims.some(v => !text(v, 280, 1)) ||
+      !date(input.effectiveAt) || new Date(input.effectiveAt).toISOString() !== input.effectiveAt) fail("invalid_request");
+}
+export const setupOrigin = canonicalOrigin;
+
 // Only these reviewed routes can use the closure-held bearer. Public receipts
 // are reconstructed field by field, so extra server fields never reach output.
 export function createSetupResources(request, context) {
@@ -83,13 +105,7 @@ export function createSetupResources(request, context) {
       return { ...receipt, application: { id: value.id, name: value.name, createdAt: value.createdAt, verifiedOrigins: [...value.verifiedOrigins] } };
     },
     async createProgram(input) {
-      if (!keys(input, programFields) || !id(input.applicationId, "app") || !name(input.name) ||
-          typeof input.slug !== "string" || input.slug.length < 3 || input.slug.length > 80 || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(input.slug) ||
-          !text(input.description, 2000) || !text(input.category, 50, 1) ||
-          !["public", "unlisted", "private"].includes(input.visibility) || !["instant", "approval"].includes(input.joinPolicy) ||
-          !["first_click", "last_click"].includes(input.attributionPolicy) || !Array.isArray(input.eligibleStripeProductIds) || input.eligibleStripeProductIds.length > 100 ||
-          input.eligibleStripeProductIds.some(v => typeof v !== "string" || !/^prod_[A-Za-z0-9_-]+$/.test(v)) ||
-          !kit(input.creatorKit)) fail("invalid_request");
+      validateSetupProgram(input);
       const expected = structuredClone(input);
       expected.eligibleStripeProductIds = [...new Set(expected.eligibleStripeProductIds)].sort();
       const { result, receipt } = await call("program.write", "/api/cli/setup/programs", "POST", expected);
@@ -101,15 +117,7 @@ export function createSetupResources(request, context) {
         activeTermVersion: value.activeTermVersion, createdAt: value.createdAt, updatedAt: value.updatedAt } };
     },
     async createTerms(input) {
-      const commission = input?.commission, recurrence = input?.recurrence;
-      if (!keys(input, termFields) || !id(input.programId, "prg") || !integer(input.version, 1_000_000) ||
-          !(keys(commission, ["type", "basisPoints"]) && commission.type === "percentage" && integer(commission.basisPoints, 10_000) ||
-            keys(commission, ["type", "amount", "currency"]) && commission.type === "fixed" && usd({ amount: commission.amount, currency: commission.currency })) ||
-          !(keys(recurrence, ["kind"]) && ["first_payment", "lifetime"].includes(recurrence.kind) ||
-            keys(recurrence, ["kind", "months"]) && recurrence.kind === "fixed_months" && integer(recurrence.months, 120)) ||
-          input.perSaleCap !== null && !usd(input.perSaleCap) || !text(input.disclosureText, 2000, 1) ||
-          !Array.isArray(input.prohibitedClaims) || input.prohibitedClaims.length > 20 || input.prohibitedClaims.some(v => !text(v, 280, 1)) ||
-          !date(input.effectiveAt) || new Date(input.effectiveAt).toISOString() !== input.effectiveAt) fail("invalid_request");
+      validateSetupTerms(input);
       const expected = structuredClone(input);
       expected.prohibitedClaims = [...new Set(expected.prohibitedClaims)].sort();
       const { result, receipt } = await call("terms.write", "/api/cli/setup/terms", "POST", expected);

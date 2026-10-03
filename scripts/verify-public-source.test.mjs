@@ -21,6 +21,7 @@ function bootstrap() {
     "scripts/setup-session.test.mjs",
     "scripts/setup-resources.test.mjs",
     "scripts/setup-files.test.mjs",
+    "scripts/setup-config.test.mjs",
     "scripts/setup-authorization.test.mjs",
     "scripts/stable-release.mjs",
     "scripts/stable-release.test.mjs",
