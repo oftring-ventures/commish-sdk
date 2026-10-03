@@ -50,6 +50,24 @@ export function validateSetupTerms(input) {
       !date(input.effectiveAt) || new Date(input.effectiveAt).toISOString() !== input.effectiveAt) fail("invalid_request");
 }
 export const setupOrigin = canonicalOrigin;
+const webhookEvents = new Set(["invitation.created", "invitation.accepted", "membership.activated", "conversion.created", "conversion.refunded",
+  "commission.pending", "commission.unfunded", "commission.payable", "commission.reversed", "commission.disputed", "sale.dispute_opened",
+  "sale.dispute_recovery_required", "funding.failed", "payout.processing", "payout.paid", "payout.failed", "payout.canceled"]);
+export function validateSetupWebhook(input) {
+  if (!keys(input, ["url", "eventTypes"]) || !text(input.url, 2048, 1) || !/^https:\/\//i.test(input.url) ||
+      /[\s\\?#]/.test(input.url) || !Array.isArray(input.eventTypes) || !input.eventTypes.length || input.eventTypes.length > webhookEvents.size ||
+      new Set(input.eventTypes).size !== input.eventTypes.length || input.eventTypes.some(e => !webhookEvents.has(e))) fail("invalid_request");
+  try {
+    const url = new URL(input.url);
+    if (!canonicalOrigin(url.origin) || url.username || url.password || url.hostname === "localhost" || url.hostname.endsWith(".localhost") ||
+        url.hostname.endsWith(".local") || /^\d+$/.test(url.hostname.split(".").at(-1))) fail("invalid_request");
+  } catch { fail("invalid_request"); }
+}
+function webhookInput(input) {
+  if (!keys(input, ["url", "eventTypes", "idempotencyKey"]) || !text(input.idempotencyKey, 255, 1)) fail("invalid_request");
+  validateSetupWebhook({ url: input.url, eventTypes: input.eventTypes });
+  return { url: input.url, eventTypes: [...input.eventTypes].sort(), idempotencyKey: input.idempotencyKey };
+}
 
 // Only these reviewed routes can use the closure-held bearer. Public receipts
 // are reconstructed field by field, so extra server fields never reach output.
@@ -80,6 +98,22 @@ export function createSetupResources(request, context) {
       verifiedAt: value.verifiedAt, challenge } };
   }
   return {
+    async createWebhook(input) {
+      const expected = webhookInput(input);
+      const { result, receipt } = await call("webhook.write", "/api/cli/setup/webhooks", "POST", expected);
+      const value = result.endpoint;
+      if (!record(value) || !id(value.id, "whe") || value.mode !== receipt.mode || value.url !== expected.url ||
+          !same(value.eventTypes, expected.eventTypes) || value.disabledAt !== null || !date(value.createdAt)) fail("invalid_response");
+      return { ...receipt, endpoint: { id: value.id, mode: value.mode, url: value.url, eventTypes: [...value.eventTypes], disabledAt: null, createdAt: value.createdAt } };
+    },
+    async downloadWebhookSecret(input, endpointId) {
+      const expected = webhookInput(input), bound = context();
+      if (!id(endpointId, "whe")) fail("invalid_request");
+      if (!bound.workspaceId) fail("authorization_required");
+      if (!bound.operations.includes("webhook.write")) fail("access_denied");
+      // A private in-memory value for the file writer, never a JSON receipt.
+      return request("POST", "/api/cli/setup/webhooks/secret", expected, endpointId);
+    },
     async createCredential(input) {
       const mode = context().mode;
       if (!keys(input, ["applicationId", "label", "publishableKey", "secretHash", "idempotencyKey"]) ||

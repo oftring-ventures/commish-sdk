@@ -1,13 +1,10 @@
 import { isAbsolute } from "node:path";
-import { setupOrigin, validateSetupProgram, validateSetupTerms } from "./setup-resources.mjs";
+import { setupOrigin, validateSetupProgram, validateSetupTerms, validateSetupWebhook } from "./setup-resources.mjs";
 import { validateSetupWorkspace } from "./setup-session.mjs";
 
 const record = v => v !== null && typeof v === "object" && !Array.isArray(v);
 const known = (v, names) => record(v) && Object.keys(v).every(k => names.includes(k));
 const text = (v, max) => typeof v === "string" && v.trim() === v && v.length > 0 && v.length <= max;
-const events = new Set(["invitation.created", "invitation.accepted", "membership.activated", "conversion.created", "conversion.refunded",
-  "commission.pending", "commission.unfunded", "commission.payable", "commission.reversed", "commission.disputed", "sale.dispute_opened",
-  "sale.dispute_recovery_required", "funding.failed", "payout.processing", "payout.paid", "payout.failed", "payout.canceled"]);
 const fields = ["version", "mode", "workspace", "application", "destination", "program", "terms", "participantConsent", "webhook", "stripe"];
 const path = v => text(v, 1024) && !isAbsolute(v) && !v.includes("\\") && !v.includes("\0") &&
   !v.split("/").some(part => [".git", ".commish"].includes(part.toLowerCase())) &&
@@ -64,15 +61,7 @@ export function parseSetupConfig(value) {
   if (value.participantConsent !== undefined && value.participantConsent !== "commish_hosted") invalid.push("participantConsent");
   if (value.stripe !== undefined && !["connect", "later"].includes(value.stripe)) invalid.push("stripe");
   if (value.webhook !== undefined && value.webhook !== null) {
-    const hook = value.webhook;
-    try {
-      if (!known(hook, ["url", "eventTypes"]) || !text(hook.url, 2048)) throw new Error();
-      const url = new URL(hook.url);
-      if (!setupOrigin(url.origin) || url.username || url.password || url.search || url.hash || url.hostname === "localhost" ||
-          url.hostname.endsWith(".localhost") || url.hostname.endsWith(".local") || /^\d+$/.test(url.hostname.split(".").at(-1)) ||
-          !Array.isArray(hook.eventTypes) || !hook.eventTypes.length || hook.eventTypes.length > events.size ||
-          new Set(hook.eventTypes).size !== hook.eventTypes.length || hook.eventTypes.some(e => !events.has(e))) throw new Error();
-    } catch { invalid.push("webhook"); }
+    try { validateSetupWebhook(value.webhook); } catch { invalid.push("webhook"); }
   }
   if (invalid.length) return { kind: "invalid_config", fields: invalid };
   if (missing.length) return { kind: "input_required", fields: missing };

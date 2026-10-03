@@ -43,8 +43,11 @@ export function createSetupSession(input, { appUrl = "https://app.commish.sh", f
   const pairingCode = `${hash.slice(0, 4)}-${hash.slice(4, 8)}`.toUpperCase();
   let boundWorkspace;
   const date = (value) => typeof value === "string" && Number.isFinite(Date.parse(value));
-  async function request(method, path = "/api/cli/setup-sessions", body) {
+  async function request(method, path = "/api/cli/setup-sessions", body, secretEndpointId) {
     const begin = method === "POST" && path === "/api/cli/setup-sessions";
+    const secret = method === "POST" && path === "/api/cli/setup/webhooks/secret" &&
+      typeof secretEndpointId === "string" && /^whe_[A-Za-z0-9_-]{12,}$/.test(secretEndpointId);
+    if (secretEndpointId !== undefined && !secret) fail("invalid_request");
     let response;
     try {
       response = await fetcher(`${origin.origin}${path}`, {
@@ -59,13 +62,22 @@ export function createSetupSession(input, { appUrl = "https://app.commish.sh", f
       if (!response.body) fail("invalid_response");
       for await (const chunk of response.body) {
         size += chunk.byteLength;
-        if (size > 65_536) fail("invalid_response");
+        if (size > (secret && response.ok ? 512 : 65_536)) fail("invalid_response");
         chunks.push(chunk);
       }
     } catch { fail("invalid_response"); }
-    let payload;
-    try { payload = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(Buffer.concat(chunks))); }
+    let decoded;
+    try { decoded = new TextDecoder("utf-8", { fatal: true }).decode(Buffer.concat(chunks)); }
     catch { fail("invalid_response"); }
+    if (secret && response.ok) {
+      if (!boundWorkspace || response.headers.get("content-type") !== "application/octet-stream" ||
+          response.headers.get("x-commish-setup-request-id") !== hash || response.headers.get("x-commish-workspace-id") !== boundWorkspace ||
+          response.headers.get("x-commish-mode") !== mode || response.headers.get("x-commish-webhook-id") !== secretEndpointId ||
+          !/^whsec_[A-Za-z0-9_-]{32,}$/.test(decoded)) fail("invalid_response");
+      return decoded;
+    }
+    let payload;
+    try { payload = JSON.parse(decoded); } catch { fail("invalid_response"); }
     if (!response.ok) fail(codes.has(payload?.error?.code) ? payload.error.code : "service_unavailable");
     const value = payload?.data;
     if (!record(value) || value.protocol !== "commish-cli-setup-v2" || value.requestId !== hash) fail("invalid_response");
