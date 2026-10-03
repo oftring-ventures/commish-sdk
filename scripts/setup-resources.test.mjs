@@ -224,3 +224,16 @@ test("configuration transport accepts the server's bounded large program receipt
   assert.equal((await session.createProgram(input)).program.eligibleStripeProductIds.length, 100);
   oversized = true; await assert.rejects(session.createProgram(input), /invalid_response/);
 });
+
+test("implicit term dates preserve retained microsecond timestamps and exact business choices", async () => {
+  const f = financialFixture(), input = { ...terms }; delete input.effectiveAt;
+  const retained = { ...terms, effectiveAt: "2026-10-03T00:00:00.123456Z", createdAt: app.createdAt };
+  f.change({ term: retained });
+  const receipt = await f.resources.createTerms(input);
+  assert.equal(receipt.term.effectiveAt, retained.effectiveAt);
+  assert(!Object.hasOwn(f.calls[0][2], "effectiveAt"));
+  f.change({ term: { ...retained, perSaleCap: { amount: 500, currency: "usd" } } });
+  await assert.rejects(f.resources.createTerms(input), /invalid_response/);
+  f.change({ term: { ...retained, effectiveAt: "not-a-date" } });
+  await assert.rejects(f.resources.createTerms(input), /invalid_response/);
+});

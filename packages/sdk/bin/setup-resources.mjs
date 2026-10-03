@@ -185,7 +185,8 @@ export function createSetupResources(request, context) {
         activeTermVersion: value.activeTermVersion, createdAt: value.createdAt, updatedAt: value.updatedAt } };
     },
     async createTerms(input) {
-      validateSetupTerms(input);
+      const implicitDate = record(input) && !Object.hasOwn(input, "effectiveAt");
+      validateSetupTerms(implicitDate ? { ...input, effectiveAt: "2000-01-01T00:00:00.000Z" } : input);
       const expected = structuredClone(input);
       expected.prohibitedClaims = [...new Set(expected.prohibitedClaims)].sort();
       const { result, receipt } = await call("terms.write", "/api/cli/setup/terms", "POST", expected);
@@ -194,8 +195,12 @@ export function createSetupResources(request, context) {
       // instant with three trailing zero microseconds; do not truncate others.
       const projected = record(value) ? selected(value, termFields) : null;
       if (projected && typeof projected.effectiveAt === "string") projected.effectiveAt = projected.effectiveAt.replace(/(\.\d{3})000Z$/, "$1Z");
-      if (!projected || !same(expected, projected) || !date(value.createdAt)) fail("invalid_response");
-      return { ...receipt, term: { ...expected, createdAt: value.createdAt } };
+      if (implicitDate && projected) {
+        if (typeof value.effectiveAt !== "string" || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?Z$/.test(value.effectiveAt) || !date(value.effectiveAt)) fail("invalid_response");
+      }
+      const comparison = implicitDate && projected ? { ...expected, effectiveAt: projected.effectiveAt } : expected;
+      if (!projected || !same(comparison, projected) || !date(value.createdAt)) fail("invalid_response");
+      return { ...receipt, term: { ...comparison, createdAt: value.createdAt } };
     },
     registerDestination: (input) => destination("POST", input),
     verifyDestination: (input) => destination("PUT", input),
