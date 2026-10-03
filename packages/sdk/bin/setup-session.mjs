@@ -1,9 +1,10 @@
+import { createSetupResources } from "./setup-resources.mjs";
 import { createHash, randomBytes } from "node:crypto";
 
 const operations = new Set(["workspace.read", "application.write", "destination.write",
   "credential.write", "program.write", "terms.write", "webhook.write", "stripe.connect", "readiness.read"]);
 const codes = new Set(["invalid_request", "authorization_required", "access_denied", "mfa_required",
-  "recent_auth_required", "setup_expired", "setup_conflict", "setup_not_found", "rate_limited", "service_unavailable"]);
+  "recent_auth_required", "setup_expired", "setup_conflict", "setup_not_found", "rate_limited", "service_unavailable", "challenge_mismatch", "origin_not_public", "verification_unavailable"]);
 const fail = (code) => { throw new Error(code); };
 const record = (value) => value && typeof value === "object" && !Array.isArray(value);
 const keys = (value, names) => record(value) && Object.keys(value).sort().join() === [...names].sort().join();
@@ -38,12 +39,14 @@ export function createSetupSession(input, { appUrl = "https://app.commish.sh", f
   const pairingCode = `${hash.slice(0, 4)}-${hash.slice(4, 8)}`.toUpperCase();
   let boundWorkspace;
   const date = (value) => typeof value === "string" && Number.isFinite(Date.parse(value));
-  async function request(method) {
+  async function request(method, path = "/api/cli/setup-sessions", body) {
+    const begin = method === "POST" && path === "/api/cli/setup-sessions";
     let response;
     try {
-      response = await fetcher(`${origin.origin}/api/cli/setup-sessions`, {
-        method, headers: method === "POST" ? { "content-type": "application/json" } : { authorization: `Bearer ${verifier}` },
-        ...(method === "POST" ? { body: JSON.stringify({ ...expected, challengeHash: hash }) } : {}),
+      response = await fetcher(`${origin.origin}${path}`, {
+        method, headers: { ...(begin ? {} : { authorization: `Bearer ${verifier}` }),
+          ...(begin || body ? { "content-type": "application/json" } : {}) },
+        ...(begin || body ? { body: JSON.stringify(begin ? { ...expected, challengeHash: hash } : body) } : {}),
         redirect: "error", cache: "no-store", signal: AbortSignal.timeout(15_000),
       });
     } catch { fail("service_unavailable"); }
@@ -65,6 +68,7 @@ export function createSetupSession(input, { appUrl = "https://app.commish.sh", f
     return value;
   }
   return {
+    ...createSetupResources(request, () => ({ workspaceId: boundWorkspace, mode, operations: expected.operations })),
     async begin() {
       const result = await request("POST");
       if (result.mode !== mode || !sameOperations(result.operations, expected.operations) || result.pairingCode !== pairingCode ||
