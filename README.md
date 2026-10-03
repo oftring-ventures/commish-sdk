@@ -14,10 +14,13 @@ Its server-only `secretKey` option must never come from browser input.
 or the current route changes, and renders its children inside the application layout.
 `commish-next --write --json` installs the capture route and provider component,
 with structured instructions for the coding agent to finish layout and Checkout wiring.
-`commish-next setup --mode test|live` creates mode-bound application credentials through a short browser
-approval and saves them only to an explicit local file; the raw secret remains on
-the developer's machine. This is the normal agent-driven provisioning path rather
-than a dashboard credential-copy step.
+`commish setup --json --no-open` from `@commish/sdk` provisions a workspace,
+application, destination, draft program, explicit terms, scoped credentials and
+optional webhook through bounded browser consent. It resumes from local progress
+and reports remaining provider and acceptance steps. TEST is the default; LIVE
+requires explicit selection and current eligibility. Read the
+[setup configuration and recovery guide](packages/sdk/README.md#set-up-from-your-repository).
+`commish-next setup` remains compatible for the existing credential-only workflow.
 See [Next setup](packages/next/README.md) for the route and layout changes.
 The pinned Next framework dependencies support an isolated installed server-helper
 probe, production build, concurrent cookie requests and capture requests against

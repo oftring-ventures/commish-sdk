@@ -49,6 +49,109 @@ put the secret key or endpoint signing secret in `NEXT_PUBLIC_*`, browser props,
 logs or source control. A deployment must contain the candidate read routes;
 installing the package does not deploy Commish.
 
+## Set up from your repository
+
+`pnpm exec commish setup` provisions a workspace, application, destination,
+application-scoped credential, draft program, terms and optional webhook. It
+requires a deployment with the `commish-cli-setup-v2` setup API. Complete browser
+authorization once per run; the CLI then performs the approved operations.
+Authentication, email verification, authenticator checks, workspace consent and
+Stripe's connection flow remain browser steps. No platform-owner access is needed.
+
+First prepare `commish.setup.json` with your business choices. This example is
+illustrative: explicitly choose your commission, recurrence, cap and eligible
+Stripe products before running it. An empty product list means **all products**.
+
+```json
+{
+  "version": 1,
+  "workspace": { "kind": "new", "name": "Guestbook", "slug": "guestbook" },
+  "application": { "name": "Guestbook" },
+  "destination": {
+    "origin": "https://your-product.example",
+    "proofFile": "public/.well-known/commish-verification.txt"
+  },
+  "program": {
+    "name": "Customer referrals",
+    "slug": "customer-referrals",
+    "category": "SaaS",
+    "eligibleStripeProductIds": ["prod_REPLACE_WITH_YOUR_PRODUCT"]
+  },
+  "terms": {
+    "commission": { "type": "percentage", "basisPoints": 1500 },
+    "recurrence": { "kind": "first_payment" },
+    "perSaleCap": null,
+    "disclosureText": "I earn a commission when you purchase through my link."
+  },
+  "participantConsent": "commish_hosted",
+  "webhook": null,
+  "stripe": "connect"
+}
+```
+
+The config contains no credentials and may be committed after reviewing its
+business information. `participantConsent: "commish_hosted"` selects the hosted
+invitation/acceptance path; setup does not enroll customers or accept terms for
+them. Use `webhook: null` to explicitly defer registration, or provide
+`{"url":"https://your-product.example/api/commish/events","eventTypes":["commission.payable"]}`.
+Choose `stripe: "later"` to defer the provider connection.
+
+```sh
+pnpm exec commish setup --json --no-open --non-interactive
+```
+
+TEST is the default. LIVE requires explicit `"mode": "live"` in configuration or
+`--mode live`, plus the workspace's current eligibility. A browser page displays the same pairing code as the CLI;
+check both before approving. New users can sign up and verify email while the
+request waits. A pending request lasts up to an hour; approved authority lasts
+at most ten minutes. The CLI attempts revocation when the run ends; if cleanup
+cannot reach Commish, the grant remains bounded by that expiration. Rerun to authorize again.
+
+Omit `workspace` to discover and select your available workspaces in the approval
+page. Specify `--workspace-id wrk_...` for a known workspace, or both
+`--workspace-name` and `--workspace-slug` to request creation. An existing
+workspace requires current owner/admin permission. Each retry binds to the saved
+workspace; it never silently switches to another one.
+
+Use `--config path.json` for another repository-relative configuration file.
+Explicit flags override its values: `--application-name`, `--origin`,
+`--proof-file`, `--program-json`, `--terms-json`, `--webhook-json`, `--stripe` and
+`--participant-consent`. Run `commish setup --help` for all flags. No terminal
+prompts are required. Missing choices return `input_required` before network
+access. `--non-interactive` still requires browser consent; `--no-open` lets an
+agent present handoff links instead of launching the browser automatically.
+Use `--app-url` only for a Commish deployment you trust; it receives setup authority.
+
+Publish the generated proof file at the exact URL printed by the CLI, using your
+product's normal deployment process. Adjust `proofFile` for your framework's
+static directory. The CLI waits up to `--wait 300` seconds for destination or
+Stripe completion; `--wait 0` returns immediately after provisioning. This flag
+does not shorten the initial authorization wait. Provider actions resume in the
+CLI after completion, or on a new authorized run if the wait expires.
+
+Progress and handoff events go to stderr; `--json` produces one final receipt on
+stdout. Exit 0 means practical configuration completed, 2 means input or browser
+action remains, 1 means a sanitized error, and 130 means interruption. A
+`configured` receipt can still list activation, Stripe, LIVE eligibility or TEST
+acceptance steps. It always has `integrationVerified: false`. Follow the readiness
+actions and complete an attributed TEST conversion before declaring integration
+verified. Program activation remains an explicit action in Commish.
+
+Setup stores resumable progress and private mode-specific files under the ignored
+`.commish/setup/test` or `.commish/setup/live` directory. `credentials.env` contains
+`COMMISH_MODE`, `COMMISH_APPLICATION_ID`, `COMMISH_PROGRAM_ID`,
+`COMMISH_PUBLISHABLE_KEY` and `COMMISH_SECRET_KEY`; an optional `webhook.env`
+contains the endpoint signing material. Private files have owner-only permissions.
+The CLI prints paths, never secret values. Supply them to your existing secret
+manager/environment runner; they are not automatically loaded or deployed.
+
+Rerun the **same command and configuration** after interruption or uncertainty.
+Completed resource IDs, credential material and webhook identity are reused.
+Existing differing files, symlinks, tracked private state and changed setup
+configuration fail safely. Preserve the original state when resolving a conflict;
+do not delete it to force a retry. Later changes to program economics use the
+existing Commish program-management and terms workflow.
+
 ## Invite, activate and diagnose
 
 Run on your server; the separate creator follows the returned claim URL and
