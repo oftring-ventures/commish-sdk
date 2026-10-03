@@ -59,3 +59,46 @@ test("the session sends its in-memory bearer on provisioning POSTs and never in 
   assert.deepEqual(JSON.parse(calls[2].body), { name: "Guestbook" });
   assert(!JSON.stringify(receipt).includes(calls[2].headers.authorization.slice(7)));
 });
+
+const programInput = { applicationId: app.id, name: "Guestbook", slug: "guestbook", description: "", category: "SaaS",
+  visibility: "private", joinPolicy: "approval", attributionPolicy: "last_click", eligibleStripeProductIds: ["prod_guestbook"],
+  creatorKit: { summary: "", talkingPoints: [], assets: [] } };
+const program = { ...programInput, id: "prg_123456789012", mode: "test", status: "draft", activeTermVersion: null, createdAt: app.createdAt, updatedAt: app.createdAt };
+const terms = { programId: program.id, version: 1, commission: { type: "percentage", basisPoints: 1500 }, recurrence: { kind: "first_payment" },
+  perSaleCap: null, disclosureText: "I earn a referral commission.", prohibitedClaims: [], effectiveAt: "2026-10-03T00:00:00.123Z" };
+function financialFixture() {
+  const calls = [], context = { ...bound, operations: ["program.write", "terms.write"] };
+  let result = { ...context, program, term: { ...terms, effectiveAt: "2026-10-03T00:00:00.123000Z", createdAt: app.createdAt }, replayed: true };
+  return { calls, context, change: (patch) => { result = { ...result, ...patch }; }, resources: createSetupResources(async (...args) => { calls.push(args); return result; }, () => context) };
+}
+test("program and terms provisioning uses explicit choices and fixed scoped routes", async () => {
+  const f = financialFixture();
+  assert.equal((await f.resources.createProgram(programInput)).program.id, program.id);
+  assert.equal((await f.resources.createTerms(terms)).term.effectiveAt, terms.effectiveAt);
+  assert.deepEqual(f.calls.map(c => c.slice(0, 2)), [["POST", "/api/cli/setup/programs"], ["POST", "/api/cli/setup/terms"]]);
+  f.context.operations = ["program.write"];
+  await assert.rejects(f.resources.createTerms(terms), /access_denied/);
+});
+test("refuses missing business choices and never broadens caller scope", async () => {
+  const f = financialFixture();
+  const { eligibleStripeProductIds, ...omitted } = programInput;
+  for (const input of [omitted, { ...programInput, workspaceId: bound.workspaceId }, { ...programInput, joinPolicy: "automatic" }])
+    await assert.rejects(f.resources.createProgram(input), /invalid_request/);
+  for (const input of [{ ...terms, recurrence: undefined }, { ...terms, perSaleCap: undefined },
+    { ...terms, commission: { type: "percentage", basisPoints: 10001 } }, { ...terms, commission: { type: "fixed", amount: 100, currency: "eur" } },
+    { ...terms, mode: "live" }, { ...terms, effectiveAt: "2026-10-03T00:00:00.123456Z" }])
+    await assert.rejects(f.resources.createTerms(input), /invalid_request/);
+  assert.equal(f.calls.length, 0);
+});
+test("rejects changed economics or program bindings and excludes unknown server fields", async () => {
+  for (const changed of [{ program: { ...program, mode: "live" } }, { program: { ...program, eligibleStripeProductIds: [] } },
+    { program: { ...program, applicationId: "app_abcdefghijkl" } }]) {
+    const f = financialFixture(); f.change(changed); await assert.rejects(f.resources.createProgram(programInput), /invalid_response/);
+  }
+  for (const changed of [{ ...terms, commission: { type: "percentage", basisPoints: 1000 } },
+    { ...terms, programId: "prg_abcdefghijkl" }, { ...terms, effectiveAt: "2026-10-03T00:00:00.123001Z" }]) {
+    const f = financialFixture(); f.change({ term: { ...changed, createdAt: app.createdAt } }); await assert.rejects(f.resources.createTerms(terms), /invalid_response/);
+  }
+  const f = financialFixture(); f.change({ program: { ...program, secret: "never output" }, term: { ...terms, createdAt: app.createdAt, secret: "never output" } });
+  assert(!JSON.stringify([await f.resources.createProgram(programInput), await f.resources.createTerms(terms)]).includes("never output"));
+});
