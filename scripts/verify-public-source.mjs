@@ -30,6 +30,7 @@ const automation = [
     "scripts/setup-files.test.mjs",
     "scripts/setup-config.test.mjs",
     "scripts/setup-progress.test.mjs",
+    "scripts/setup-secrets.test.mjs",
     "scripts/setup-authorization.test.mjs",
   "scripts/stable-release.mjs",
   "scripts/stable-release.test.mjs",
@@ -122,6 +123,7 @@ export function inspect(files) {
     "packages/sdk/bin/setup-files.mjs",
     "packages/sdk/bin/setup-config.mjs",
     "packages/sdk/bin/setup-progress.mjs",
+    "packages/sdk/bin/setup-secrets.mjs",
     "packages/sdk/bin/setup-authorization.mjs",
     ...Object.entries(sources).flatMap(([pkg, names]) =>
       [...common, ...names.map((name) => `src/${name}.${name === "provider" ? "tsx" : "ts"}`)].map(
@@ -266,7 +268,7 @@ export function archiveFiles(compressed) {
       size = Number.parseInt(field(124, 12).trim(), 8);
     const mode = Number.parseInt(field(100, 8).trim(), 8);
     assert(
-      /^(package\/(?:dist\/)?[a-zA-Z0-9_.-]+|package\/bin\/(?:init|setup-session|setup-authorization|setup-resources|setup-files|setup-config|setup-progress)\.mjs)$/.test(name) &&
+      /^(package\/(?:dist\/)?[a-zA-Z0-9_.-]+|package\/bin\/(?:init|setup-session|setup-authorization|setup-resources|setup-files|setup-config|setup-progress|setup-secrets)\.mjs)$/.test(name) &&
         !files.has(name),
       "unsafe archive entry",
     );
