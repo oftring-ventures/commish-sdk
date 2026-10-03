@@ -1,7 +1,10 @@
 #!/usr/bin/env node
 const args = process.argv.slice(2);
 const json = args.includes("--json");
-if (args[0] === "verify") {
+if (args[0] === "setup") {
+  const { runSetupCommand } = await import("./setup-command.mjs");
+  process.exitCode = await runSetupCommand(args.slice(1));
+} else if (args[0] === "verify") {
   const fail = (code) => { throw new Error(code); };
   try {
     if (args.slice(1).some((arg) => arg !== "--json") || new Set(args).size !== args.length)
@@ -67,12 +70,12 @@ if (args[0] === "verify") {
 } else {
   const valid = args.length === 0 || args.every((arg) => ["help", "--help", "--json"].includes(arg)) && new Set(args).size === args.length;
   if (!valid) {
-    console.error(json ? JSON.stringify({ status: "error", code: "invalid_arguments" }) : "Usage: commish verify [--json]");
+    console.error(json ? JSON.stringify({ status: "error", code: "invalid_arguments" }) : "Usage: commish setup [options] | commish verify [--json]");
     process.exitCode = 1;
   } else {
-    const help = { status: "help", commands: ["verify [--json]"],
+    const help = { status: "help", commands: ["setup [options]", "verify [--json]"],
       requiredEnvironment: ["COMMISH_SECRET_KEY", "COMMISH_PUBLISHABLE_KEY", "COMMISH_APPLICATION_ID", "COMMISH_PROGRAM_ID"],
       integrationVerified: false };
-    console.log(json ? JSON.stringify(help) : "Commish developer CLI\n\ncommish verify [--json] — check credentials and program configuration.\nA completed attributed TEST conversion is required to verify the integration.");
+    console.log(json ? JSON.stringify(help) : "Commish developer CLI\n\ncommish setup [options] — authorize and provision from this repository.\ncommish setup --help — configuration and noninteractive flags.\ncommish verify [--json] — check credentials and program configuration.\nA completed attributed TEST conversion is required to verify the integration.");
   }
 }
