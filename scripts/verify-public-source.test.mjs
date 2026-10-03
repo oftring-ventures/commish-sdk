@@ -62,6 +62,7 @@ function bootstrap() {
   "scripts/fixtures/next-capture.mjs",
   "scripts/fixtures/next-provider.mjs",
   "scripts/fixtures/next-cli.mjs",
+  "scripts/fixtures/setup-cli.mjs",
   "scripts/public-package-manifest.mjs",
   "scripts/public-package-manifest.test.mjs",
   "scripts/public-candidate.mjs",

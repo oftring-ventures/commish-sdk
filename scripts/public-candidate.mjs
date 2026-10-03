@@ -6,7 +6,7 @@ import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "nod
 
 const digest = (bytes) => createHash("sha512").update(bytes).digest();
 export const candidateScopes = [
-  "sdk-cli-installed-verify",
+  "sdk-cli-installed-verify", "sdk-cli-installed-setup",
   "sdk-browser-node-primitives", "sdk-public-types-external-ts", "sdk-client-types-external-ts",
   "sdk-webhook-node", "sdk-http-node-fetch", "sdk-reads-node-fetch", "next-browser-node-bridge",
   "next-browser-types-external-ts", "next-provider-types-layout", "next-provider-types-external-ts",
