@@ -14,6 +14,15 @@ const sameOperations = (value, requested) => Array.isArray(value) &&
   value.length === requested.length && value.every((item) => operations.has(item)) &&
   [...value].sort().every((item, index) => item === [...requested].sort()[index]);
 
+export function validateSetupWorkspace(value) {
+  if (value !== undefined && !(keys(value, ["kind", "id"]) && value.kind === "existing" &&
+      /^wrk_[A-Za-z0-9_-]{12,}$/.test(value.id) || keys(value, ["kind", "name", "slug"]) &&
+      value.kind === "new" && typeof value.name === "string" && value.name.trim() === value.name &&
+      value.name.length > 0 && value.name.length <= 100 && typeof value.slug === "string" &&
+      /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(value.slug) && value.slug.length >= 3 && value.slug.length <= 48))
+    fail("invalid_request");
+}
+
 // The bearer stays inside this closure: callers can persist receipts, never authority.
 export function createSetupSession(input, { appUrl = "https://app.commish.sh", fetcher = fetch, now = Date.now } = {}) {
   let origin;
@@ -27,12 +36,7 @@ export function createSetupSession(input, { appUrl = "https://app.commish.sh", f
   if (!["test", "live"].includes(mode) || !Array.isArray(requested) || !requested.length ||
       new Set(requested).size !== requested.length || requested.some((op) => !operations.has(op))) fail("invalid_request");
   const workspace = input.workspaceRequest;
-  if (workspace !== undefined && !(keys(workspace, ["kind", "id"]) && workspace.kind === "existing" &&
-      /^wrk_[A-Za-z0-9_-]{12,}$/.test(workspace.id) || keys(workspace, ["kind", "name", "slug"]) &&
-      workspace.kind === "new" && typeof workspace.name === "string" && workspace.name.trim() === workspace.name &&
-      workspace.name.length > 0 && workspace.name.length <= 100 && typeof workspace.slug === "string" &&
-      /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(workspace.slug) && workspace.slug.length >= 3 && workspace.slug.length <= 48))
-    fail("invalid_request");
+  validateSetupWorkspace(workspace);
   const expected = structuredClone({ mode, operations: requested, ...(workspace ? { workspaceRequest: workspace } : {}) });
   const verifier = randomBytes(32).toString("base64url");
   const hash = createHash("sha256").update(verifier).digest("hex");
