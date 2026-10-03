@@ -29,7 +29,7 @@ function packed(root, webhook, implementation = "export {};") {
         data: Buffer.from(
           JSON.stringify({
             name: "@commish/sdk",
-            version: "0.1.0",
+            version: "0.2.0",
             type: "module",
             exports,
           }),
