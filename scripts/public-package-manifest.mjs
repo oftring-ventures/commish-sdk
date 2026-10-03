@@ -40,8 +40,10 @@ export function publicPackageManifests(files) {
       : ["browser.ts", "index.ts", "metadata.ts", "capture.ts", "provider.tsx"])
       assert(read(`${root}/src/${name}`).length > 0, "empty release source");
     if (pkg === "sdk") {
-      assert(read(`${root}/bin/setup-session.mjs`).length > 0, "missing CLI setup transport");
-      assert.equal(files.get(`${root}/bin/setup-session.mjs`).mode, "100644");
+      for (const name of ["setup-session", "setup-authorization"]) {
+        assert(read(`${root}/bin/${name}.mjs`).length > 0, "missing CLI setup module");
+        assert.equal(files.get(`${root}/bin/${name}.mjs`).mode, "100644");
+      }
     }
     if (bin) {
       assert(read(`${root}/bin/init.mjs`).toString().startsWith("#!/usr/bin/env node\n"));

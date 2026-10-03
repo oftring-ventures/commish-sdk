@@ -19,6 +19,7 @@ function bootstrap() {
   );
   for (const name of [
     "scripts/setup-session.test.mjs",
+    "scripts/setup-authorization.test.mjs",
     "scripts/stable-release.mjs",
     "scripts/stable-release.test.mjs",
     ".github/workflows/publish-packages.yml",
