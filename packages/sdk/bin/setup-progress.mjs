@@ -36,6 +36,7 @@ function protect(root) {
     fail("setup_state_not_ignored");
 }
 const schemas = {
+  credential: v => keys(v, ["id"]) && id(v.id, "key"),
   workspace: v => keys(v, ["id"]) && id(v.id, "wrk"),
   application: v => keys(v, ["id"]) && id(v.id, "app"),
   program: v => keys(v, ["id"]) && id(v.id, "prg"),
