@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
+import { npmTimeoutMs, registryVisibility } from "./publication-executor.mjs";
 
 const workflow = readFileSync(new URL("../.github/workflows/publish-packages.yml", import.meta.url), "utf8");
 test("publication requires manual release-tag dispatch and the protected environment", () => {
@@ -33,4 +34,11 @@ test("approval is independent of artifact inputs and shell receives IDs through 
   assert.equal(commands.length, 1); assert(!commands[0].includes("${{"));
   assert(commands[0].includes('node scripts/publication-executor.mjs "$CANDIDATE_RUN_ID" "$CANDIDATE_ARTIFACT_ID" --publish'));
   assert.match(workflow, /path: \$\{\{ runner.temp \}\}\/publication-receipt.json/);
+});
+
+test("the publication job outlasts both uploads with full registry visibility waits", () => {
+  const minutes = workflow.match(/\n  publish:\n(?:    .*\n)*?    timeout-minutes: ([1-9][0-9]*)\n/)?.[1];
+  // Two preflight lookups, then per package the upload, the visibility deadline and its final readback.
+  const required = 2 * npmTimeoutMs + 2 * (npmTimeoutMs + registryVisibility.timeoutMs + npmTimeoutMs) + 5 * 60_000;
+  assert(Number(minutes) * 60_000 >= required, "publication job timeout cannot fit two visibility waits");
 });
