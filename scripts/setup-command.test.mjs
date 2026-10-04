@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { EventEmitter } from "node:events";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -68,4 +68,58 @@ test("errors and interrupted requests have sanitized output and release signal l
   } }), 130);
   assert.equal(JSON.parse(f.output.pop()).code, "setup_interrupted");
   assert.equal(f.signals.listenerCount("SIGINT"), 0); assert.equal(f.signals.listenerCount("SIGTERM"), 0);
+});
+
+test("planning expands missing business decisions without provisioning or writing files", async t => {
+  const f = fixture(t);
+  const execute = async () => assert.fail("a plan must never authorize or provision");
+  assert.equal(await runSetupCommand(["--plan", "--json"], { ...f.options, execute }), 2);
+  const result = JSON.parse(f.output.pop());
+  assert.equal(result.status, "plan"); assert.equal(result.networkRequests, false); assert.equal(result.mutations, false);
+  assert(result.configuration.missingInputs.some(input => input.field === "terms.recurrence" && input.source === "business_decision"));
+  assert(result.configuration.missingInputs.some(input => input.field === "destination.proofFile" && input.source === "repository_or_developer"));
+  assert.equal(result.integrationVerified, false); assert.equal(result.mode, null);
+  assert.deepEqual(readdirSync(f.root), []); assert.deepEqual(f.notices, []);
+});
+
+test("planning reads bounded metadata without echoing scripts, environment contents or business values", async t => {
+  const f = fixture(t, true);
+  writeFileSync(join(f.root, "package.json"), JSON.stringify({ packageManager: "pnpm@11.1.3", dependencies: { next: "16.3.4" }, scripts: { install: "private-fixture" } }));
+  writeFileSync(join(f.root, ".env"), "PRIVATE=private-fixture");
+  writeFileSync(join(f.root, "pnpm-lock.yaml"), "private-fixture");
+  mkdirSync(join(f.root, "src/app"), { recursive: true });
+  const before = readdirSync(f.root, { recursive: true });
+  assert.equal(await runSetupCommand(["--plan", "--json"], { ...f.options, execute: async () => assert.fail("provisioning invoked") }), 0);
+  const output = f.output.pop(), result = JSON.parse(output);
+  assert(!output.includes("private-fixture")); assert(!output.includes("I earn a commission"));
+  assert.equal(result.repository.framework, "next"); assert.equal(result.repository.packageManager, "pnpm");
+  assert.equal(result.repository.adapter, "next_peer_check_required");
+  assert.deepEqual(result.repository.appDirectories, ["src/app"]);
+  assert.equal(result.configuration.status, "ready"); assert.equal(result.mode, "test");
+  assert.deepEqual(readdirSync(f.root, { recursive: true }), before);
+  assert.deepEqual(f.notices, []);
+});
+
+test("planning reports ambiguity and refuses symlinked metadata without following it", async t => {
+  const f = fixture(t, true);
+  symlinkSync("/etc/hosts", join(f.root, "package.json"));
+  symlinkSync("/etc", join(f.root, "src"));
+  writeFileSync(join(f.root, "pnpm-lock.yaml"), ""); writeFileSync(join(f.root, "package-lock.json"), "");
+  assert.equal(await runSetupCommand(["--plan", "--json"], f.options), 0);
+  const result = JSON.parse(f.output.pop());
+  assert.equal(result.repository.packageManager, "unknown");
+  assert(result.repository.warnings.includes("conflicting_package_managers"));
+  assert(result.repository.warnings.includes("package_manifest_unavailable"));
+  assert(result.repository.warnings.includes("framework_directory_unavailable"));
+  writeFileSync(join(f.root, "commish.setup.json"), JSON.stringify({ ...config, secret: "private-fixture" }));
+  assert.equal(await runSetupCommand(["--plan", "--json"], f.options), 2);
+  const invalid = f.output.pop(); assert(!invalid.includes("private-fixture"));
+  assert.deepEqual(JSON.parse(invalid).configuration.invalidFields, ["config"]);
+});
+
+test("the installed entry point exposes planning before configuration and does not create progress", t => {
+  const f = fixture(t);
+  const result = spawnSync(process.execPath, [executable, "setup", "--plan", "--json"], { cwd: f.root, encoding: "utf8", timeout: 5000 });
+  assert.equal(result.status, 2); assert.equal(result.stderr, "");
+  assert.equal(JSON.parse(result.stdout).status, "plan"); assert.deepEqual(readdirSync(f.root), []);
 });

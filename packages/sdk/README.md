@@ -51,6 +51,19 @@ installing the package does not deploy Commish.
 
 ## Set up from your repository
 
+This source adds `pnpm exec commish setup --plan --json` for the next release;
+verify the published version supports `--plan` before using a registry package.
+Planning reads local configuration and bounded package metadata, reports missing
+inputs by field, and identifies framework/package-manager hints. It makes no
+network requests, opens no browser, runs no repository scripts and writes no
+files. It never reads environment or credential files. Conflicting lockfiles or
+linked metadata produce warnings; Next detection still requires an adapter peer
+range check. Exit 0 means the supplied configuration is valid, while 2 means it
+needs input or correction. Neither outcome verifies an integration or authorizes
+the subsequent setup. The JSON lists conditional human actions separately from
+the agent's next steps; it does not invent business choices or count unobserved
+clicks.
+
 `pnpm exec commish setup` provisions a workspace, application, destination,
 application-scoped credential, draft program, terms and optional webhook. It
 requires a deployment with the `commish-cli-setup-v2` setup API. Complete browser

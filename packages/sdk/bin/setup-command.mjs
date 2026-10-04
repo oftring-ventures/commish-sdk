@@ -1,5 +1,6 @@
 import { parseSetupArguments, setupFlags } from "./setup-arguments.mjs";
 import { runSetup } from "./setup-workflow.mjs";
+import { planSetup } from "./setup-plan.mjs";
 
 const codes = new Set(["invalid_arguments", "invalid_setup_config", "invalid_app_url", "invalid_response", "invalid_request",
   "service_unavailable", "rate_limited", "access_denied", "mfa_required", "recent_auth_required", "authorization_required",
@@ -26,8 +27,14 @@ function progressText(event) {
   return `Waiting for setup${event.code ? ` (${event.code})` : ""}…`;
 }
 function resultText(result) {
+  if (result.status === "plan") return `Setup plan (${result.configuration.status}). No files or services changed.\n` +
+    `Framework: ${result.repository.framework}; package manager: ${result.repository.packageManager}.\n` +
+    `Repository checks: ${result.repository.warnings.join(", ") || "no warnings"}. Adapter: ${result.repository.adapter}.\n` +
+    `Missing inputs: ${result.configuration.missingInputs.map(input => input.field).join(", ") || "none"}.\n` +
+    `Invalid fields: ${result.configuration.invalidFields.join(", ") || "none"}.\n` +
+    `Next steps: ${result.nextSteps.join(", ")}.\nBrowser authorization and integration acceptance remain required.`;
   if (result.status === "help") return "commish setup [options]\n\n" + setupFlags.join("\n") +
-    "\n\nReads commish.setup.json by default. Program, terms, webhook and participant consent are explicit business inputs.\nTEST is the default. --no-open prints browser handoffs; --wait sets a 0–600 second provisioning wait.\nWith --json, progress goes to stderr and one final receipt goes to stdout.";
+    "\n\nReads commish.setup.json by default. Program, terms, webhook and participant consent are explicit business inputs.\nTEST is the default. --plan inspects local configuration and repository metadata without network requests or writes.\n--no-open prints browser handoffs; --wait sets a 0–600 second provisioning wait.\nWith --json, progress goes to stderr and one final receipt goes to stdout.";
   if (["input_required", "invalid_config"].includes(result.status)) return `Setup ${result.status.replaceAll("_", " ")}: ${result.fields.join(", ")}.\nProvide these in commish.setup.json or explicit flags; see commish setup --help.`;
   if (result.status === "error") return `Setup failed: ${result.code}. ${result.guidance}`;
   return `Setup ${result.status.replaceAll("_", " ")} (${result.mode.toUpperCase()}).\nWorkspace: ${result.workspaceId}\nApplication: ${result.applicationId}\nProgram: ${result.programId}\nCredentials file: ${result.credentialsFile}\n` +
@@ -44,6 +51,7 @@ export async function runSetupCommand(args, { root = process.cwd(), execute = ru
   try {
     const parsed = parseSetupArguments(root, args);
     if (parsed.kind === "help") { finish({ status: "help", flags: parsed.flags, integrationVerified: false }); return 0; }
+    if (parsed.options?.plan) { finish(planSetup(root, parsed)); return parsed.kind === "ready" ? 0 : 2; }
     if (parsed.kind !== "ready") { finish({ status: parsed.kind, fields: parsed.fields, integrationVerified: false }); return 2; }
     const result = await execute(root, parsed.config, parsed.options, { signal: controller.signal,
       notify: event => diagnostic(json ? JSON.stringify(event) : progressText(event)) });
