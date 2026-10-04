@@ -92,6 +92,10 @@ export async function verifySetupCli(executable) {
       terms: { commission: { type: "percentage", basisPoints: 1500 }, recurrence: { kind: "first_payment" }, perSaleCap: null, disclosureText: "I earn a commission." },
       participantConsent: "commish_hosted", webhook: { url: "https://guestbook.example/hooks", eventTypes: ["commission.payable"] }, stripe: "later" };
     writeFileSync(join(root, "commish.setup.json"), JSON.stringify(config)); writeFileSync(join(root, "app.ts"), "consumer-owned");
+    const planned = await run(["--plan"]);
+    assert.equal(planned.code, 0); assert.equal(planned.result.status, "plan");
+    assert.equal(planned.result.integrationVerified, false); assert.equal(requests.length, 0);
+    assert.deepEqual(readdirSync(root).sort(), ["app.ts", "commish.setup.json"]);
     const deniedResult = await run([]); assert.equal(deniedResult.result.code, "access_denied");
     assert(requests.every(r => r.path.endsWith("setup-sessions"))); denied = false;
     assert.equal((await run([])).result.code, "service_unavailable");

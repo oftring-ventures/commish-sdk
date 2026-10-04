@@ -4,7 +4,7 @@ import { readSetupFile } from "./setup-files.mjs";
 
 const strings = ["config", "app-url", "mode", "workspace-id", "workspace-name", "workspace-slug", "application-name",
   "origin", "proof-file", "program-json", "terms-json", "webhook-json", "stripe", "participant-consent", "wait"];
-const booleans = ["json", "no-open", "non-interactive", "help"];
+const booleans = ["json", "no-open", "non-interactive", "plan", "help"];
 export const setupFlags = [...strings.map(name => `--${name} <value>`), ...booleans.map(name => `--${name}`)];
 const fail = () => { throw new Error("invalid_arguments"); };
 function json(value) { try { return JSON.parse(value); } catch { fail(); } }
@@ -48,5 +48,6 @@ export function parseSetupArguments(root, args) {
   for (const [flag, field] of [["stripe", "stripe"], ["participant-consent", "participantConsent"]])
     if (v[flag] !== undefined) input[field] = v[flag];
   return { ...parseSetupConfig(input), options: { appUrl: endpoint.origin, json: v.json === true,
+    ...(v.plan ? { plan: true } : {}),
     noOpen: v["no-open"] === true, nonInteractive: v["non-interactive"] === true, waitSeconds: Number(wait) } };
 }
