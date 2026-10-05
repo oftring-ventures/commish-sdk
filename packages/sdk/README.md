@@ -51,8 +51,7 @@ installing the package does not deploy Commish.
 
 ## Set up from your repository
 
-This source adds `pnpm exec commish setup --plan --json` for the next release;
-verify the published version supports `--plan` before using a registry package.
+Since 0.2.1, `pnpm exec commish setup --plan --json` previews setup first.
 Planning reads local configuration and bounded package metadata, reports missing
 inputs by field, and identifies framework/package-manager hints. It makes no
 network requests, opens no browser, runs no repository scripts and writes no
