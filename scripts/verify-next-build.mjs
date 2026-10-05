@@ -278,7 +278,7 @@ export default function Layout({ children }: { children: ReactNode }) {
     const executable = child(consumer, require.resolve("next/dist/bin/next"));
     assert.equal(
       (await run(process.execPath, [executable, "--version"])).trim(),
-      "Next.js v16.3.4",
+      "Next.js v16.3.6",
       "wrong framework CLI",
     );
     await run(process.execPath, [executable, "build", "--webpack"], 600_000);

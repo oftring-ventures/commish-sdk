@@ -183,7 +183,7 @@ export function inspect(files) {
     packages.length === 1
       ? "7e23bad69c9b8a88d53fc992196178aecdef08a6311e54752201de147b1314f2"
       : framework
-        ? "81c9949580d3ed18cfe1c75e3616ef666f403b127a08c39e6899546b6d871f7b"
+        ? "1cd748266d1f1ece457dfda2336283b2b97a3ddb51385515f63e27ba66bb9a86"
         : "0c15096dcc1644b3d0e3fd288da4ab13ddef54d9b609bc2a8547cc9d7d88bc3f";
   assert.equal(sha(bytes(files, "pnpm-lock.yaml")), expectedLock, "unsupported lockfile");
   for (const name of files.keys())
@@ -221,7 +221,7 @@ export function inspect(files) {
     }
     if (pkg === "next" && framework) {
       Object.assign(dev, {
-        next: "16.3.4",
+        next: "16.3.6",
         react: "19.2.8",
         "react-dom": "19.2.8",
         "@types/react": "19.2.18",

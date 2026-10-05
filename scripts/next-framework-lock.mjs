@@ -6,7 +6,7 @@ export const frameworkDependencies = {
   "@types/node": "24.13.3",
   "@types/react": "19.2.18",
   "@types/react-dom": "19.2.5",
-  next: "16.3.4",
+  next: "16.3.6",
   react: "19.2.8",
   "react-dom": "19.2.8",
   typescript: "5.9.2",
@@ -30,7 +30,7 @@ const sri = (bytes) => `sha512-${createHash("sha512").update(bytes).digest("base
 export function frameworkLocks(source, sdk, next) {
   assert.equal(
     createHash("sha256").update(source).digest("hex"),
-    "81c9949580d3ed18cfe1c75e3616ef666f403b127a08c39e6899546b6d871f7b",
+    "1cd748266d1f1ece457dfda2336283b2b97a3ddb51385515f63e27ba66bb9a86",
     "unsupported framework source lock",
   );
   const text = source.toString();
@@ -42,7 +42,7 @@ export function frameworkLocks(source, sdk, next) {
     text.indexOf("\n\n  packages/sdk:"),
   );
   const [packages, snapshots] = text.split("\npackages:\n\n")[1].split("\nsnapshots:\n\n");
-  const nextVersion = "16.3.4(@types/node@24.13.3)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)";
+  const nextVersion = "16.3.6(@types/node@24.13.3)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)";
   const sdkId = "@commish/sdk@file:sdk.tgz";
   const peerSuffix = `(${sdkId})(next@${nextVersion})(react@19.2.8)`;
   const packageRecord = (name, artifact, peers = "") => `  '@commish/${name}@file:${name}.tgz':

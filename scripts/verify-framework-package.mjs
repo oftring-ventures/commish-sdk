@@ -104,10 +104,10 @@ export function verifyFrameworkPackage(consumer, root, artifact, registry, sdk) 
     );
     const next = JSON.parse(readFileSync(nextManifest));
     assert.equal(next.name, "next");
-    assert.equal(next.version, "16.3.4");
+    assert.equal(next.version, "16.3.6");
     assert.deepEqual(next.bin, { next: "./dist/bin/next" });
     const source = dirname(nextManifest);
-    const frozen = registry.find(([id]) => id === "next@16.3.4");
+    const frozen = registry.find(([id]) => id === "next@16.3.6");
     assert(frozen && frozen[1] === relative(consumer, source), "bin source identity differs");
     for (const name of ["package.json", "dist/bin/next"]) {
       const path = child(source, join(source, name));
