@@ -43,7 +43,7 @@ test("candidate paths reject overlap, relative paths, existing outputs and symli
 }));
 
 test("normalized packing keeps exact payload and modes while stripping source metadata", () => fixture((work) => {
-  const manifest = { name: "@commish/sdk", version: "0.2.1" }, dir = "packages/sdk";
+  const manifest = { name: "@commish/sdk", version: "0.2.2" }, dir = "packages/sdk";
   const files = new Map([['src/index.ts', 'export {};'], ['LICENSE', 'license'], ['README.md', 'readme']]
     .map(([name, data]) => [`${dir}/${name}`, { data: Buffer.from(data) }]));
   const entries = [['package/package.json', JSON.stringify({ ...manifest, private: true, scripts: { build: "source-only" } })],
@@ -53,7 +53,7 @@ test("normalized packing keeps exact payload and modes while stripping source me
     assert.equal(command, "pnpm"); assert.deepEqual(args.slice(0, 2), ["pack", "--pack-destination"]);
     const packed = entries.map(([name]) => [name, name === "package/package.json"
       ? JSON.stringify(JSON.parse(readFileSync(join(cwd, name.slice(8)))), null, 2) : readFileSync(join(cwd, name.slice(8)))]);
-    writeFileSync(join(args[2], "commish-sdk-0.2.1.tgz"), tar(packed));
+    writeFileSync(join(args[2], "commish-sdk-0.2.2.tgz"), tar(packed));
   };
   const result = normalizePackage(files, dir, manifest, original, work, run, archiveFiles);
   assert.deepEqual(JSON.parse(result.packed.get("package/package.json").data), manifest);
@@ -68,8 +68,8 @@ test("normalized packing keeps exact payload and modes while stripping source me
 
 test("candidate receipt binds exact archive bytes and refuses incomplete evidence or replacement", () => fixture((work, root) => {
   const source = "a".repeat(40), output = join(work, "candidate");
-  const manifests = ["sdk", "next"].map((pkg) => ({ name: `@commish/${pkg}`, version: "0.2.1",
-    ...(pkg === "next" ? { peerDependencies: { "@commish/sdk": "0.2.1" } } : {}) }));
+  const manifests = ["sdk", "next"].map((pkg) => ({ name: `@commish/${pkg}`, version: "0.2.2",
+    ...(pkg === "next" ? { peerDependencies: { "@commish/sdk": "0.2.2" } } : {}) }));
   const artifacts = manifests.map((m) => ({ archive: tar([["package/package.json", JSON.stringify(m)]]) }));
   const write = (sha = source, pair = artifacts, scopes = candidateScopes) => writeCandidate(root, output, sha, pair, scopes, manifests, archiveFiles);
   assert.throws(() => write("bad")); assert.throws(() => write(source, artifacts.slice(1)));

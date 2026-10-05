@@ -74,11 +74,11 @@ function fixture(react = false, server = false, framework = react) {
   return ["sdk", "next"].map((name) => {
     const manifest = {
       name: `@commish/${name}`,
-      version: "0.2.1",
+      version: "0.2.2",
       type: "module",
       engines: { node: ">=24 <25" },
       exports: { "./browser": pair("browser") },
-      ...(name === "next" ? { peerDependencies: { "@commish/sdk": "0.2.1" } } : {}),
+      ...(name === "next" ? { peerDependencies: { "@commish/sdk": "0.2.2" } } : {}),
     };
     if (name === "next" && react) manifest.exports["./react"] = pair("provider");
     if (name === "next" && framework) {
@@ -416,7 +416,7 @@ test("provider layout freezes registry types then extends the exact local pair o
             install(consumer, packages);
             let generated = locks.paired;
             if (failure === "paired-version")
-              generated = generated.replace("version: 0.2.1", "version: 0.1.0-beta.8");
+              generated = generated.replace("version: 0.2.2", "version: 0.1.0-beta.8");
             if (failure === "paired-integrity")
               generated = generated.replace("integrity: sha512-", "integrity: sha512-changed");
             if (failure === "paired-peer")

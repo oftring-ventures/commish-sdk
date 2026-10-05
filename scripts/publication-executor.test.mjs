@@ -29,14 +29,14 @@ function zip(files) {
 function fixture() {
   const files = new Map();
   const artifacts = ["sdk", "next"].map((pkg) => {
-    const metadata = { name: `@commish/${pkg}`, version: "0.2.1", license: "MIT",
+    const metadata = { name: `@commish/${pkg}`, version: "0.2.2", license: "MIT",
       repository: { url: `git+https://github.com/${repository}.git` }, publishConfig: { access: "public", tag: "latest" },
-      ...(pkg === "next" ? { peerDependencies: { "@commish/sdk": "0.2.1" } } : {}) };
+      ...(pkg === "next" ? { peerDependencies: { "@commish/sdk": "0.2.2" } } : {}) };
     const data = Buffer.from(JSON.stringify(metadata)), header = Buffer.alloc(512);
     header.write("package/package.json"); header.write("0000644", 100); header.write(data.length.toString(8).padStart(11, "0"), 124);
     header.write("0", 156); header.fill(32, 148, 156); header.write([...header].reduce((a, b) => a + b, 0).toString(8).padStart(6, "0"), 148);
     const bytes = gzipSync(Buffer.concat([header, data, Buffer.alloc((512 - data.length % 512) % 512 + 1024)])); bytes[9] = 255;
-    const file = `commish-${pkg}-0.2.1.tgz`; files.set(file, bytes);
+    const file = `commish-${pkg}-0.2.2.tgz`; files.set(file, bytes);
     return { name: metadata.name, version: metadata.version, file, bytes: bytes.length, sha512: hash(bytes, "sha512"),
       integrity: `sha512-${hash(bytes, "sha512", "base64")}`,
       members: [{ name: "package/package.json", bytes: data.length, mode: 0o644, sha512: hash(data, "sha512") }] };
@@ -58,7 +58,7 @@ function fixture() {
       workflow_run: { id: 42, head_sha: source } } };
   const env = { GITHUB_ACTIONS: "true", GITHUB_REPOSITORY: repository, GITHUB_EVENT_NAME: "workflow_dispatch", GITHUB_JOB: "publish",
     RUNNER_OS: "Linux", RUNNER_ARCH: "X64", COMMISH_NPM_ENVIRONMENT: "npm-publication", GITHUB_SHA: source, GITHUB_WORKFLOW_SHA: source,
-    GITHUB_REF: "refs/tags/v0.2.1", GITHUB_WORKFLOW_REF: `${repository}/.github/workflows/publish-packages.yml@refs/tags/v0.2.1`,
+    GITHUB_REF: "refs/tags/v0.2.2", GITHUB_WORKFLOW_REF: `${repository}/.github/workflows/publish-packages.yml@refs/tags/v0.2.2`,
     COMMISH_NPM_APPROVED_SOURCE: source, COMMISH_NPM_APPROVED_MANIFEST_SHA256: ci.manifestSha256,
     COMMISH_NPM_APPROVED_CI_RECEIPT_SHA256: hash(files.get("ci-receipt.json")), COMMISH_NPM_HOSTED_ACCEPTANCE_SHA256: "b".repeat(64) };
   const calls = [], registry = new Map(), scanning = new Map(), clock = { now: 0, sleeps: [] }, notices = [];
