@@ -119,6 +119,13 @@ request waits. A pending request lasts up to an hour; approved authority lasts
 at most ten minutes. The CLI attempts revocation when the run ends; if cleanup
 cannot reach Commish, the grant remains bounded by that expiration. Rerun to authorize again.
 
+The next source release adds reviewed business choices to that same approval.
+It sends the proposed program and terms to the dedicated reviewed-session endpoint
+and requires the server to return the identical proposal before authorization can
+continue. Commission, recurrence, caps and product eligibility are enforced by
+the setup commands after approval. This requires the matching server rollout;
+0.2.1 retains its existing workspace/mode/scope approval.
+
 Omit `workspace` to discover and select your available workspaces in the approval
 page. Specify `--workspace-id wrk_...` for a known workspace, or both
 `--workspace-name` and `--workspace-slug` to request creation. An existing

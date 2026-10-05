@@ -19,7 +19,7 @@ export async function verifySetupCli(executable) {
       const chunks = []; for await (const chunk of req) chunks.push(chunk);
       const body = chunks.length ? JSON.parse(Buffer.concat(chunks).toString()) : undefined;
       requests.push({ path: req.url, method: req.method, body });
-      if (req.method === "POST" && req.url === "/api/cli/setup-sessions") {
+      if (req.method === "POST" && ["/api/cli/setup-sessions", "/api/cli/setup-sessions/reviewed"].includes(req.url)) {
         current = body; authorizations.push(body); assert.equal(req.headers.authorization, undefined);
       } else {
         const bearer = req.headers.authorization?.slice(7);
@@ -29,7 +29,7 @@ export async function verifySetupCli(executable) {
       const common = { protocol: "commish-cli-setup-v2", requestId: current.challengeHash, workspaceId,
         mode: current.mode, replayed: true, privateExtra: "server-private-detail" };
       let value;
-      if (req.url === "/api/cli/setup-sessions") {
+      if (["/api/cli/setup-sessions", "/api/cli/setup-sessions/reviewed"].includes(req.url)) {
         value = req.method === "POST" ? { ...current, decision: "pending", workspaceRequest: current.workspaceRequest ?? null,
           pairingCode: `${current.challengeHash.slice(0, 4)}-${current.challengeHash.slice(4, 8)}`.toUpperCase(), requestExpiresAt: new Date(Date.now() + 3600000).toISOString() }
           : req.method === "DELETE" ? { status: "revoked" }
@@ -97,7 +97,7 @@ export async function verifySetupCli(executable) {
     assert.equal(planned.result.integrationVerified, false); assert.equal(requests.length, 0);
     assert.deepEqual(readdirSync(root).sort(), ["app.ts", "commish.setup.json"]);
     const deniedResult = await run([]); assert.equal(deniedResult.result.code, "access_denied");
-    assert(requests.every(r => r.path.endsWith("setup-sessions"))); denied = false;
+    assert(requests.every(r => /setup-sessions(?:\/reviewed)?$/.test(r.path))); denied = false;
     assert.equal((await run([])).result.code, "service_unavailable");
     const filename = join(root, ".commish/setup/test/credentials.env"), before = readFileSync(filename);
     for (let i = 0; i < 2; i++) {
