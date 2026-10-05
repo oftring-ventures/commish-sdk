@@ -11,4 +11,4 @@ export function stableReleaseVersion(version) {
   return version;
 }
 
-export const releaseVersion = stableReleaseVersion("0.2.1");
+export const releaseVersion = stableReleaseVersion("0.2.2");

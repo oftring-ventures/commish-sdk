@@ -16,8 +16,8 @@ function fixture(run) {
   const manifest = { source, status: "local-artifacts-verified", npmPublished: false, hostedAccepted: false,
     node: "v24.15.0", consumerScopes: candidateScopes, artifacts: ["sdk", "next"].map((pkg) => {
       const archive = Buffer.from(`${pkg} already verified archive`), digest = createHash("sha512").update(archive).digest();
-      const file = `commish-${pkg}-0.2.1.tgz`; writeFileSync(join(directory, file), archive);
-      return { name: `@commish/${pkg}`, version: "0.2.1", file, bytes: archive.length,
+      const file = `commish-${pkg}-0.2.2.tgz`; writeFileSync(join(directory, file), archive);
+      return { name: `@commish/${pkg}`, version: "0.2.2", file, bytes: archive.length,
         sha512: digest.toString("hex"), integrity: `sha512-${digest.toString("base64")}` };
     }) };
   writeFileSync(join(directory, "manifest.json"), JSON.stringify(manifest));
@@ -60,7 +60,7 @@ test("CI receipt rejects changed bytes, checksums, extra files and symlinked can
 });
 
 test("CI receipts retain existing branch, tag and merge-queue push coverage", () => {
-  for (const [event, ref] of [["push", "heads/topic"], ["push", "tags/v0.2.1"],
+  for (const [event, ref] of [["push", "heads/topic"], ["push", "tags/v0.2.2"],
     ["merge_group", "heads/gh-readonly-queue/main/pr-35"]]) fixture((directory, env) => {
       const workflowRef = `oftring-ventures/commish-sdk/.github/workflows/public-source.yml@refs/${ref}`;
       const receipt = writeCiReceipt(directory, { ...env, GITHUB_EVENT_NAME: event, GITHUB_WORKFLOW_REF: workflowRef });
