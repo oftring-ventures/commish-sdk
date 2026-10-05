@@ -88,9 +88,13 @@ Prerelease versions and mismatched source, pair or tag identities are rejected.
 Its executor defaults to dry-run outside
 that workflow and never retries an upload automatically. Both exact registry
 versions are preflighted before uploading SDK then Next; existing identical versions
-are skipped. Each upload gets an immediate registry integrity readback. Missing or
-different evidence stops the pair. A failed/uncertain run may have published one
-package: inspect both registry versions before authorizing another attempt.
+are skipped. npm's publish-time malware scan hides a new version for minutes, so
+after a successful upload the executor polls its registry integrity every 30 seconds
+for up to 30 minutes. Only a clean E404 means "not yet visible"; different integrity,
+any other lookup failure or the deadline stops the pair. A failed/uncertain upload gets
+one readback and stops. A stopped run may have published one package that the scan
+still hides: wait out the scan window before reading an E404 as unpublished, then
+inspect both registry versions before authorizing another attempt.
 
 Before dispatch, the release owner must complete this handoff:
 

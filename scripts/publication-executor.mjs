@@ -3,18 +3,37 @@ import { spawnSync } from "node:child_process";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
 import { acceptHandoff, fetchEvidence, readZipMembers } from "./publication-handoff.mjs";
-import { publicRegistryArgs, publicationPlan, readPublicationCandidate, requirePublicationApproval } from "./publication-preflight.mjs";
+import { isMissingRegistryVersion, publicRegistryArgs, publicationPlan, readPublicationCandidate,
+  requirePublicationApproval } from "./publication-preflight.mjs";
 
+export const npmTimeoutMs = 120_000;
+// npm's publish-time malware scan hides a new version for typically ~5, at peak 15+ minutes.
+export const registryVisibility = { timeoutMs: 30 * 60_000, intervalMs: 30_000 };
 const succeeded = (result) => result.status === 0 && !result.signal && !result.error;
 const npm = (args) => {
   // Capture diagnostics: subprocess output may contain authentication material.
   const env = { ...process.env }; delete env.GITHUB_TOKEN;
-  return spawnSync("npm", args, { env, encoding: "utf8", timeout: 120_000, maxBuffer: 1_000_000 });
+  return spawnSync("npm", args, { env, encoding: "utf8", timeout: npmTimeoutMs, maxBuffer: 1_000_000 });
 };
 
+// Returns the first lookup that is not a clean E404; no lookup starts after the deadline.
+async function awaitVisible(lookup, { sleep, now, notify }, label) {
+  const deadline = now() + registryVisibility.timeoutMs;
+  for (let attempt = 0; ; attempt++) {
+    const observed = lookup();
+    if (!isMissingRegistryVersion(observed)) return observed;
+    const remaining = deadline - now();
+    assert(remaining > 0, "published version not visible before the deadline; inspect registry before another attempt");
+    if (!attempt) notify(`${label} is not visible yet; waiting for npm's publish-time scan.`);
+    await sleep(Math.min(registryVisibility.intervalMs, remaining));
+  }
+}
+
 export async function executePublication({ runId, artifactId, publish = false, env = process.env },
-  { evidence = fetchEvidence, run = npm } = {}) {
+  { evidence = fetchEvidence, run = npm, sleep = delay, now = () => performance.now(),
+    notify = (message) => console.error(message) } = {}) {
   assert.match(runId, /^[1-9][0-9]*$/); assert.match(artifactId, /^[1-9][0-9]*$/);
   assert.equal(typeof publish, "boolean");
   const approved = { source: env.COMMISH_NPM_APPROVED_SOURCE,
@@ -42,7 +61,10 @@ export async function executePublication({ runId, artifactId, publish = false, e
       const result = run(command.argv);
       if (publish) {
         const item = candidate.artifacts.find((entry) => entry.name === command.name);
-        const observed = lookup(item);
+        // Only a confirmed upload waits out the scan; a failed/uncertain one gets a single readback.
+        const observed = succeeded(result)
+          ? await awaitVisible(() => lookup(item), { sleep, now, notify }, `${item.name}@${item.version}`)
+          : lookup(item);
         assert(succeeded(observed), "publication outcome unconfirmed; inspect registry before another attempt");
         assert.equal(JSON.parse(observed.stdout), command.integrity, "published integrity differs; stop the pair");
       }
@@ -57,13 +79,23 @@ export async function executePublication({ runId, artifactId, publish = false, e
   } finally { rmSync(directory, { recursive: true, force: true }); }
 }
 
+// npm output, JSON parse errors and generated assertion messages may carry environment values or
+// authentication material, so only the error code and an author-written assertion message are shown.
+// Node appends the actual/expected diff after that message's first line; it is never printed.
+export function stopDiagnostic(error) {
+  const code = typeof error?.code === "string" && /^[A-Z][A-Z0-9_]{0,63}$/.test(error.code) ? error.code : "unknown";
+  const reason = error instanceof assert.AssertionError && error.generatedMessage === false
+    ? `: ${error.message.split("\n", 1)[0]}` : "";
+  return `Publication stopped (${code}${reason}). Inspect the accepted evidence and registry before retrying; no automatic retry occurred.`;
+}
+
 if (import.meta.main) {
   try {
     const [runId, artifactId, flag] = process.argv.slice(2);
     assert(process.argv.length <= 5 && (flag === undefined || flag === "--publish"), "unexpected arguments");
     console.log(JSON.stringify(await executePublication({ runId, artifactId, publish: flag === "--publish" })));
-  } catch {
-    console.error("Publication stopped. Inspect the accepted evidence and registry before retrying; no automatic retry occurred.");
+  } catch (error) {
+    console.error(stopDiagnostic(error));
     process.exitCode = 1;
   }
 }

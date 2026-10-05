@@ -19,7 +19,8 @@ jobs:
   publish:
     if: github.repository == 'oftring-ventures/commish-sdk' && startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    # Fits two sequential waits for npm's publish-time scan (scripts/publication-executor.mjs).
+    timeout-minutes: 80
     environment: npm-publication
     permissions:
       contents: read

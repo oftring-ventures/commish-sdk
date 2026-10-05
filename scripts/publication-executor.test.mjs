@@ -7,7 +7,7 @@ import { dirname, join } from "node:path";
 import test from "node:test";
 import { gzipSync } from "node:zlib";
 import { candidateScopes } from "./public-candidate.mjs";
-import { executePublication } from "./publication-executor.mjs";
+import { executePublication, registryVisibility, stopDiagnostic } from "./publication-executor.mjs";
 
 const hash = (data, algorithm = "sha256", encoding = "hex") => createHash(algorithm).update(data).digest(encoding);
 const source = "a".repeat(40), repository = "oftring-ventures/commish-sdk";
@@ -61,19 +61,32 @@ function fixture() {
     GITHUB_REF: "refs/tags/v0.2.0", GITHUB_WORKFLOW_REF: `${repository}/.github/workflows/publish-packages.yml@refs/tags/v0.2.0`,
     COMMISH_NPM_APPROVED_SOURCE: source, COMMISH_NPM_APPROVED_MANIFEST_SHA256: ci.manifestSha256,
     COMMISH_NPM_APPROVED_CI_RECEIPT_SHA256: hash(files.get("ci-receipt.json")), COMMISH_NPM_HOSTED_ACCEPTANCE_SHA256: "b".repeat(64) };
-  const calls = [], registry = new Map(); let directory;
+  const calls = [], registry = new Map(), scanning = new Map(), clock = { now: 0, sleeps: [] }, notices = [];
+  let directory;
+  const f = { hide: 0, lookupMs: 0 };
   const run = (args) => {
     calls.push(args);
-    if (args[0] === "view") return registry.has(args[1]) ? { status: 0, stdout: JSON.stringify(registry.get(args[1])) } : missing;
+    if (args[0] === "view") {
+      clock.now += f.lookupMs;
+      // npm's publish-time scan answers E404 for a version it has already accepted.
+      if (scanning.get(args[1]) > 0) { scanning.set(args[1], scanning.get(args[1]) - 1); return missing; }
+      return registry.has(args[1]) ? { status: 0, stdout: JSON.stringify(registry.get(args[1])) } : missing;
+    }
     directory = dirname(args[1]);
     if (!args.includes("--dry-run")) {
-      const item = artifacts.find((a) => args[1].endsWith(a.file)); registry.set(`${item.name}@${item.version}`, item.integrity);
+      const item = artifacts.find((a) => args[1].endsWith(a.file)), key = `${item.name}@${item.version}`;
+      registry.set(key, item.integrity); scanning.set(key, f.hide);
     }
     return ok;
   };
-  return { artifacts, evidence, env, calls, registry, directory: () => directory, run,
-    options: { runId: "42", artifactId: "7", env }, deps: { evidence: async () => evidence, run } };
+  // A real wait sleeps at most 2 * 60 times; a runaway poll fails here instead of hanging the suite.
+  const sleep = async (ms) => { assert(clock.sleeps.push(ms) <= 1_000, "runaway registry poll"); clock.now += ms; };
+  return Object.assign(f, { artifacts, evidence, env, calls, registry, clock, notices, directory: () => directory, run,
+    options: { runId: "42", artifactId: "7", env },
+    deps: { evidence: async () => evidence, run, sleep, now: () => clock.now, notify: (message) => notices.push(message) } });
 }
+const kinds = (calls) => calls.map((a) => a[0]);
+const uploads = (calls) => calls.filter((a) => a[0] === "publish");
 
 test("default execution verifies real candidate bytes and dry-runs SDK before Next without publication", async () => {
   const f = fixture(); const receipt = await executePublication(f.options, f.deps);
@@ -88,7 +101,7 @@ test("publication checks the pair first, uploads in order and reads each exact r
   assert.deepEqual(f.calls.map((a) => a[0]), ["view", "view", "publish", "view", "publish", "view"]);
   assert.deepEqual(receipt.executed, ["@commish/sdk", "@commish/next"]); assert(receipt.registryIntegrityVerified);
   assert(f.calls.filter((a) => a[0] === "publish").every((a) => a.includes("--provenance") && !a.includes("--dry-run")));
-  assert(!existsSync(f.directory()));
+  assert.deepEqual(f.clock.sleeps, []); assert.deepEqual(f.notices, []); assert(!existsSync(f.directory()));
 });
 
 test("unapproved source, artifact and workflow evidence never reach npm", async () => {
@@ -116,19 +129,58 @@ test("identical existing versions resume; mismatch or unavailable lookup stops b
   }
 });
 
-test("unknown upload outcomes and bad registry readback stop without retry or second upload", async () => {
-  for (const uncertain of [true, false]) {
-    const f = fixture();
+test("a confirmed upload polls through scan-time E404 until its exact integrity is visible", async () => {
+  const maxWaits = registryVisibility.timeoutMs / registryVisibility.intervalMs;
+  for (const hide of [3, maxWaits]) {
+    const f = fixture(); f.hide = hide;
+    const receipt = await executePublication({ ...f.options, publish: true }, f.deps);
+    const readbacks = Array(hide + 1).fill("view");
+    assert.deepEqual(kinds(f.calls), ["view", "view", "publish", ...readbacks, "publish", ...readbacks]);
+    assert.deepEqual(uploads(f.calls).map((a) => a[1].split("/").pop()), f.artifacts.map((a) => a.file));
+    assert.deepEqual(receipt.executed, ["@commish/sdk", "@commish/next"]); assert(receipt.registryIntegrityVerified);
+    assert.deepEqual(f.clock.sleeps, Array(2 * hide).fill(registryVisibility.intervalMs));
+    assert.deepEqual(f.notices, f.artifacts.map((a) => `${a.name}@${a.version} is not visible yet; waiting for npm's publish-time scan.`));
+    assert(!existsSync(f.directory()));
+  }
+});
+
+test("different integrity, other lookup failures and the deadline stop polling before the second upload", async () => {
+  const answers = [{ status: 0, stdout: '"sha512-wrong"' }, { status: 1, stderr: "unavailable" },
+    { status: 1, stdout: missing.stdout, stderr: '{"error":{"code":"E500"}}' }, { status: null, signal: "SIGTERM", stdout: missing.stdout },
+    { status: 1, stdout: missing.stdout, error: new Error("spawnSync npm ETIMEDOUT") }];
+  for (const answer of answers) for (const waits of [0, 2]) {
+    const f = fixture(); f.hide = Infinity;
+    // The first or third readback after the SDK upload answers with something other than a clean E404.
     const run = (args) => {
       const result = f.run(args);
-      if (args[0] === "publish") {
-        if (!uncertain) f.registry.clear();
-        return uncertain ? { status: null, signal: "SIGTERM" } : result;
-      }
-      return result;
+      return args[0] === "view" && uploads(f.calls).length && f.clock.sleeps.length === waits ? answer : result;
     };
-    await assert.rejects(executePublication({ ...f.options, publish: true }, { ...f.deps, run }));
-    assert.equal(f.calls.filter((a) => a[0] === "publish").length, 1); assert(!existsSync(f.directory()));
+    await assert.rejects(executePublication({ ...f.options, publish: true }, { ...f.deps, run }),
+      answer.status === 0 ? /published integrity differs/ : /publication outcome unconfirmed/);
+    assert.deepEqual(kinds(f.calls), ["view", "view", "publish", ...Array(waits + 1).fill("view")]);
+    assert.equal(f.clock.sleeps.length, waits); assert(!existsSync(f.directory()));
+  }
+  for (const lookupMs of [0, 7_000]) {
+    const f = fixture(); f.hide = Infinity; f.lookupMs = lookupMs;
+    await assert.rejects(executePublication({ ...f.options, publish: true }, f.deps), /not visible before the deadline/);
+    assert.equal(uploads(f.calls).length, 1); assert(!existsSync(f.directory()));
+    assert(f.clock.sleeps.every((ms) => ms > 0 && ms <= registryVisibility.intervalMs));
+    // Lookup time counts against the deadline; with these durations the final readback starts exactly at it.
+    assert.equal(f.clock.now, 2 * lookupMs + registryVisibility.timeoutMs + lookupMs);
+    if (!lookupMs) assert.equal(f.calls.length, 3 + registryVisibility.timeoutMs / registryVisibility.intervalMs + 1);
+  }
+});
+
+test("failed or uncertain uploads get one readback and stop without polling, retry or second upload", async () => {
+  const outcomes = [{ status: 1, stderr: "npm error code E403" }, { status: null, signal: "SIGTERM" },
+    { status: 0, error: new Error("spawnSync npm ETIMEDOUT") }];
+  for (const outcome of outcomes) for (const hide of [0, 1]) {
+    const f = fixture(); f.hide = hide;
+    const run = (args) => { const result = f.run(args); return args[0] === "publish" ? outcome : result; };
+    await assert.rejects(executePublication({ ...f.options, publish: true }, { ...f.deps, run }),
+      hide ? /publication outcome unconfirmed/ : /publication command failed or was uncertain/);
+    assert.deepEqual(kinds(f.calls), ["view", "view", "publish", "view"]);
+    assert.equal(f.clock.sleeps.length, 0); assert.equal(f.notices.length, 0); assert(!existsSync(f.directory()));
   }
 });
 
@@ -159,4 +211,26 @@ test("every npm invocation overrides inherited scoped registry configuration", a
       assert.equal(result.status, 0); assert.equal(result.stdout.trim(), "https://registry.npmjs.org");
     }
   } finally { rmSync(directory, { recursive: true, force: true }); }
+});
+
+test("stop diagnostics show only error codes and author-written assertion messages", async () => {
+  const secret = "npm_SECRETVALUE0123456789";
+  const cli = (args, env) => spawnSync(process.execPath, [new URL("./publication-executor.mjs", import.meta.url).pathname, ...args],
+    { encoding: "utf8", timeout: 10_000, env: { PATH: process.env.PATH, GITHUB_TOKEN: secret, ...env } });
+  const tail = ". Inspect the accepted evidence and registry before retrying; no automatic retry occurred.\n";
+  let result = cli(["42", "7", "--retry"]);
+  assert.equal(result.status, 1); assert.equal(result.stdout, "");
+  assert.equal(result.stderr, `Publication stopped (ERR_ASSERTION: unexpected arguments)${tail}`);
+  // A generated assertion message would quote the environment value.
+  result = cli(["42", "7"], { COMMISH_NPM_APPROVED_SOURCE: secret });
+  assert.equal(result.status, 1); assert.equal(result.stderr, `Publication stopped (ERR_ASSERTION)${tail}`);
+  for (const [answer, shown] of [[{ status: 0, stdout: `//registry.npmjs.org/:_authToken=${secret}` }, "unknown"],
+    [{ status: 0, stdout: JSON.stringify(secret) }, "ERR_ASSERTION: registry version has different bytes"],
+    [{ status: 1, stdout: secret, stderr: secret }, "ERR_ASSERTION: registry lookup unavailable; refuse publication"]]) {
+    const f = fixture(); let error;
+    await executePublication(f.options, { ...f.deps, run: () => answer }).catch((caught) => { error = caught; });
+    assert.equal(stopDiagnostic(error), `Publication stopped (${shown})${tail.trimEnd()}`);
+  }
+  assert.equal(stopDiagnostic(Object.assign(new Error(secret), { code: secret.toLowerCase() })),
+    `Publication stopped (unknown)${tail.trimEnd()}`);
 });
