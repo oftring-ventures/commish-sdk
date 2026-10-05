@@ -33,13 +33,13 @@ completed attributed TEST conversion. Run `commish --help` for available command
 
 ## Install and configure
 
-Install `@commish/sdk@0.2.0` from npm and keep the consumer lockfile. Next.js
-applications can additionally install the matching `@commish/next@0.2.0` package.
+Install `@commish/sdk@0.2.1` from npm and keep the consumer lockfile. Next.js
+applications can additionally install the matching `@commish/next@0.2.1` package.
 No Commish checkout or database credentials are required. For prepublication
 qualification, install the accepted candidate tarballs after checking `SHA512SUMS`.
 
 ```sh
-pnpm add @commish/sdk@0.2.0
+pnpm add @commish/sdk@0.2.1
 ```
 
 Obtain a mode-matched secret key scoped to the verified application, a publishable
@@ -51,8 +51,7 @@ installing the package does not deploy Commish.
 
 ## Set up from your repository
 
-This source adds `pnpm exec commish setup --plan --json` for the next release;
-verify the published version supports `--plan` before using a registry package.
+Since 0.2.1, `pnpm exec commish setup --plan --json` previews setup first.
 Planning reads local configuration and bounded package metadata, reports missing
 inputs by field, and identifies framework/package-manager hints. It makes no
 network requests, opens no browser, runs no repository scripts and writes no
