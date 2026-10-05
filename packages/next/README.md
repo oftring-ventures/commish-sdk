@@ -3,7 +3,7 @@
 MIT-licensed Next.js App Router integration for permanent Commish TEST and LIVE modes.
 This source checkpoint is verified with Node 24.15.0, Next 16.3.6 and React 19.2.8.
 It does not establish npm availability or acceptance against a hosted Commish API.
-Use the exact paired `0.2.0` SDK/Next packages and keep the consumer lockfile.
+Use the exact paired `0.2.1` SDK/Next packages and keep the consumer lockfile.
 Accepted candidate tarballs remain available for prepublication qualification.
 
 ## Capture route
