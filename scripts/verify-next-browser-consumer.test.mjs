@@ -82,7 +82,7 @@ function fixture(react = false, server = false, framework = react) {
     };
     if (name === "next" && react) manifest.exports["./react"] = pair("provider");
     if (name === "next" && framework) {
-      Object.assign(manifest.peerDependencies, { next: ">=16.2.12 <17", react: ">=19.2.8 <20" });
+      Object.assign(manifest.peerDependencies, { next: ">=16.3.6 <17", react: ">=19.2.8 <20" });
     }
     if (name === "next" && server) {
       manifest.exports["."] = pair("index", true);

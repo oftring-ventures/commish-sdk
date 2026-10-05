@@ -227,7 +227,7 @@ export function inspect(files) {
         "@types/react": "19.2.18",
         "@types/react-dom": "19.2.5",
       });
-      Object.assign(peers, { next: ">=16.2.12 <17", react: ">=19.2.8 <20" });
+      Object.assign(peers, { next: ">=16.3.6 <17", react: ">=19.2.8 <20" });
     }
     assert.deepEqual(manifest.devDependencies, dev, "unsupported development dependencies");
     assert.deepEqual(manifest.peerDependencies ?? {}, peers, "unsupported peer dependencies");
