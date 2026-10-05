@@ -33,13 +33,13 @@ completed attributed TEST conversion. Run `commish --help` for available command
 
 ## Install and configure
 
-Install `@commish/sdk@0.2.0` from npm and keep the consumer lockfile. Next.js
-applications can additionally install the matching `@commish/next@0.2.0` package.
+Install `@commish/sdk@0.2.1` from npm and keep the consumer lockfile. Next.js
+applications can additionally install the matching `@commish/next@0.2.1` package.
 No Commish checkout or database credentials are required. For prepublication
 qualification, install the accepted candidate tarballs after checking `SHA512SUMS`.
 
 ```sh
-pnpm add @commish/sdk@0.2.0
+pnpm add @commish/sdk@0.2.1
 ```
 
 Obtain a mode-matched secret key scoped to the verified application, a publishable
