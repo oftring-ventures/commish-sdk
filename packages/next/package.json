@@ -1,6 +1,6 @@
 {
   "name": "@commish/next",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "description": "Next.js referral capture and Stripe metadata helpers for Commish",
   "license": "MIT",
   "repository": {
@@ -34,7 +34,7 @@
     }
   },
   "peerDependencies": {
-    "@commish/sdk": "0.2.2",
+    "@commish/sdk": "0.2.3",
     "next": ">=16.3.6 <17",
     "react": ">=19.2.8 <20"
   },

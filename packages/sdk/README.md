@@ -33,13 +33,13 @@ completed attributed TEST conversion. Run `commish --help` for available command
 
 ## Install and configure
 
-Install `@commish/sdk@0.2.2` from npm and keep the consumer lockfile. Next.js
-applications can additionally install the matching `@commish/next@0.2.2` package.
+Install `@commish/sdk@0.2.3` from npm and keep the consumer lockfile. Next.js
+applications can additionally install the matching `@commish/next@0.2.3` package.
 No Commish checkout or database credentials are required. For prepublication
 qualification, install the accepted candidate tarballs after checking `SHA512SUMS`.
 
 ```sh
-pnpm add @commish/sdk@0.2.2
+pnpm add @commish/sdk@0.2.3
 ```
 
 Obtain a mode-matched secret key scoped to the verified application, a publishable
@@ -119,13 +119,14 @@ request waits. A pending request lasts up to an hour; approved authority lasts
 at most ten minutes. The CLI attempts revocation when the run ends; if cleanup
 cannot reach Commish, the grant remains bounded by that expiration. Rerun to authorize again.
 
-The next source release adds reviewed business choices to that same approval.
+Since 0.2.3, setup adds reviewed business choices to that same approval.
 It sends the proposed program and terms to the dedicated reviewed-session endpoint
 and requires the server to return the identical proposal before authorization can
 continue. Commission, recurrence, caps and product eligibility are enforced by
-the setup commands after approval. This requires the matching server rollout;
-0.2.1 retains its existing workspace/mode/scope approval.
-That source release also opens a focused Stripe connection page for the authorized
+the setup commands after approval. This requires a Commish deployment with the
+reviewed-session endpoint (app.commish.sh since 2026-10-06); 0.2.2 and earlier
+retain their existing workspace/mode/scope approval.
+0.2.3 also opens a focused Stripe connection page for the authorized
 workspace and mode. Stripe consent and credentials remain in the browser; the CLI
 receives only a fixed internal path and polls readiness. Direct legacy sessions
 continue to use the settings handoff unless they explicitly request the setup flow.
