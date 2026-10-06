@@ -10,7 +10,7 @@ const canonical = value => Array.isArray(value) ? value.map(canonical) : record(
 export function validateSetupIntent(value) {
   if (!exact(value, ["version", "program", "terms"]) || value.version !== 1 ||
       !record(value.program) || !record(value.terms) ||
-      Buffer.byteLength(JSON.stringify(value), "utf8") > 1_048_576) throw new Error("invalid_request");
+      Buffer.byteLength(JSON.stringify(value), "utf8") > 262_144) throw new Error("invalid_request");
   validateSetupProgram({ ...value.program, applicationId: "app_configuration" });
   validateSetupTerms({ effectiveAt: "2000-01-01T00:00:00.000Z", ...value.terms, programId: "prg_configuration" });
   // These identifiers are supplied by provisioning, never by reviewed choices.

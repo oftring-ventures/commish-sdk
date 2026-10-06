@@ -67,7 +67,7 @@ export function createSetupSession(input, { appUrl = "https://app.commish.sh", f
       for await (const chunk of response.body) {
         size += chunk.byteLength;
         const configuration = method === "POST" && (["/api/cli/setup/programs", "/api/cli/setup/terms"].includes(path) || begin && expected.setupIntent);
-        if (size > (secret && response.ok ? 512 : begin && expected.setupIntent && response.ok ? 1_052_672 : configuration && response.ok ? 1_048_576 : 65_536)) fail("invalid_response");
+        if (size > (secret && response.ok ? 512 : begin && expected.setupIntent && response.ok ? 266_240 : configuration && response.ok ? 1_048_576 : 65_536)) fail("invalid_response");
         chunks.push(chunk);
       }
     } catch { fail("invalid_response"); }

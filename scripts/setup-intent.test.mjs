@@ -26,7 +26,7 @@ test("rejects changed economics, extra properties and missing review without ech
     { ...expected, program: { ...expected.program, eligibleStripeProductIds: ["prod_other"] } }]) assert.equal(sameSetupIntent(actual, expected), false);
   assert.equal(sameSetupIntent(JSON.parse(JSON.stringify(expected)), expected), true);
   assert.throws(() => validateSetupIntent({ ...expected, secret: "synthetic-do-not-copy" }), { message: "invalid_request" });
-  const big = { ...raw, program: { ...raw.program, eligibleStripeProductIds: ["prod_" + "a".repeat(1_048_576)] } };
+  const big = { ...raw, program: { ...raw.program, eligibleStripeProductIds: ["prod_" + "a".repeat(262_144)] } };
   assert.throws(() => setupIntent(parseSetupConfig(big).config), { message: "invalid_request" });
 });
 test("requires exact server review parity and retains choices across caller mutation/retry", async () => {
@@ -48,8 +48,8 @@ test("requires exact server review parity and retains choices across caller muta
   await assert.rejects(session.begin(), { message: "invalid_response" });
 });
 
-test("reviewed pairing preserves the existing larger configuration capacity", async () => {
-  const intent = setupIntent({ ...config, program: { ...config.program, eligibleStripeProductIds: ["prod_" + "a".repeat(1_047_700)] } });
+test("reviewed pairing accepts the full 256 KiB review capacity", async () => {
+  const intent = setupIntent({ ...config, program: { ...config.program, eligibleStripeProductIds: ["prod_" + "a".repeat(261_268)] } });
   const session = createSetupSession({ operations: ["program.write", "terms.write"], setupIntent: intent }, {
     fetcher: async (url, options) => {
       assert.equal(new URL(url).pathname, "/api/cli/setup-sessions/reviewed");
