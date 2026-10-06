@@ -6,11 +6,15 @@ const config = { ...business, mode: "test", destination: { origin: "https://gues
 const options = { appUrl: "https://app.commish.sh", noOpen: true, waitSeconds: 30 };
 function fixture() {
   let time = Date.parse("2026-10-03T12:00:00Z"), revoked = 0, saved = null;
-  const notices = [], opened = [], authorizations = [];
+  const notices = [], opened = [], authorizations = [], handoffs = [];
   const result = { status: "configured", mode: "test", workspaceId: "wrk_123456789012", applicationId: "app_123456789012", programId: "prg_123456789012",
     proof: null, readiness: { program: { applicationId: "app_123456789012" }, stripeStatus: "not_connected" }, readinessInput: { programId: "prg_123456789012", credentialId: "key_123456789012" }, integrationVerified: false };
   const session = {
-    stripeHandoff: async () => ({ path: `/dashboard/workspace/${result.workspaceId}/settings?mode=test` }),
+    stripeHandoff: async input => {
+      handoffs.push(input);
+      return { path: input?.flow === "setup" ? `/cli/setup/workspace/${result.workspaceId}/stripe?mode=test`
+        : `/dashboard/workspace/${result.workspaceId}/settings?mode=test` };
+    },
     verifyDestination: async () => {},
     readReadiness: async () => ({ ...result.readiness, stripeStatus: "connected" }),
     revoke: async () => { revoked++; },
@@ -19,7 +23,7 @@ function fixture() {
     sleep: async ms => { time += ms; }, openBrowser: async url => { opened.push(url); return true; },
     authorize: async (input, flags) => { authorizations.push({ input, flags }); return { session, receipt: { expiresAt: new Date(time + 600000).toISOString() } }; },
     provision: async () => structuredClone(result) };
-  return { dependencies, result, session, notices, opened, authorizations, revoked: () => revoked, saved: v => { saved = v; } };
+  return { dependencies, result, session, notices, opened, authorizations, handoffs, revoked: () => revoked, saved: v => { saved = v; } };
 }
 test("waits for provider completion with no automatic browser and revokes temporary authority", async () => {
   const f = fixture(), result = await runSetup("/repo", config, options, f.dependencies);
@@ -41,6 +45,8 @@ test("opens a consented provider handoff and reports timeout as resumable action
   const result = await runSetup("/repo", config, { ...options, noOpen: false, waitSeconds: 0 }, f.dependencies);
   assert.equal(result.status, "action_required"); assert.equal(result.resume, "rerun_same_command");
   assert.equal(f.opened.length, 1); assert.equal(f.revoked(), 1);
+  assert.deepEqual(f.handoffs, [{ flow: "setup" }]);
+  assert.equal(f.opened[0], "https://app.commish.sh/cli/setup/workspace/wrk_123456789012/stripe?mode=test");
 });
 test("continues after publishing proof and transient network failure", async () => {
   const f = fixture(); f.result.proof = { path: "public/proof.txt", url: "https://guestbook.example/proof.txt", code: "challenge_mismatch" };
