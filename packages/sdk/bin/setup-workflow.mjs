@@ -1,3 +1,4 @@
+import { setupIntent } from "./setup-intent.mjs";
 import { setTimeout as delay } from "node:timers/promises";
 import { authorizeSetup, openSetupBrowser } from "./setup-authorization.mjs";
 import { openSetupProgress } from "./setup-progress.mjs";
@@ -16,7 +17,7 @@ export async function runSetup(root, config, options, {
     ...(config.webhook ? ["webhook.write"] : []), ...(config.stripe === "connect" ? ["stripe.connect"] : [])];
   let session;
   try {
-    const authorized = await authorize({ mode: config.mode, operations,
+    const authorized = await authorize({ mode: config.mode, operations, setupIntent: setupIntent(config),
       workspaceRequest: savedWorkspace ? { kind: "existing", id: savedWorkspace.id } : config.workspace },
     { appUrl: options.appUrl, noOpen: options.noOpen, notify, signal, openBrowser });
     session = authorized.session;

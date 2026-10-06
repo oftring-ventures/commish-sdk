@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { runSetup } from "../packages/sdk/bin/setup-workflow.mjs";
-const config = { mode: "test", destination: { origin: "https://guestbook.example" }, webhook: null, stripe: "connect" };
+const business = { program: { name: "Guestbook", slug: "guestbook", category: "SaaS", description: "", visibility: "private", joinPolicy: "approval", attributionPolicy: "last_click", eligibleStripeProductIds: [], creatorKit: { summary: "", talkingPoints: [], assets: [] } }, terms: { version: 1, commission: { type: "percentage", basisPoints: 1500 }, recurrence: { kind: "first_payment" }, perSaleCap: null, disclosureText: "I earn a commission.", prohibitedClaims: [] } };
+const config = { ...business, mode: "test", destination: { origin: "https://guestbook.example" }, webhook: null, stripe: "connect" };
 const options = { appUrl: "https://app.commish.sh", noOpen: true, waitSeconds: 30 };
 function fixture() {
   let time = Date.parse("2026-10-03T12:00:00Z"), revoked = 0, saved = null;
@@ -26,6 +27,7 @@ test("waits for provider completion with no automatic browser and revokes tempor
   assert.equal(result.integrationVerified, false); assert.equal(f.revoked(), 1); assert.equal(f.opened.length, 0);
   assert.equal(f.notices[0].status, "browser_action_required"); assert(!JSON.stringify(result).includes("readinessInput"));
   assert(!f.authorizations[0].input.operations.includes("webhook.write"));
+  assert.deepEqual(f.authorizations[0].input.setupIntent, { version: 1, ...business });
 });
 test("reauthorizes the saved workspace and preserves explicit LIVE and selected scopes", async () => {
   const f = fixture(); f.saved({ id: "wrk_abcdefghijkl" }); f.result.mode = "live";

@@ -13,7 +13,7 @@ function fixture(input = { operations: ["workspace.read"] }) {
     else assert.equal(createHash("sha256").update(options.headers.authorization.slice(7)).digest("hex"), hash);
     const common = { protocol: "commish-cli-setup-v2", requestId: hash };
     const value = options.method === "POST" ? { ...common, mode: body.mode, operations: body.operations,
-      workspaceRequest: body.workspaceRequest ?? null, decision: "pending",
+      workspaceRequest: body.workspaceRequest ?? null, ...(body.setupIntent ? { setupIntent: body.setupIntent } : {}), decision: "pending",
       pairingCode: `${hash.slice(0, 4)}-${hash.slice(4, 8)}`.toUpperCase(), requestExpiresAt: new Date(now + 3600000).toISOString() }
       : options.method === "DELETE" ? { ...common, status: "revoked" }
       : { ...common, status: "authorized", mode: input.mode ?? "test", operations: input.operations,

@@ -1,4 +1,5 @@
 import { createSetupResources } from "./setup-resources.mjs";
+import { validateSetupIntent, sameSetupIntent } from "./setup-intent.mjs";
 import { createHash, randomBytes } from "node:crypto";
 
 const operations = new Set(["workspace.read", "application.write", "destination.write",
@@ -30,21 +31,24 @@ export function createSetupSession(input, { appUrl = "https://app.commish.sh", f
   if (origin.username || origin.password || origin.search || origin.hash || origin.pathname !== "/" ||
       !(origin.protocol === "https:" || origin.protocol === "http:" &&
         ["127.0.0.1", "[::1]", "localhost"].includes(origin.hostname))) fail("invalid_app_url");
-  if (!record(input) || Object.keys(input).some((key) => !["mode", "operations", "workspaceRequest"].includes(key)))
+  if (!record(input) || Object.keys(input).some((key) => !["mode", "operations", "workspaceRequest", "setupIntent"].includes(key)))
     fail("invalid_request");
   const mode = input.mode ?? "test", requested = input.operations;
   if (!["test", "live"].includes(mode) || !Array.isArray(requested) || !requested.length ||
       new Set(requested).size !== requested.length || requested.some((op) => !operations.has(op))) fail("invalid_request");
   const workspace = input.workspaceRequest;
   validateSetupWorkspace(workspace);
-  const expected = structuredClone({ mode, operations: requested, ...(workspace ? { workspaceRequest: workspace } : {}) });
+  if (input.setupIntent !== undefined) validateSetupIntent(input.setupIntent);
+  const expected = structuredClone({ mode, operations: requested, ...(workspace ? { workspaceRequest: workspace } : {}),
+    ...(input.setupIntent ? { setupIntent: input.setupIntent } : {}) });
   const verifier = randomBytes(32).toString("base64url");
   const hash = createHash("sha256").update(verifier).digest("hex");
   const pairingCode = `${hash.slice(0, 4)}-${hash.slice(4, 8)}`.toUpperCase();
+  const beginPath = expected.setupIntent ? "/api/cli/setup-sessions/reviewed" : "/api/cli/setup-sessions";
   let boundWorkspace;
   const date = (value) => typeof value === "string" && Number.isFinite(Date.parse(value));
   async function request(method, path = "/api/cli/setup-sessions", body, secretEndpointId) {
-    const begin = method === "POST" && path === "/api/cli/setup-sessions";
+    const begin = method === "POST" && path === beginPath;
     const secret = method === "POST" && path === "/api/cli/setup/webhooks/secret" &&
       typeof secretEndpointId === "string" && /^whe_[A-Za-z0-9_-]{12,}$/.test(secretEndpointId);
     if (secretEndpointId !== undefined && !secret) fail("invalid_request");
@@ -62,8 +66,8 @@ export function createSetupSession(input, { appUrl = "https://app.commish.sh", f
       if (!response.body) fail("invalid_response");
       for await (const chunk of response.body) {
         size += chunk.byteLength;
-        const configuration = method === "POST" && ["/api/cli/setup/programs", "/api/cli/setup/terms"].includes(path);
-        if (size > (secret && response.ok ? 512 : configuration && response.ok ? 1_048_576 : 65_536)) fail("invalid_response");
+        const configuration = method === "POST" && (["/api/cli/setup/programs", "/api/cli/setup/terms"].includes(path) || begin && expected.setupIntent);
+        if (size > (secret && response.ok ? 512 : begin && expected.setupIntent && response.ok ? 266_240 : configuration && response.ok ? 1_048_576 : 65_536)) fail("invalid_response");
         chunks.push(chunk);
       }
     } catch { fail("invalid_response"); }
@@ -87,11 +91,12 @@ export function createSetupSession(input, { appUrl = "https://app.commish.sh", f
   return {
     ...createSetupResources(request, () => ({ workspaceId: boundWorkspace, mode, operations: expected.operations })),
     async begin() {
-      const result = await request("POST");
+      const result = await request("POST", beginPath);
       if (result.mode !== mode || !sameOperations(result.operations, expected.operations) || result.pairingCode !== pairingCode ||
           !["pending", "authorized", "denied"].includes(result.decision) || !date(result.requestExpiresAt) ||
           Date.parse(result.requestExpiresAt) <= now() || Date.parse(result.requestExpiresAt) > now() + 3_660_000 ||
-          !sameWorkspace(result.workspaceRequest, expected.workspaceRequest)) fail("invalid_response");
+          !sameWorkspace(result.workspaceRequest, expected.workspaceRequest) ||
+          expected.setupIntent && !sameSetupIntent(result.setupIntent, expected.setupIntent)) fail("invalid_response");
       return { protocol: result.protocol, requestId: hash, pairingCode, approvalUrl: `${origin.origin}/cli/authorize/${hash}`,
         mode, operations: [...expected.operations], requestExpiresAt: result.requestExpiresAt };
     },
