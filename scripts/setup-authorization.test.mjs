@@ -93,3 +93,13 @@ test("opens only the exact TEST or LIVE Stripe settings handoff", async () => {
   for (const suffix of ["", "?mode=live&state=private", "?mode=test&mode=live", "?mode=test#private"])
     assert.equal(await openSetupBrowser(path + suffix, { launch: () => assert.fail("must not open") }), false);
 });
+
+test("native launch accepts only canonical focused Stripe continuations", async () => {
+  const path = "https://app.commish.sh/cli/setup/workspace/wrk_123456789012/stripe?mode=test";
+  let calls = 0;
+  const launch = () => { calls++; const child = new EventEmitter(); queueMicrotask(() => child.emit("exit", 0)); return child; };
+  assert.equal(await openSetupBrowser(path, { launch }), true);
+  for (const value of [path + "&state=hidden", path + "#fragment", path.replace("mode=test", "mode=other"), path.replace("/stripe?", "/stripe/extra?")])
+    assert.equal(await openSetupBrowser(value, { launch }), false);
+  assert.equal(calls, 1);
+});

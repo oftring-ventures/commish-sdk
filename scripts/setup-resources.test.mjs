@@ -237,3 +237,19 @@ test("implicit term dates preserve retained microsecond timestamps and exact bus
   f.change({ term: { ...retained, effectiveAt: "not-a-date" } });
   await assert.rejects(f.resources.createTerms(input), /invalid_response/);
 });
+
+test("focused Stripe handoff binds the exact grant and rejects redirects or extra choices", async () => {
+  for (const mode of ["test", "live"]) {
+    const f = readinessFixture(mode), input = { flow: "setup" };
+    f.data.path = `/cli/setup/workspace/${bound.workspaceId}/stripe?mode=${mode}`;
+    assert.equal((await f.resources.stripeHandoff(input)).path, f.data.path);
+    assert.deepEqual(f.calls[0], ["POST", "/api/cli/setup/stripe", input]);
+    for (const path of [f.data.path + "&state=hidden", f.data.path.replace(bound.workspaceId, "wrk_abcdefghijkl"),
+      "https://connect.stripe.com/oauth/authorize", `/dashboard/workspace/${bound.workspaceId}/settings?mode=${mode}`]) {
+      f.data.path = path;
+      await assert.rejects(f.resources.stripeHandoff(input), /invalid_response/);
+    }
+    for (const value of [{ flow: "settings" }, { flow: "setup", returnUrl: "https://attacker.test" }, null])
+      await assert.rejects(f.resources.stripeHandoff(value), /invalid_request/);
+  }
+});

@@ -125,6 +125,10 @@ and requires the server to return the identical proposal before authorization ca
 continue. Commission, recurrence, caps and product eligibility are enforced by
 the setup commands after approval. This requires the matching server rollout;
 0.2.1 retains its existing workspace/mode/scope approval.
+That source release also opens a focused Stripe connection page for the authorized
+workspace and mode. Stripe consent and credentials remain in the browser; the CLI
+receives only a fixed internal path and polls readiness. Direct legacy sessions
+continue to use the settings handoff unless they explicitly request the setup flow.
 
 Omit `workspace` to discover and select your available workspaces in the approval
 page. Specify `--workspace-id wrk_...` for a known workspace, or both
