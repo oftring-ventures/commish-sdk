@@ -61,7 +61,7 @@ test("only declared framework capabilities select a build and invalid inputs fai
     ".": { browser: null, types: "./dist/index.d.ts", default: "./dist/index.js" },
   });
   const rootExport = { browser: null, types: "./dist/index.d.ts", default: "./dist/index.js" };
-  const peers = { "@commish/sdk": "0.2.2", next: ">=16.3.6 <17", react: ">=19.2.8 <20" };
+  const peers = { "@commish/sdk": "0.2.3", next: ">=16.3.6 <17", react: ">=19.2.8 <20" };
   assert.deepEqual(await verifyNextBuild(sdk, packed({ ".": rootExport }), null, execute), []);
   for (const invalid of [
     packed({ ".": { ...rootExport, browser: "./dist/index.js" } }, peers),
