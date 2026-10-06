@@ -72,7 +72,7 @@ ${packageRecord(
   next,
   `    peerDependencies:
       '@commish/sdk': ${releaseVersion}
-      next: '>=16.2.12 <17'
+      next: '>=16.3.6 <17'
       react: '>=19.2.8 <20'
 `,
 )}${packageRecord("sdk", sdk)}${packages}

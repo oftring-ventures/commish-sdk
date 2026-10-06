@@ -3,8 +3,14 @@
 MIT-licensed Next.js App Router integration for permanent Commish TEST and LIVE modes.
 This source checkpoint is verified with Node 24.15.0, Next 16.3.6 and React 19.2.8.
 It does not establish npm availability or acceptance against a hosted Commish API.
-Use the exact paired `0.2.1` SDK/Next packages and keep the consumer lockfile.
+Use the exact paired `0.2.2` SDK/Next packages and keep the consumer lockfile.
 Accepted candidate tarballs remain available for prepublication qualification.
+
+Since 0.2.2, the `next` peer range is `>=16.3.6 <17`, which excludes Next.js
+releases affected by GHSA-vcvr-r3jv-pc5j (and by GHSA-2xp9-vwfh-vxw4 and
+GHSA-p293-qw3h-jr36, fixed in 16.3.3). Apps on Next 16.2.12–16.3.5 should
+upgrade Next to 16.3.6 or newer before upgrading this package: npm refuses the
+older pairing, while pnpm only warns about the unmet peer.
 
 ## Capture route
 
