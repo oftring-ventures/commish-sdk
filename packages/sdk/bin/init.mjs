@@ -1,9 +1,100 @@
 #!/usr/bin/env node
+import manifest from "../package.json" with { type: "json" };
+
+// First-contact guidance is local and contains no credentials or customer input.
+const setupGuide = {
+  guideVersion: 1,
+  sdkVersion: manifest.version,
+  node: ">=24 <25",
+  configurationFile: "commish.setup.json",
+  configurationContainsSecrets: false,
+  discoveryUrl: "https://app.commish.sh/api/cli/setup/capabilities",
+  documentationUrl: "https://commish.sh/docs.md",
+  configurationGuideUrl: "https://github.com/oftring-ventures/commish-sdk/blob/main/packages/sdk/README.md#set-up-from-your-repository",
+  commands: {
+    plan: "commish setup --plan --json",
+    provision: "commish setup --config commish.setup.json --mode test --no-open --non-interactive --json",
+    verifyConfiguration: "commish verify --json",
+    resume: "rerun_the_same_provision_command_and_configuration",
+  },
+  businessChoices: ["program.eligibleStripeProductIds", "terms.commission", "terms.recurrence", "terms.perSaleCap", "terms.disclosureText", "participantConsent", "webhook", "stripe"],
+  workflow: [
+    "inspect_repository_and_run_plan",
+    "ask_for_missing_business_choices_together_and_write_non_secret_configuration",
+    "resolve_local_credential_storage_policy_before_provisioning",
+    "run_setup_and_present_its_approval_url_and_pairing_code",
+    "human_completes_authentication_and_scope_approval_at_that_url",
+    "waiting_cli_provisions_approved_resources",
+    "publish_destination_proof_and_wire_application",
+    "follow_remaining_readiness_actions_and_demonstrate_attributed_test_conversion_and_commission",
+  ],
+  authorization: {
+    existingAccountRequiredToStart: false,
+    existingApiKeyRequiredToStart: false,
+    signupEntryPoint: "setup_approval_url",
+    progressStream: "stderr_json_lines",
+    event: "authorization_required",
+    fields: ["approvalUrl", "pairingCode", "mode", "operations", "requestExpiresAt"],
+    pendingMaximumSeconds: 3600,
+    approvedMaximumSeconds: 600,
+    humanActions: ["sign_up_or_sign_in", "verify_email_if_needed", "enroll_or_verify_authenticator", "confirm_pairing_code_and_approve_workspace_mode_and_scopes", "authorize_stripe_if_requested"],
+  },
+  provisioning: {
+    interface: "cli",
+    resources: ["workspace_creation_or_selection", "application", "destination", "application_credential", "draft_program", "terms", "optional_webhook"],
+    browserAutomationFallback: false,
+    onBlocker: "report_the_cli_error_or_policy_conflict_before_continuing",
+  },
+  credentialStorage: {
+    kind: "private_local_files",
+    credentialPath: ".commish/setup/<mode>/credentials.env",
+    optionalWebhookPath: ".commish/setup/<mode>/webhook.env",
+    permissions: "owner_only",
+    gitIgnored: true,
+    secretValuesPrinted: false,
+    planWritesCredentials: false,
+    setupWritesCredentialsAfterApproval: true,
+    policyRequirement: "private_local_secret_storage_must_be_permitted",
+    alternativeStorageSupported: false,
+    deployment: "supply_files_to_your_existing_secret_manager_or_environment_runner",
+  },
+  remainingActions: {
+    programActivation: "separate_action_in_commish",
+    stripeConnection: "authenticated_browser_handoff_to_workspace_settings",
+    participantAcceptance: "each_participant_accepts_hosted_terms",
+    applicationWiring: "coding_agent_adapts_capture_checkout_and_deployment",
+    integrationVerification: "demonstrate_attributed_test_conversion_and_commission",
+  },
+  output: { progress: "stderr_json_lines", receipt: "one_json_object_on_stdout", secrets: "file_paths_only" },
+  exitCodes: { "0": "help_or_valid_plan_or_completed_configuration", "1": "sanitized_error", "2": "missing_input_or_resumable_action", "130": "interrupted" },
+  integrationVerified: false,
+};
+const guideText = () =>
+  "Start here: commish setup --plan --json\n" +
+  "Collect missing business choices and prepare non-secret commish.setup.json.\n" +
+  `Then: ${setupGuide.commands.provision}\n` +
+  "Present approvalUrl and pairingCode from the authorization_required JSON event on stderr.\n" +
+  "New users sign up, verify email and verify an authenticator through that approval URL.\n" +
+  "The waiting CLI provisions resources. Use the browser for required authentication and consent.\n" +
+  "If a CLI or policy blocker occurs, report it before continuing; dashboard automation is not a provisioning fallback.\n" +
+  "Setup saves keys in owner-only, git-ignored .commish/setup/<mode>/credentials.env.\n" +
+  "A policy prohibiting all secret persistence must be resolved before setup. Planning stores no keys.\n" +
+  "Program activation, Stripe consent, participant acceptance and application wiring remain explicit steps.\n" +
+  `Configuration/schema: ${setupGuide.discoveryUrl}\nGuide: ${setupGuide.documentationUrl}`;
 const args = process.argv.slice(2);
 const json = args.includes("--json");
 if (args[0] === "setup") {
   const { runSetupCommand } = await import("./setup-command.mjs");
-  process.exitCode = await runSetupCommand(args.slice(1));
+  process.exitCode = await runSetupCommand(args.slice(1), {
+    out: value => {
+      if (json) {
+        const result = JSON.parse(value);
+        console.log(JSON.stringify(result.status === "help" ? { ...result, setupGuide } :
+          ["input_required", "invalid_config"].includes(result.status)
+            ? { ...result, nextCommand: setupGuide.commands.plan, helpCommand: "commish --help --json" } : result));
+      } else console.log(value + (args.includes("--help") ? `\n\n${guideText()}` : ""));
+    },
+  });
 } else if (args[0] === "verify") {
   const fail = (code) => { throw new Error(code); };
   try {
@@ -75,7 +166,9 @@ if (args[0] === "setup") {
   } else {
     const help = { status: "help", commands: ["setup [options]", "verify [--json]"],
       requiredEnvironment: ["COMMISH_SECRET_KEY", "COMMISH_PUBLISHABLE_KEY", "COMMISH_APPLICATION_ID", "COMMISH_PROGRAM_ID"],
+      requiredEnvironmentPurpose: "verify_only", setupGuide,
       integrationVerified: false };
-    console.log(json ? JSON.stringify(help) : "Commish developer CLI\n\ncommish setup [options] — authorize and provision from this repository.\ncommish setup --help — configuration and noninteractive flags.\ncommish verify [--json] — check credentials and program configuration.\nA completed attributed TEST conversion is required to verify the integration.");
+    console.log(json ? JSON.stringify(help) : "Commish developer CLI\n\n" + guideText() +
+      "\n\ncommish setup --help — configuration and noninteractive flags.\ncommish verify [--json] — check configured credentials and program access.\nA completed attributed TEST conversion is required to verify the integration.");
   }
 }

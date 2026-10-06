@@ -123,3 +123,39 @@ test("the installed entry point exposes planning before configuration and does n
   assert.equal(result.status, 2); assert.equal(result.stderr, "");
   assert.equal(JSON.parse(result.stdout).status, "plan"); assert.deepEqual(readdirSync(f.root), []);
 });
+
+test("first-contact help explains CLI provisioning and private storage without reading customer files", t => {
+  const f = fixture(t);
+  writeFileSync(join(f.root, ".env"), "DO_NOT_READ=private-fixture");
+  writeFileSync(join(f.root, "commish.setup.json"), "invalid private-fixture");
+  const before = readdirSync(f.root, { recursive: true });
+  for (const args of [["--help", "--json"], ["setup", "--help", "--json"]]) {
+    const result = spawnSync(process.execPath, [executable, ...args], { cwd: f.root, encoding: "utf8", timeout: 5000 });
+    assert.equal(result.status, 0); assert.equal(result.stderr, "");
+    assert(!result.stdout.includes("private-fixture"));
+    const guide = JSON.parse(result.stdout).setupGuide;
+    assert.equal(guide.authorization.existingAccountRequiredToStart, false);
+    assert.equal(guide.authorization.existingApiKeyRequiredToStart, false);
+    assert.equal(guide.authorization.signupEntryPoint, "setup_approval_url");
+    assert.equal(guide.authorization.progressStream, "stderr_json_lines");
+    assert.equal(guide.provisioning.interface, "cli");
+    assert.equal(guide.provisioning.browserAutomationFallback, false);
+    assert.equal(guide.credentialStorage.setupWritesCredentialsAfterApproval, true);
+    assert.equal(guide.credentialStorage.alternativeStorageSupported, false);
+    assert.equal(guide.credentialStorage.secretValuesPrinted, false);
+    assert.equal(guide.integrationVerified, false);
+    assert.deepEqual(readdirSync(f.root, { recursive: true }), before);
+  }
+});
+
+test("missing-input output leads an unfamiliar agent to planning without creating authority", t => {
+  const f = fixture(t);
+  const result = spawnSync(process.execPath, [executable, "setup", "--json"], { cwd: f.root, encoding: "utf8", timeout: 5000 });
+  assert.equal(result.status, 2); assert.equal(result.stderr, "");
+  const receipt = JSON.parse(result.stdout);
+  assert.equal(receipt.nextCommand, "commish setup --plan --json");
+  const plan = spawnSync(process.execPath, [executable, ...receipt.nextCommand.split(" ").slice(1)], { cwd: f.root, encoding: "utf8", timeout: 5000 });
+  assert.equal(plan.status, 2);
+  assert(JSON.parse(plan.stdout).configuration.missingInputs.some(input => input.field === "terms.recurrence"));
+  assert.deepEqual(readdirSync(f.root), []);
+});
