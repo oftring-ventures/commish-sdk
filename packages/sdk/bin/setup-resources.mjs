@@ -98,9 +98,11 @@ export function createSetupResources(request, context) {
       verifiedAt: value.verifiedAt, challenge } };
   }
   return {
-    async stripeHandoff() {
-      const { result, receipt } = await call("stripe.connect", "/api/cli/setup/stripe", "POST");
-      const path = `/dashboard/workspace/${receipt.workspaceId}/settings?mode=${receipt.mode}`;
+    async stripeHandoff(input) {
+      if (input !== undefined && (!keys(input, ["flow"]) || input.flow !== "setup")) fail("invalid_request");
+      const { result, receipt } = await call("stripe.connect", "/api/cli/setup/stripe", "POST", input);
+      const path = input ? `/cli/setup/workspace/${receipt.workspaceId}/stripe?mode=${receipt.mode}` :
+        `/dashboard/workspace/${receipt.workspaceId}/settings?mode=${receipt.mode}`;
       if (result.path !== path || result.action !== "connect_stripe_in_browser") fail("invalid_response");
       return { ...receipt, path, action: "connect_stripe_in_browser" };
     },

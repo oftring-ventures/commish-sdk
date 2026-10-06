@@ -30,7 +30,7 @@ export async function runSetup(root, config, options, {
     const pending = () => result.proof !== null || needsStripe() || refreshPending;
     if (result.proof) notify({ status: "publish_required", ...result.proof });
     if (needsStripe()) {
-      const handoff = await session.stripeHandoff(), url = new URL(handoff.path, options.appUrl).href;
+      const handoff = await session.stripeHandoff({ flow: "setup" }), url = new URL(handoff.path, options.appUrl).href;
       if (signal?.aborted) throw new Error("setup_interrupted");
       notify({ status: "browser_action_required", action: "connect_stripe", url, mode: result.mode });
       if (!options.noOpen && !await openBrowser(url)) notify({ status: "browser_unavailable", url });

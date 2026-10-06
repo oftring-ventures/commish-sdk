@@ -6,7 +6,8 @@ export function openSetupBrowser(url, { platform = process.platform, launch = sp
   let parsed;
   try { parsed = new URL(url); } catch { return Promise.resolve(false); }
   const pairing = /^\/cli\/authorize\/[a-f0-9]{64}$/.test(parsed.pathname) && !parsed.search;
-  const stripe = /^\/dashboard\/workspace\/wrk_[A-Za-z0-9_-]{12,}\/settings$/.test(parsed.pathname) && /^\?mode=(test|live)$/.test(parsed.search);
+  const stripe = (/^\/dashboard\/workspace\/wrk_[A-Za-z0-9_-]{12,}\/settings$/.test(parsed.pathname) ||
+    /^\/cli\/setup\/workspace\/wrk_[A-Za-z0-9_-]{12,}\/stripe$/.test(parsed.pathname)) && /^\?mode=(test|live)$/.test(parsed.search);
   if (parsed.username || parsed.password || parsed.hash || !(pairing || stripe) ||
       !(parsed.protocol === "https:" || parsed.protocol === "http:" &&
         ["127.0.0.1", "[::1]", "localhost"].includes(parsed.hostname))) return Promise.resolve(false);
