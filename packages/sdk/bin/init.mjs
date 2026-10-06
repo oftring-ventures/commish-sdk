@@ -83,6 +83,9 @@ const guideText = () =>
   `Configuration/schema: ${setupGuide.discoveryUrl}\nGuide: ${setupGuide.documentationUrl}`;
 const args = process.argv.slice(2);
 const json = args.includes("--json");
+// The default plan command reads only commish.setup.json, so it is offered only when no explicit
+// configuration path or input was given; option values never appear in output.
+const defaultInputsOnly = args.slice(1).every(arg => ["--json", "--no-open", "--non-interactive"].includes(arg));
 if (args[0] === "setup") {
   const { runSetupCommand } = await import("./setup-command.mjs");
   process.exitCode = await runSetupCommand(args.slice(1), {
@@ -91,7 +94,8 @@ if (args[0] === "setup") {
         const result = JSON.parse(value);
         console.log(JSON.stringify(result.status === "help" ? { ...result, setupGuide } :
           ["input_required", "invalid_config"].includes(result.status)
-            ? { ...result, nextCommand: setupGuide.commands.plan, helpCommand: "commish --help --json" } : result));
+            ? { ...result, ...(defaultInputsOnly ? { nextCommand: setupGuide.commands.plan }
+              : { nextAction: "rerun_the_same_arguments_with_--plan" }), helpCommand: "commish --help --json" } : result));
       } else console.log(value + (args.includes("--help") ? `\n\n${guideText()}` : ""));
     },
   });

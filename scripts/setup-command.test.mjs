@@ -159,3 +159,21 @@ test("missing-input output leads an unfamiliar agent to planning without creatin
   assert(JSON.parse(plan.stdout).configuration.missingInputs.some(input => input.field === "terms.recurrence"));
   assert.deepEqual(readdirSync(f.root), []);
 });
+
+test("missing-input output with explicit inputs asks to plan with the same arguments", t => {
+  const f = fixture(t);
+  writeFileSync(join(f.root, "custom.json"), JSON.stringify({ version: 1, application: { name: "private-fixture" } }));
+  const run = args => spawnSync(process.execPath, [executable, "setup", ...args], { cwd: f.root, encoding: "utf8", timeout: 5000 });
+  const result = run(["--config", "custom.json", "--json"]);
+  assert.equal(result.status, 2); assert.equal(result.stderr, "");
+  assert(!result.stdout.includes("private-fixture") && !result.stdout.includes("custom.json"));
+  const receipt = JSON.parse(result.stdout);
+  assert.equal(receipt.status, "input_required");
+  assert.equal(receipt.nextCommand, undefined);
+  assert.equal(receipt.nextAction, "rerun_the_same_arguments_with_--plan");
+  const missing = args => JSON.parse(run(args).stdout).configuration.missingInputs.map(input => input.field);
+  const samePlan = missing(["--config", "custom.json", "--plan", "--json"]);
+  assert(!samePlan.includes("application.name"));
+  assert(samePlan.length < missing(["--plan", "--json"]).length);
+  assert.deepEqual(readdirSync(f.root), ["custom.json"]);
+});
