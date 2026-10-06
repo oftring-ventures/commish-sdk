@@ -23,7 +23,7 @@ const setupGuide = {
     "ask_for_missing_business_choices_together_and_write_non_secret_configuration",
     "resolve_local_credential_storage_policy_before_provisioning",
     "run_setup_and_present_its_approval_url_and_pairing_code",
-    "human_completes_authentication_and_scope_approval_at_that_url",
+    "human_completes_authentication_reviews_business_choices_and_approves_scopes_at_that_url",
     "waiting_cli_provisions_approved_resources",
     "publish_destination_proof_and_wire_application",
     "follow_remaining_readiness_actions_and_demonstrate_attributed_test_conversion_and_commission",
@@ -37,7 +37,7 @@ const setupGuide = {
     fields: ["approvalUrl", "pairingCode", "mode", "operations", "requestExpiresAt"],
     pendingMaximumSeconds: 3600,
     approvedMaximumSeconds: 600,
-    humanActions: ["sign_up_or_sign_in", "verify_email_if_needed", "enroll_or_verify_authenticator", "confirm_pairing_code_and_approve_workspace_mode_and_scopes", "authorize_stripe_if_requested"],
+    humanActions: ["sign_up_or_sign_in", "verify_email_if_needed", "enroll_or_verify_authenticator", "confirm_pairing_code_and_approve_workspace_mode_and_scopes", "review_proposed_business_choices", "authorize_stripe_if_requested"],
   },
   provisioning: {
     interface: "cli",
@@ -60,7 +60,7 @@ const setupGuide = {
   },
   remainingActions: {
     programActivation: "separate_action_in_commish",
-    stripeConnection: "authenticated_browser_handoff_to_workspace_settings",
+    stripeConnection: "authenticated_browser_handoff_to_focused_stripe_setup",
     participantAcceptance: "each_participant_accepts_hosted_terms",
     applicationWiring: "coding_agent_adapts_capture_checkout_and_deployment",
     integrationVerification: "demonstrate_attributed_test_conversion_and_commission",
