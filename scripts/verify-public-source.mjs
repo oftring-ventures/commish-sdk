@@ -104,7 +104,7 @@ const roots = [...Object.keys(bootstrap), "package.json", "pnpm-workspace.yaml",
 const common = ["package.json", "LICENSE", "README.md", "build.mjs", "tsconfig.build.json"];
 const sources = {
   sdk: ["browser", "types", "webhooks", "index", "reads", "pages"],
-  next: ["browser", "provider", "index", "metadata", "capture", "pages-handlers", "pages-routing"],
+  next: ["browser", "provider", "index", "metadata", "capture", "pages-handlers", "pages-routing", "pages", "pages-client"],
 };
 const sha = (data) => createHash("sha256").update(data).digest("hex");
 const bytes = (files, name) => {
@@ -124,6 +124,7 @@ export function inspect(files) {
     ...automation,
     "scripts/pages-sdk.test.mjs",
     "scripts/pages-routing.test.mjs",
+    "scripts/pages-renderer.test.mjs",
     "packages/next/bin/init.mjs",
     "packages/sdk/bin/init.mjs",
     "packages/sdk/bin/setup-session.mjs",
@@ -139,7 +140,7 @@ export function inspect(files) {
     "packages/sdk/bin/setup-intent.mjs",
     "packages/sdk/bin/setup-authorization.mjs",
     ...Object.entries(sources).flatMap(([pkg, names]) =>
-      [...common, ...names.map((name) => `src/${name}.${name === "provider" ? "tsx" : "ts"}`)].map(
+      [...common, ...names.map((name) => `src/${name}.${name === "provider" || (pkg === "next" && ["pages", "pages-client"].includes(name)) ? "tsx" : "ts"}`)].map(
         (name) => `packages/${pkg}/${name}`,
       ),
     ),
@@ -252,6 +253,10 @@ export function inspect(files) {
         bytes(files, "packages/sdk/src/pages.ts");
         bytes(files, dir + "/src/pages-routing.ts");
       }
+    }
+    if (pkg === "next" && files.has(dir + "/src/pages.tsx")) {
+      exports["./pages"] = pair("pages", true);
+      for (const name of ["pages-client.tsx", "pages-handlers.ts", "pages-routing.ts"]) bytes(files, dir + "/src/" + name);
     }
     assert.deepEqual(manifest.exports, exports, "exports do not match present source");
     const bin =
