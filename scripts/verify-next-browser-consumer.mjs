@@ -149,6 +149,7 @@ function verifyNextConsumer(provider, sdk, next, context, execute = execFileSync
     if (Object.hasOwn(manifests[1].exports, "./pages/" + name))
       exports["./pages/" + name] = pair("pages-" + name, true);
   }
+  if (Object.hasOwn(manifests[1].exports, "./pages")) exports["./pages"] = pair("pages", true);
   assert.deepEqual(manifests[1].exports, exports, "unsupported Next export tuple");
   assert.deepEqual(manifests[1].peerDependencies, peers, "unexpected Next peers");
   for (const [index, { packed }] of [sdk, next].entries())
