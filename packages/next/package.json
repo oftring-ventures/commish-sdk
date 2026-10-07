@@ -31,6 +31,16 @@
     "./react": {
       "types": "./dist/provider.d.ts",
       "default": "./dist/provider.js"
+    },
+    "./pages/handlers": {
+      "browser": null,
+      "types": "./dist/pages-handlers.d.ts",
+      "default": "./dist/pages-handlers.js"
+    },
+    "./pages/routing": {
+      "browser": null,
+      "types": "./dist/pages-routing.d.ts",
+      "default": "./dist/pages-routing.js"
     }
   },
   "peerDependencies": {

@@ -145,6 +145,10 @@ function verifyNextConsumer(provider, sdk, next, context, execute = execFileSync
   if (Object.hasOwn(manifests[1].peerDependencies, "next")) {
     Object.assign(peers, { next: ">=16.3.6 <17", react: ">=19.2.8 <20" });
   }
+  for (const name of ["handlers", "routing"]) {
+    if (Object.hasOwn(manifests[1].exports, "./pages/" + name))
+      exports["./pages/" + name] = pair("pages-" + name, true);
+  }
   assert.deepEqual(manifests[1].exports, exports, "unsupported Next export tuple");
   assert.deepEqual(manifests[1].peerDependencies, peers, "unexpected Next peers");
   for (const [index, { packed }] of [sdk, next].entries())
