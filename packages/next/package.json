@@ -41,6 +41,11 @@
       "browser": null,
       "types": "./dist/pages-routing.d.ts",
       "default": "./dist/pages-routing.js"
+    },
+    "./pages": {
+      "browser": null,
+      "types": "./dist/pages.d.ts",
+      "default": "./dist/pages.js"
     }
   },
   "peerDependencies": {
