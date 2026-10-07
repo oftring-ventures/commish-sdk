@@ -57,6 +57,7 @@ function bootstrap() {
     "scripts/verify-framework-package.test.mjs",
     "scripts/fixtures/next-peer-bin.txt",
     "scripts/verify-next-build.mjs",
+    "scripts/verify-pages-artifact.mjs",
     "scripts/verify-next-build.test.mjs",
     "scripts/next-framework-lock.mjs",
     "scripts/fixtures/next-build.mjs",
