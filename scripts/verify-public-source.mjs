@@ -419,6 +419,7 @@ export async function verifyPackages(files, packages, run, checkout = process.cw
         );
       }
     }
+    // Pages tests run at the layer that adds them; later layers only add files.
     for (const test of ["pages-sdk","pages-routing","pages-renderer","pages"]) {
       if (files.has("scripts/" + test + ".test.mjs")) run(process.execPath, ["--test","scripts/" + test + ".test.mjs"],work);
     }

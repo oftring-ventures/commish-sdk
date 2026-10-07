@@ -30,11 +30,6 @@ export type CreatorPage = PageBase &
         revision: string;
         creator: { handle: string };
         content: PageContent;
-        endorsement: {
-          quote: string;
-          author: string;
-          imageUrl: string | null;
-        } | null;
         couponCode: string | null;
         preferredPath: string;
         experimentEnabled: boolean;
@@ -131,7 +126,6 @@ export function assertCreatorPage(
       "revision",
       "creator",
       "content",
-      "endorsement",
       "couponCode",
       "preferredPath",
       "experimentEnabled",
@@ -182,16 +176,6 @@ export function assertCreatorPage(
       value.canonicalPath,
       "/" + value.canonicalPath.split("/").at(-1),
     ].includes(String(value.preferredPath))
-  )
-    return invalid();
-  const e = value.endorsement;
-  if (
-    e !== null &&
-    (!object(e) ||
-      !keys(e, ["quote", "author", "imageUrl"]) ||
-      !text(e.quote, 1000) ||
-      !text(e.author, 100) ||
-      !asset(e.imageUrl))
   )
     invalid();
 }

@@ -111,6 +111,35 @@ for (const route of [
     assert.ok(!readdirSync(join(f.root, "app")).includes("c"));
   });
 }
+test("doctor reports a customized namespace instead of failing", (t) => {
+  const f = fixture(t);
+  mkdirSync(join(f.root, "app/c"), { recursive: true });
+  writeFileSync(join(f.root, "app/c/loading.tsx"), "merchant-owned");
+  assert.notEqual(f.run("pages", "--apply").status, 0);
+  const result = f.run("pages", "doctor", "--json");
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(
+    JSON.parse(result.stdout).manualIntegration,
+    "existing_page_namespace_requires_manual_integration",
+  );
+});
+test("Pages Router files and src middleware are inventoried", (t) => {
+  const f = fixture(t);
+  mkdirSync(join(f.root, "pages/c"), { recursive: true });
+  writeFileSync(join(f.root, "pages/c/[creator].tsx"), "merchant-owned");
+  assert.notEqual(f.run("pages", "--apply").status, 0);
+  assert.equal(
+    readFileSync(join(f.root, "pages/c/[creator].tsx"), "utf8"),
+    "merchant-owned",
+  );
+  rmSync(join(f.root, "pages"), { recursive: true });
+  mkdirSync(join(f.root, "src"));
+  writeFileSync(join(f.root, "src/proxy.js"), "export function proxy() {}");
+  assert.equal(
+    JSON.parse(f.run("pages", "doctor", "--json").stdout).routingReviewRequired,
+    true,
+  );
+});
 test("doctor is read-only and rejects apply", (t) => {
   const f = fixture(t);
   assert.equal(f.run("pages", "doctor", "--json").status, 0);

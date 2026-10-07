@@ -78,12 +78,20 @@ function options(args) {
     throw new Error("doctor_is_read_only");
   return value;
 }
-function plan(value) {
+function plan(value, diagnostic = false) {
   const app = stat("app") ? "app" : stat("src/app") ? "src/app" : null;
   if (!app) throw new Error("next_app_router_required");
   safe(`${app}/`);
   const inventory = filesAt(app),
     segment = value.prefix.slice(1);
+  // Pages Router files win or collide at build time; inventory them too.
+  const legacy = ["pages", "src/pages"]
+    .filter((dir) => stat(dir)?.isDirectory())
+    .flatMap((dir) =>
+      filesAt(dir).map((path) =>
+        path.slice(dir.length + 1).replace(/(\/index)?\.[^./]+$/, ""),
+      ),
+    );
   const typed = !!(stat("tsconfig.json") || stat(`${app}/layout.tsx`));
   const ts = typed ? "ts" : "js",
     jsx = typed ? "tsx" : "jsx";
@@ -102,11 +110,12 @@ function plan(value) {
     "next.config.js",
     "next.config.cjs",
   ].filter((path) => stat(path));
-  const aliasCompatibility = rootDynamic
-    ? "manual_cms_fallback_required"
-    : configFiles.length
-      ? "manual_config_merge_required"
-      : "fallback_rewrite_supported";
+  const aliasCompatibility =
+    rootDynamic || legacy.some((route) => /^\[[^/]*\]$/.test(route))
+      ? "manual_cms_fallback_required"
+      : configFiles.length
+        ? "manual_config_merge_required"
+        : "fallback_rewrite_supported";
   const files = {
     [`${app}/commish-pages.${ts}`]: `// Server-only configuration. Never move these values into a client module.\nexport const pagesOptions = () => ({\n  secretKey: process.env.COMMISH_SECRET_KEY${typed ? "!" : ""},\n  programId: process.env.COMMISH_PAGES_PROGRAM_ID${typed ? "!" : ""},\n  origin: process.env.COMMISH_PAGES_ORIGIN${typed ? "!" : ""},\n  prefix: ${JSON.stringify(value.prefix)},\n  apiUrl: process.env.COMMISH_API_URL,\n});\n`,
     [`${app}/${segment}/[creator]/page.${jsx}`]: `import { createCreatorPage } from "@commish/next/pages";\nimport { pagesOptions } from "../../commish-pages";\n\nexport const dynamic = "force-dynamic";\nexport default createCreatorPage(pagesOptions);\n`,
@@ -178,10 +187,19 @@ function plan(value) {
           overlaps(routeParts(path), routeParts(target)),
       ),
   );
-  if (ambiguousRoutes.length)
-    throw new Error("dynamic_route_ownership_requires_manual_integration");
-  if (routingConflicts.length)
-    throw new Error("existing_page_namespace_requires_manual_integration");
+  const legacyConflicts = legacy.filter(
+    (route) =>
+      route === segment ||
+      route.startsWith(`${segment}/`) ||
+      route.startsWith("api/commish/"),
+  );
+  const manualIntegration = ambiguousRoutes.length
+    ? "dynamic_route_ownership_requires_manual_integration"
+    : routingConflicts.length || legacyConflicts.length
+      ? "existing_page_namespace_requires_manual_integration"
+      : null;
+  // The read-only doctor reports a customized install instead of failing.
+  if (manualIntegration && !diagnostic) throw new Error(manualIntegration);
   let compatibility = "unverified";
   try {
     const manifest = JSON.parse(readFileSync("package.json", "utf8"));
@@ -199,6 +217,7 @@ function plan(value) {
     proposed,
     aliasCompatibility,
     compatibility,
+    manualIntegration,
     existingAttributionRoute: inventory.some((path) =>
       /api\/commish\/attribution\/route\.[jt]s$/.test(path),
     ),
@@ -208,7 +227,9 @@ function plan(value) {
       "proxy.ts",
       "proxy.js",
       "src/middleware.ts",
+      "src/middleware.js",
       "src/proxy.ts",
+      "src/proxy.js",
     ].some((path) => stat(path)),
   };
 }
@@ -343,7 +364,7 @@ export async function runPages(args) {
       integrationVerified: false,
     };
   }
-  const setup = plan(value);
+  const setup = plan(value, value.command === "doctor");
   const conflicts = setup.proposed.filter((file) => file.status === "conflict");
   if (value.apply && conflicts.length)
     throw new Error("existing_files_require_manual_integration");
@@ -431,6 +452,7 @@ export async function runPages(args) {
     files: setup.proposed,
     packageCompatibility: setup.compatibility,
     aliasCompatibility: setup.aliasCompatibility,
+    manualIntegration: setup.manualIntegration,
     installedPackages: installedPackages(),
     configuration,
     canonicalRoute,

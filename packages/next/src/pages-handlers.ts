@@ -112,13 +112,18 @@ export function createCreatorPageHandlers(
   return {
     POST: async (request: Request): Promise<Response> => {
       const { NextResponse } = await import("next/server.js");
-      const options =
-        typeof configuration.options === "function"
-          ? await configuration.options()
-          : configuration.options;
       const headers = { "cache-control": "private, no-store" };
       const json = (data: unknown, status = 200) =>
         NextResponse.json({ data }, { status, headers });
+      let options: CreatorPageOptions;
+      try {
+        options =
+          typeof configuration.options === "function"
+            ? await configuration.options()
+            : configuration.options;
+      } catch {
+        return json(null, 503);
+      }
       if (request.method !== "POST") return json(null, 405);
       // Next may see an internal HTTP URL behind HTTPS termination. Bind CSRF
       // to the configured public origin, never to spoofable forwarded headers.
@@ -217,7 +222,12 @@ export function createCreatorPageHandlers(
               `${path}/capture`,
               {
                 requestId: input.captureId,
-                previousAttributionId: jar.get(COMMISH_COOKIE)?.value,
+                // A malformed cookie must not make the server reject capture.
+                previousAttributionId: /^atr_[A-Za-z0-9_-]{12,}$/.test(
+                  jar.get(COMMISH_COOKIE)?.value ?? "",
+                )
+                  ? jar.get(COMMISH_COOKIE)?.value
+                  : undefined,
               },
               {
                 "x-commish-publishable-key":
