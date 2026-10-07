@@ -26,6 +26,9 @@ import {
   publicId,
 } from "./reads.js";
 export type * from "./types.js";
+export type * from "./pages.js";
+export { assertCreatorPage } from "./pages.js";
+import { assertCreatorPage, pageHandle, type CreatorPage } from "./pages.js";
 
 export type CommishOptions = {
   secretKey: string;
@@ -121,6 +124,26 @@ export class Commish {
       );
     return body as T;
   }
+
+  readonly pages = {
+    resolve: async (input: {
+      programId: string;
+      handle: string;
+      signal?: AbortSignal;
+    }) => {
+      const result = await this.request<{ data: CreatorPage }>(
+        `/pages/${publicId(input.programId, "prg")}/${pageHandle(input.handle)}`,
+        { method: "GET", cache: "no-store", signal: input.signal },
+      );
+      assertCreatorPage(result.data);
+      if (
+        result.data.programId !== input.programId ||
+        !result.data.canonicalPath.endsWith(`/${input.handle}`)
+      )
+        throw new CommishError("Page scope mismatch", 502, "invalid_response");
+      return result;
+    },
+  };
 
   readonly conversions = {
     lookup: (externalId: string) => {
