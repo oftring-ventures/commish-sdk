@@ -15,7 +15,6 @@ const page = {
   revision: "c0000000-0000-4000-8000-000000000001",
   creator: { handle: "maya" },
   couponCode: null,
-  endorsement: null,
   content: {
     brand: { name: "Brand", logoUrl: null, accentColor: "#123456" },
     headline: "Approved offer",
@@ -58,6 +57,11 @@ test("server resolution is scoped, uncached, and abortable", async () => {
 });
 for (const value of [
   { ...page, protocol: "unknown" },
+  // Brand-authored testimonials are not part of the Pages protocol.
+  {
+    ...page,
+    endorsement: { quote: "Unreviewed", author: "Maya", imageUrl: null },
+  },
   { ...page, preferredPath: "//evil.test" },
   {
     ...page,
