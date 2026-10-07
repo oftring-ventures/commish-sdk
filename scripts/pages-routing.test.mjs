@@ -16,7 +16,6 @@ const page = {
   revision: "c0000000-0000-4000-8000-000000000001",
   creator: { handle: "maya" },
   couponCode: null,
-  endorsement: null,
   content: {
     brand: { name: "Brand", logoUrl: null, accentColor: "#123456" },
     headline: "Approved offer",
@@ -28,42 +27,31 @@ const page = {
     disclosures: ["Ad"],
   },
 };
+const params = (creator) => ({ params: Promise.resolve({ creator }) });
+const options = {
+  secretKey: "cm_test_sk_fixture_123456789012",
+  programId: page.programId,
+  origin: page.origin,
+};
 test("alias helper returns temporary canonical redirects only", async () => {
   const original = globalThis.fetch;
   globalThis.fetch = async () => Response.json({ data: page });
   try {
-    const handler = createCreatorAliasHandler({
-      secretKey: "cm_test_sk_fixture_123456789012",
-      programId: page.programId,
-      origin: page.origin,
-    });
+    const handler = createCreatorAliasHandler(options);
     const response = await handler(
       new Request(`${page.origin}/maya?next=https://evil.test`),
-      { params: Promise.resolve({ creator: "maya" }) },
+      params("maya"),
     );
     assert.equal(response.status, 307);
     assert.equal(response.headers.get("location"), `${page.origin}/c/maya`);
+    assert.equal(response.headers.get("x-commish-page-id"), page.pageId);
     assert.equal(response.headers.get("cache-control"), "private, no-store");
     globalThis.fetch = async () =>
       Response.json({ data: { ...page, rootAliasEnabled: false } });
     assert.equal(
-      (
-        await handler(new Request(`${page.origin}/maya`), {
-          params: Promise.resolve({ creator: "maya" }),
-        })
-      ).status,
+      (await handler(new Request(`${page.origin}/noalias`), params("noalias")))
+        .status,
       404,
-    );
-    globalThis.fetch = async () => {
-      throw new Error("offline");
-    };
-    assert.equal(
-      (
-        await handler(new Request(`${page.origin}/maya`), {
-          params: Promise.resolve({ creator: "maya" }),
-        })
-      ).status,
-      503,
     );
   } finally {
     globalThis.fetch = original;
@@ -72,6 +60,58 @@ test("alias helper returns temporary canonical redirects only", async () => {
     source: "/:creator([a-z0-9][a-z0-9_-]{2,39})",
     destination: "/api/commish/alias/:creator",
   });
+});
+
+test("unmatched paths and outages stay merchant 404s", async () => {
+  const original = globalThis.fetch;
+  let calls = 0;
+  try {
+    const notFound = () =>
+      new Response("merchant not found", { status: 404 });
+    const handler = createCreatorAliasHandler(options, { notFound });
+    globalThis.fetch = async () => {
+      calls += 1;
+      throw new Error("offline");
+    };
+    const down = await handler(
+      new Request(`${page.origin}/offline`),
+      params("offline"),
+    );
+    assert.equal(down.status, 404);
+    assert.equal(await down.text(), "merchant not found");
+    assert.equal(down.headers.get("retry-after"), null);
+    globalThis.fetch = async () => {
+      calls += 1;
+      return Response.json(
+        { error: { code: "page_not_found", message: "Not found" } },
+        { status: 404 },
+      );
+    };
+    calls = 0;
+    for (let i = 0; i < 5; i += 1)
+      assert.equal(
+        (await handler(new Request(`${page.origin}/wp-admin`), params("wp-admin")))
+          .status,
+        404,
+      );
+    assert.equal(calls, 1, "a miss is remembered instead of re-queried");
+    calls = 0;
+    await Promise.all(
+      Array.from({ length: 5 }, () =>
+        handler(new Request(`${page.origin}/crawler`), params("crawler")),
+      ),
+    );
+    assert.equal(calls, 1, "concurrent lookups of one path are coalesced");
+    calls = 0;
+    for (let i = 0; i < 100; i += 1)
+      await handler(
+        new Request(`${page.origin}/probe-${i}`),
+        params(`probe-${i}`),
+      );
+    assert.ok(calls < 60, "uncached lookups are bounded per window");
+  } finally {
+    globalThis.fetch = original;
+  }
 });
 
 test("same-origin integration rejects forged hosts and unsafe bodies before cookies", async () => {
