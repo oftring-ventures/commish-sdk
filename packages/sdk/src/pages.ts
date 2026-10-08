@@ -80,7 +80,8 @@ export function assertCreatorPage(
     !/^cpg_[A-Za-z0-9_-]{12,}$/.test(value.pageId) ||
     !text(value.programId, 80) ||
     !/^prg_[A-Za-z0-9_-]{12,}$/.test(value.programId) ||
-    !["test", "live"].includes(String(value.mode)) ||
+    typeof value.mode !== "string" ||
+    !["test", "live"].includes(value.mode) ||
     !https(value.origin) ||
     new URL(value.origin).origin !== value.origin ||
     typeof value.rootAliasEnabled !== "boolean" ||
@@ -172,10 +173,11 @@ export function assertCreatorPage(
     !(value.couponCode === null || text(value.couponCode, 64)) ||
     typeof value.experimentEnabled !== "boolean" ||
     typeof value.rootAliasEnabled !== "boolean" ||
+    typeof value.preferredPath !== "string" ||
     ![
       value.canonicalPath,
       "/" + value.canonicalPath.split("/").at(-1),
-    ].includes(String(value.preferredPath))
+    ].includes(value.preferredPath)
   )
     invalid();
 }

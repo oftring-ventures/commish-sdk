@@ -63,6 +63,9 @@ for (const value of [
     endorsement: { quote: "Unreviewed", author: "Maya", imageUrl: null },
   },
   { ...page, preferredPath: "//evil.test" },
+  { ...page, mode: ["live"] },
+  { ...page, mode: { toString: () => "live" } },
+  { ...page, preferredPath: [page.canonicalPath] },
   {
     ...page,
     content: { ...page.content, productImageUrl: "javascript:alert(1)" },
