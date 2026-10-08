@@ -399,56 +399,66 @@ export async function runPages(args) {
             ? "credential_or_scope_denied"
             : "temporarily_unavailable";
       if (response.ok) {
-        const data = (await response.json()).data;
-        let origin;
-        try {
-          origin = new URL(process.env.COMMISH_PAGES_ORIGIN);
-        } catch {
-          // Keep successful API resolution separate from local configuration.
-        }
-        if (
-          !origin ||
-          origin.protocol !== "https:" ||
-          origin.origin !== process.env.COMMISH_PAGES_ORIGIN ||
-          data.origin !== origin.origin ||
-          data.canonicalPath !== `${value.prefix}/${value.creator}` ||
-          !/^cpg_[A-Za-z0-9_-]{12,}$/.test(data.pageId)
-        ) {
-          configuration = "origin_or_prefix_mismatch";
+        const data = await response.json().then(
+          (value) => value?.data,
+          () => null,
+        );
+        if (!data || typeof data !== "object" || Array.isArray(data)) {
+          configuration = "invalid_api_response";
         } else {
-          configuration = "matches_resolved_page";
+          let origin;
           try {
-            const canonical = await probe(new URL(data.canonicalPath, origin));
-            canonicalRoute =
-              canonical.response.status === 200 &&
-              canonical.body.includes(`data-commish-page="${data.pageId}"`)
-                ? "correct_page_marker"
-                : "missing_conflicting_or_unavailable";
+            origin = new URL(process.env.COMMISH_PAGES_ORIGIN);
           } catch {
-            canonicalRoute = "missing_conflicting_or_unavailable";
+            // Keep successful API resolution separate from local configuration.
           }
-          if (data.rootAliasEnabled) {
+          if (
+            !origin ||
+            origin.protocol !== "https:" ||
+            origin.origin !== process.env.COMMISH_PAGES_ORIGIN ||
+            data.origin !== origin.origin ||
+            data.canonicalPath !== `${value.prefix}/${value.creator}` ||
+            !/^cpg_[A-Za-z0-9_-]{12,}$/.test(data.pageId)
+          ) {
+            configuration = "origin_or_prefix_mismatch";
+          } else {
+            configuration = "matches_resolved_page";
             try {
-              const alias = await probe(new URL(`/${value.creator}`, origin));
-              aliasRoute =
-                alias.response.status === 307 &&
-                alias.response.headers.get("location") ===
-                  new URL(data.canonicalPath, origin).href &&
-                alias.response.headers.get("x-commish-page-id") === data.pageId
-                  ? "correct_temporary_redirect_not_promoted"
-                  : "conflict_or_unavailable";
+              const canonical = await probe(
+                new URL(data.canonicalPath, origin),
+              );
+              canonicalRoute =
+                canonical.response.status === 200 &&
+                canonical.body.includes(`data-commish-page="${data.pageId}"`)
+                  ? "correct_page_marker"
+                  : "missing_conflicting_or_unavailable";
             } catch {
-              aliasRoute = "conflict_or_unavailable";
+              canonicalRoute = "missing_conflicting_or_unavailable";
             }
-          } else aliasRoute = "disabled";
-          const publicKey =
-            process.env.NEXT_PUBLIC_COMMISH_PUBLISHABLE_KEY ?? "";
-          attributionReadiness =
-            data.status !== "ready"
-              ? "ended_no_new_attribution"
-              : publicKey.startsWith(`cm_${data.mode}_pk_`)
-                ? "credentials_present_consent_capture_checkout_unverified"
-                : "matching_publishable_key_required";
+            if (data.rootAliasEnabled) {
+              try {
+                const alias = await probe(new URL(`/${value.creator}`, origin));
+                aliasRoute =
+                  alias.response.status === 307 &&
+                  alias.response.headers.get("location") ===
+                    new URL(data.canonicalPath, origin).href &&
+                  alias.response.headers.get("x-commish-page-id") ===
+                    data.pageId
+                    ? "correct_temporary_redirect_not_promoted"
+                    : "conflict_or_unavailable";
+              } catch {
+                aliasRoute = "conflict_or_unavailable";
+              }
+            } else aliasRoute = "disabled";
+            const publicKey =
+              process.env.NEXT_PUBLIC_COMMISH_PUBLISHABLE_KEY ?? "";
+            attributionReadiness =
+              data.status !== "ready"
+                ? "ended_no_new_attribution"
+                : publicKey.startsWith(`cm_${data.mode}_pk_`)
+                  ? "credentials_present_consent_capture_checkout_unverified"
+                  : "matching_publishable_key_required";
+          }
         }
       }
     } catch {
