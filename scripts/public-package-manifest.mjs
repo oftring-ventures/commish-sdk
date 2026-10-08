@@ -33,6 +33,10 @@ export function publicPackageManifests(files) {
         read("packages/sdk/src/pages.ts"); read(root + "/src/pages-routing.ts");
       }
     }
+    if (pkg === "next" && files.has(root + "/src/pages.tsx")) {
+      exports["./pages"] = target("pages", true);
+      for (const name of ["pages-client.tsx", "pages-handlers.ts", "pages-routing.ts"]) read(root + "/src/" + name);
+    }
     assert.deepEqual(manifest.exports, exports, "incomplete release exports");
     const peers = pkg === "sdk" ? undefined
       : { "@commish/sdk": common.version, next: ">=16.3.6 <17", react: ">=19.2.8 <20" };
