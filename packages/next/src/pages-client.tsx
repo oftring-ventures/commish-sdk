@@ -2,6 +2,7 @@
 import {
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
   type MouseEvent,
@@ -13,6 +14,7 @@ type Visit = {
   visitToken?: string;
   variation?: "standard" | "alternate";
   captured?: boolean;
+  retryable?: boolean;
 };
 /** One same-origin identity across concurrent tabs; unsupported clients do not measure. */
 export async function identifyCreatorPage(
@@ -29,6 +31,22 @@ export async function identifyCreatorPage(
     return false;
   }
 }
+/** Coalesce concurrent starts, but let a later interaction retry an incomplete attempt. */
+export function createCreatorPageStart(
+  send: (action: string, extra?: Record<string, unknown>) => Promise<Visit>,
+  onVisit: (visit: Visit) => void,
+): () => Promise<Visit> {
+  let pending: Promise<Visit> | null = null;
+  return () =>
+    (pending ??= identifyCreatorPage(() => send("identify"))
+      .then((measurementReady) => send("start", { measurementReady }))
+      .catch((): Visit => ({}))
+      .then((data) => {
+        if (data.retryable || typeof data.captured !== "boolean") pending = null;
+        onVisit(data);
+        return data;
+      }));
+}
 /** All text is escaped by React. No remotely supplied HTML, scripts, or CSS. */
 export function CreatorPageView({
   page,
@@ -37,7 +55,6 @@ export function CreatorPageView({
   page: CreatorPage;
   integrationPath: string;
 }) {
-  const pending = useRef<Promise<Visit> | null>(null);
   const surface = useRef<HTMLElement>(null);
   const id = useRef<string | null>(null);
   const [variation, setVariation] = useState<"standard" | "alternate">(
@@ -72,18 +89,16 @@ export function CreatorPageView({
     },
     [integrationPath, page],
   );
-  const start = useCallback(
-    (): Promise<Visit> =>
-      (pending.current ??= identifyCreatorPage(() => send("identify"))
-        .then((measurementReady) => send("start", { measurementReady }))
-        .catch((): Visit => ({}))
-        .then((data) => {
+  const start = useMemo(
+    () =>
+      createCreatorPageStart(send, (data) => {
+        if (typeof data.captured === "boolean") {
           setVariation(
             data.variation === "alternate" ? "alternate" : "standard",
           );
           setVisitToken(data.visitToken);
-          return data;
-        })),
+        }
+      }),
     [send],
   );
   useEffect(() => {

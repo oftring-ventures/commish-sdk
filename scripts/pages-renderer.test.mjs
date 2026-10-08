@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {createRequire} from "node:module";
-import {CreatorPageView,identifyCreatorPage} from "../packages/next/dist/pages-client.js";
+import {CreatorPageView,identifyCreatorPage,createCreatorPageStart} from "../packages/next/dist/pages-client.js";
 import {createCreatorPage} from "../packages/next/dist/pages.js";
 const require=createRequire(new URL("../packages/next/package.json",import.meta.url));
 const {createElement}=require("react");
@@ -70,4 +70,47 @@ test("rendering distinguishes unavailable from not found",async(t)=>{
  assert.match(renderToStaticMarkup(await Page({params:Promise.resolve({creator:"maya"})})),/temporarily unavailable/);
  globalThis.fetch=async()=>Response.json({error:{code:"page_not_found"}},{status:404});
  await assert.rejects(()=>Page({params:Promise.resolve({creator:"maya"})}),/NEXT_HTTP_ERROR_FALLBACK;404/);
+});
+
+
+test("failed starts can retry while concurrent callers share one attempt", async () => {
+  let calls = 0, release;
+  const gate = new Promise(resolve => release = resolve);
+  const visits = [];
+  const start = createCreatorPageStart(async action => {
+    if (action === "identify") return {identified: true};
+    calls++;
+    if (calls === 1) { await gate; throw new Error("offline"); }
+    return {captured: true, retryable: false, visitToken: "recovered"};
+  }, visit => visits.push(visit));
+  const first = start(), concurrent = start();
+  assert.equal(first, concurrent);
+  release();
+  assert.deepEqual(await first, {});
+  assert.equal(calls, 1);
+  assert.equal((await start()).captured, true);
+  assert.equal(calls, 2);
+  await start();
+  assert.equal(calls, 2);
+  assert.equal(visits.length, 2);
+});
+
+test("partial capture failure retries but denied consent is a completed start", async () => {
+  let calls = 0;
+  const start = createCreatorPageStart(async action => {
+    if (action === "identify") return {identified: true};
+    calls++;
+    return {captured: calls > 1, retryable: calls === 1, visitToken: "measured"};
+  }, () => {});
+  assert.equal((await start()).captured, false);
+  assert.equal((await start()).captured, true);
+  assert.equal(calls, 2);
+  let deniedCalls = 0;
+  const denied = createCreatorPageStart(async action => {
+    if (action === "identify") return {identified: false};
+    deniedCalls++;
+    return {captured: false, retryable: false};
+  }, () => {});
+  await denied(); await denied();
+  assert.equal(deniedCalls, 1);
 });
