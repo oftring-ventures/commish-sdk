@@ -112,7 +112,7 @@ export async function verifyNextBuild(sdk, next, context, execute) {
       browser: null, types: "./dist/index.d.ts", default: "./dist/index.js",
     }, "unsupported server root");
     assert.deepEqual(manifest.peerDependencies, {
-      "@commish/sdk": releaseVersion, next: ">=16.3.6 <17", react: ">=19.2.8 <20",
+      "@commish/sdk": releaseVersion, next: ">=16.3.8 <17", react: ">=19.2.8 <20",
     }, "unsupported server peers");
   }
   const cookieHelpers = next.packed.has("package/dist/metadata.js");
@@ -278,7 +278,7 @@ export default function Layout({ children }: { children: ReactNode }) {
     const executable = child(consumer, require.resolve("next/dist/bin/next"));
     assert.equal(
       (await run(process.execPath, [executable, "--version"])).trim(),
-      "Next.js v16.3.6",
+      "Next.js v16.3.8",
       "wrong framework CLI",
     );
     await run(process.execPath, [executable, "build", "--webpack"], 600_000);

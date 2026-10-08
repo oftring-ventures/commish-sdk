@@ -35,7 +35,7 @@
   },
   "peerDependencies": {
     "@commish/sdk": "0.2.3",
-    "next": ">=16.3.6 <17",
+    "next": ">=16.3.8 <17",
     "react": ">=19.2.8 <20"
   },
   "publishConfig": {
@@ -51,7 +51,7 @@
     "typescript": "5.9.2",
     "@types/node": "24.13.3",
     "@commish/sdk": "workspace:*",
-    "next": "16.3.6",
+    "next": "16.3.8",
     "react": "19.2.8",
     "react-dom": "19.2.8",
     "@types/react": "19.2.18",
