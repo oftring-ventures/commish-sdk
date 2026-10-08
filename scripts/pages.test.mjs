@@ -74,6 +74,33 @@ test("custom files and symlinks are never overwritten", (t) => {
   symlinkSync(join(f.root, "app"), join(f.root, "app/linked"));
   assert.notEqual(f.run("pages", "--apply").status, 0);
 });
+for (const location of ["pages", "src/pages", "src"]) {
+  test(`symlinked legacy route root ${location} requires manual integration before writes`, (t) => {
+    const f = fixture(t);
+    const target = join(f.root, "shared-routes");
+    const routes = location === "src" ? join(target, "pages") : target;
+    mkdirSync(routes, { recursive: true });
+    writeFileSync(
+      join(routes, "other.jsx"),
+      "export default function Page() {}\n",
+    );
+    if (location === "src/pages") mkdirSync(join(f.root, "src"));
+    symlinkSync(target, join(f.root, location));
+    for (const mode of ["--dry-run", "--apply"]) {
+      const result = f.run("pages", mode, "--json");
+      assert.notEqual(result.status, 0);
+      assert.match(
+        result.stderr,
+        /symlink_requires_manual_integration|unsafe_install_path/,
+      );
+      assert.deepEqual(readdirSync(join(f.root, "app")), ["layout.tsx"]);
+      assert.equal(
+        readFileSync(join(routes, "other.jsx"), "utf8"),
+        "export default function Page() {}\n",
+      );
+    }
+  });
+}
 test("CMS catch-alls require manual namespace delegation without changing merchant files", (t) => {
   const f = fixture(t);
   mkdirSync(join(f.root, "app/[[...slug]]"));

@@ -86,7 +86,13 @@ function plan(value, diagnostic = false) {
     segment = value.prefix.slice(1);
   // Pages Router files win or collide at build time; inventory them too.
   const legacy = ["pages", "src/pages"]
-    .filter((dir) => stat(dir)?.isDirectory())
+    .filter((dir) => {
+      const item = stat(dir);
+      if (item?.isSymbolicLink())
+        throw new Error("symlink_requires_manual_integration");
+      if (item?.isDirectory()) safe(dir);
+      return item?.isDirectory();
+    })
     .flatMap((dir) =>
       filesAt(dir).map((path) =>
         path.slice(dir.length + 1).replace(/(\/index)?\.[^./]+$/, ""),
