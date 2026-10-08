@@ -1,5 +1,5 @@
 import { CommishError, type CreatorPage } from "@commish/sdk";
-import { notFound } from "next/navigation.js";
+import { notFound, unstable_rethrow } from "next/navigation.js";
 import { CreatorPageView } from "./pages-client.js";
 import {
   resolveCreatorPage,
@@ -10,6 +10,7 @@ export {
   resolveCreatorPage,
   createCreatorAliasHandler,
   creatorPageFallbackRewrite,
+  type CreatorAliasHandlerOptions,
   type CreatorPageOptions,
   type PageOptionsSource,
 } from "./pages-routing.js";
@@ -27,6 +28,8 @@ export function createCreatorPage(source: PageOptionsSource) {
       options = typeof source === "function" ? await source() : source;
       page = await resolveCreatorPage(options, (await params).creator);
     } catch (error) {
+      // Never swallow Next's own control flow (dynamic bailout, redirects).
+      unstable_rethrow(error);
       if (error instanceof CommishError && error.status === 404) notFound();
       // No brand/creator content or ended-offer claim on dependency failure.
       return (
