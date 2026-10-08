@@ -159,9 +159,9 @@ test("doctor checks every Pages entry point and the installed peer floors withou
         "throw new Error('doctor must not execute this');",
       );
   };
-  put("@commish/sdk", { version: "0.2.3", exports: "./dist/index.js" });
+  put("@commish/sdk", { version: "0.3.0", exports: "./dist/index.js" });
   const adapter = {
-    version: "0.2.3",
+    version: "0.3.0",
     exports: {
       "./pages": "./dist/pages.js",
       "./pages/handlers": "./dist/pages-handlers.js",

@@ -1,6 +1,6 @@
 # Agent integration guide — Pages preview
 
-Pages is unreleased; first establish the exact reviewed SDK artifact/version. Do not describe the published 0.2.3 release as supporting it. Read `pages.md` before changing a merchant app.
+Pages targets paired 0.3.0; first establish approved registry availability or the exact reviewed candidate artifact/version. Do not describe the published 0.2.3 release as supporting it. Read `pages.md` before changing a merchant app.
 
 1. Inspect package manager, lockfile, Next version, app/src/app, config, auth/proxy, CMS catch-alls, current Commish integration and working-tree changes.
 2. Run `commish-next pages init --dry-run --json`. Ask for missing product choices together: origin, prefix, program, consent behavior, approved content and whether short URLs are wanted. Use `--apply` only within authorized implementation scope; preserve custom files.

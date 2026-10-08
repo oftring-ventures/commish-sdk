@@ -158,7 +158,7 @@ snapshots:
   );
   put(files, "packages/sdk/package.json", {
     name: "@commish/sdk",
-    version: "0.2.3",
+    version: "0.3.0",
     type: "module",
     scripts: {
       build: "node build.mjs",
