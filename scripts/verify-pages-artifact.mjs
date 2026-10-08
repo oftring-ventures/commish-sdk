@@ -1,5 +1,7 @@
 // Local, unpublished-artifact acceptance. Never contacts the Commish service,
 // creates real credentials, enables production, or publishes a package.
+// Manual acceptance tool: CI covers installation through verify-next-build;
+// run this before releasing a Pages candidate.
 import assert from "node:assert/strict";
 import { spawnSync, spawn } from "node:child_process";
 import {
@@ -255,11 +257,6 @@ export async function POST(){(await cookies()).set('fixture_consent','no',{path:
         creator: { handle: match[1] },
         preferredPath: base.canonicalPath,
         experimentEnabled: true,
-        endorsement: {
-          quote: "An explicitly authorized example testimonial.",
-          author: "Example creator",
-          imageUrl: null,
-        },
         couponCode: "REST10",
         content: {
           brand: { name: "Rest Studio", logoUrl: null, accentColor: "#476d61" },
@@ -358,11 +355,13 @@ process.on('SIGTERM',()=>{server.closeAllConnections();server.close();Promise.re
   assert.equal(captures, 0); // SSR / alias probes aren't visits.
   paused = true;
   assert.match((await get("/c/creator02")).body, /temporarily unavailable/);
+  // A Commish failure never turns a merchant root path into a 5xx.
+  assert.equal((await get("/creator05")).status, 404);
   paused = false;
   ended = true;
   const neutral = await get("/c/creator02");
   assert.match(neutral.body, /no longer available/);
-  assert.doesNotMatch(neutral.body, /REST10|authorized example testimonial/);
+  assert.doesNotMatch(neutral.body, /REST10/);
   ended = false;
   withdrawn = true;
   assert.equal((await get("/c/creator02")).status, 404);
