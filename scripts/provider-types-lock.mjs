@@ -85,7 +85,7 @@ packages:
     engines: {node: '>=24 <25'}
 ${manifests[1].bin ? "    hasBin: true\n" : ""}    peerDependencies:
       '@commish/sdk': ${releaseVersion}
-      next: '>=16.3.6 <17'
+      next: '>=16.3.8 <17'
       react: '>=19.2.8 <20'
 
   '${sdkId}':
