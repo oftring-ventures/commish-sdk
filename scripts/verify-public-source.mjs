@@ -187,7 +187,7 @@ export function inspect(files) {
     packages.length === 1
       ? "7e23bad69c9b8a88d53fc992196178aecdef08a6311e54752201de147b1314f2"
       : framework
-        ? "1cd748266d1f1ece457dfda2336283b2b97a3ddb51385515f63e27ba66bb9a86"
+        ? "f812591fcbd520bd2ab5520e19a19d496482f631177a79a765ee42a72c2eeac4"
         : "0c15096dcc1644b3d0e3fd288da4ab13ddef54d9b609bc2a8547cc9d7d88bc3f";
   assert.equal(sha(bytes(files, "pnpm-lock.yaml")), expectedLock, "unsupported lockfile");
   for (const name of files.keys())

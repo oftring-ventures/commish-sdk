@@ -30,7 +30,7 @@ const sri = (bytes) => `sha512-${createHash("sha512").update(bytes).digest("base
 export function frameworkLocks(source, sdk, next) {
   assert.equal(
     createHash("sha256").update(source).digest("hex"),
-    "1cd748266d1f1ece457dfda2336283b2b97a3ddb51385515f63e27ba66bb9a86",
+    "f812591fcbd520bd2ab5520e19a19d496482f631177a79a765ee42a72c2eeac4",
     "unsupported framework source lock",
   );
   const text = source.toString();
