@@ -36,7 +36,7 @@ export function publicPackageManifests(files) {
     assert.deepEqual(manifest.files, ["dist", "README.md", "LICENSE", ...(bin ? ["bin"] : [])]);
     for (const name of ["dependencies", "optionalDependencies", "bundledDependencies", "bundleDependencies"])
       assert(!Object.hasOwn(manifest, name), "unexpected release dependency");
-    for (const name of pkg === "sdk" ? ["browser.ts", "index.ts", "types.ts", "reads.ts", "webhooks.ts"]
+    for (const name of pkg === "sdk" ? ["browser.ts", "index.ts", "types.ts", "reads.ts", "webhooks.ts", "pages.ts"]
       : ["browser.ts", "index.ts", "metadata.ts", "capture.ts", "provider.tsx"])
       assert(read(`${root}/src/${name}`).length > 0, "empty release source");
     if (pkg === "sdk") {

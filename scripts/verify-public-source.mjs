@@ -103,7 +103,7 @@ const bootstrap = {
 const roots = [...Object.keys(bootstrap), "package.json", "pnpm-workspace.yaml", "pnpm-lock.yaml"];
 const common = ["package.json", "LICENSE", "README.md", "build.mjs", "tsconfig.build.json"];
 const sources = {
-  sdk: ["browser", "types", "webhooks", "index", "reads"],
+  sdk: ["browser", "types", "webhooks", "index", "reads", "pages"],
   next: ["browser", "provider", "index", "metadata", "capture"],
 };
 const sha = (data) => createHash("sha256").update(data).digest("hex");
@@ -122,6 +122,7 @@ export function inspect(files) {
   const allowed = new Set([
     ...roots,
     ...automation,
+    "scripts/pages-sdk.test.mjs",
     "packages/next/bin/init.mjs",
     "packages/sdk/bin/init.mjs",
     "packages/sdk/bin/setup-session.mjs",
@@ -397,6 +398,10 @@ export async function verifyPackages(files, packages, run, checkout = process.cw
           )),
         );
       }
+    }
+    // Pages tests run at the layer that adds them; later layers only add files.
+    for (const test of ["pages-sdk","pages-routing","pages-renderer","pages"]) {
+      if (files.has("scripts/" + test + ".test.mjs")) run(process.execPath, ["--test","scripts/" + test + ".test.mjs"],work);
     }
     for (const [name, file] of files)
       assert(
