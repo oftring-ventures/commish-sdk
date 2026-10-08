@@ -41,7 +41,7 @@ export function publicPackageManifests(files) {
     if (pagesInstaller) for (const file of ["src/pages.tsx","guides/pages.md","guides/agents.md"]) read(root + "/" + file);
     assert.deepEqual(manifest.exports, exports, "incomplete release exports");
     const peers = pkg === "sdk" ? undefined
-      : { "@commish/sdk": common.version, next: ">=16.3.6 <17", react: ">=19.2.8 <20" };
+      : { "@commish/sdk": common.version, next: ">=16.3.8 <17", react: ">=19.2.8 <20" };
     assert.deepEqual(manifest.peerDependencies, peers, "unsupported release peers");
     const bin = pkg === "sdk" ? { commish: "./bin/init.mjs" } : { "commish-next": "./bin/init.mjs" };
     assert.deepEqual(manifest.bin, bin, "incomplete release bin");
