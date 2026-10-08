@@ -20,7 +20,6 @@ const page = {
   revision: "c0000000-0000-4000-8000-000000000001",
   creator: { handle: "maya" },
   couponCode: null,
-  endorsement: null,
   content: {
     brand: { name: "Brand", logoUrl: null, accentColor: "#123456" },
     headline: "Approved offer",
