@@ -118,6 +118,7 @@ export async function verifyNextBuild(sdk, next, context, execute) {
   const cookieHelpers = next.packed.has("package/dist/metadata.js");
   assert(!cookieHelpers || server, "cookie helpers require the framework server root");
   const capture = next.packed.has("package/dist/capture.js");
+  const pages = Object.hasOwn(manifest.exports, "./pages");
   assert(!capture || cookieHelpers, "capture requires cookie helpers");
   const fixture = { ...(provider ? nextBuildFixture : nextServerBuildFixture),
     ...(cookieHelpers ? nextCookieBuildFixture : {}), ...(capture ? nextCaptureBuildFixture : {}) };
@@ -274,6 +275,26 @@ export default function Layout({ children }: { children: ReactNode }) {
       writeFileSync(join(consumer, "app/layout.tsx"), fixture["app/layout.tsx"]);
       env.NEXT_PUBLIC_COMMISH_PUBLISHABLE_KEY = "cm_test_pk_123456789012";
       env.NEXT_PUBLIC_COMMISH_APPLICATION_ID = "app_123456789012";
+    }
+    if (pages) {
+      for (const guide of ["pages", "agents"])
+        assert(
+          next.packed.get(`package/guides/${guide}.md`)?.data.length,
+          "Pages requires shipped integration and agent guides",
+        );
+      await run(join(consumer, "node_modules/.bin/commish-next"), [
+        "pages",
+        "init",
+        "--apply",
+        "--root-aliases",
+      ]);
+      for (const name of [
+        "app/commish-pages.ts",
+        "app/c/[creator]/page.tsx",
+        "app/api/commish/pages/route.ts",
+        "app/api/commish/alias/[creator]/route.ts",
+      ])
+        fixture[name] = readFileSync(join(consumer, name), "utf8");
     }
     const executable = child(consumer, require.resolve("next/dist/bin/next"));
     assert.equal(
