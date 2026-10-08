@@ -1,5 +1,9 @@
 # @commish/sdk
 
+## Unreleased Pages preview
+
+This checkout adds server-only `commish.pages.resolve({ programId, handle })`. It returns a versioned authorized page description using an application-scoped key. It does not ship in published 0.2.3. Use reviewed paired candidate artifacts for preview testing. See the [Next Pages guide](../next/guides/pages.md) for dynamic rendering, permission, consent and verification; existing integrations remain unchanged.
+
 Commish's Node 24 SDK for permanent TEST and LIVE integrations. Install an exact
 paired release from npm; use accepted candidate tarballs only for prepublication
 qualification.

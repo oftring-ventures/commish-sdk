@@ -125,6 +125,10 @@ export function inspect(files) {
     "scripts/pages-sdk.test.mjs",
     "scripts/pages-routing.test.mjs",
     "scripts/pages-renderer.test.mjs",
+    "scripts/pages.test.mjs",
+    "packages/next/bin/pages.mjs",
+    "packages/next/guides/pages.md",
+    "packages/next/guides/agents.md",
     "packages/next/bin/init.mjs",
     "packages/sdk/bin/init.mjs",
     "packages/sdk/bin/setup-session.mjs",
@@ -258,6 +262,9 @@ export function inspect(files) {
       exports["./pages"] = pair("pages", true);
       for (const name of ["pages-client.tsx", "pages-handlers.ts", "pages-routing.ts"]) bytes(files, dir + "/src/" + name);
     }
+    if (pkg === "next" && files.has(dir + "/bin/pages.mjs")) {
+      for (const file of ["src/pages.tsx","guides/pages.md","guides/agents.md"]) bytes(files, dir + "/" + file);
+    }
     assert.deepEqual(manifest.exports, exports, "exports do not match present source");
     const bin =
       files.has(`${dir}/bin/init.mjs`)
@@ -293,7 +300,7 @@ export function archiveFiles(compressed) {
       size = Number.parseInt(field(124, 12).trim(), 8);
     const mode = Number.parseInt(field(100, 8).trim(), 8);
     assert(
-      /^(package\/(?:dist\/)?[a-zA-Z0-9_.-]+|package\/bin\/(?:init|setup-session|setup-authorization|setup-resources|setup-files|setup-config|setup-progress|setup-secrets|setup-provisioning|setup-arguments|setup-workflow|setup-command|setup-plan|setup-intent)\.mjs)$/.test(name) &&
+      /^(package\/(?:dist\/)?[a-zA-Z0-9_.-]+|package\/guides\/(?:pages|agents)\.md|package\/bin\/(?:init|pages|setup-session|setup-authorization|setup-resources|setup-files|setup-config|setup-progress|setup-secrets|setup-provisioning|setup-arguments|setup-workflow|setup-command|setup-plan|setup-intent)\.mjs)$/.test(name) &&
         !files.has(name),
       "unsafe archive entry",
     );
