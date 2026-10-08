@@ -287,6 +287,7 @@ test("Next server metadata may precede CLI without admitting mismatched package 
     // Preserve the pre-CLI stage independently of the current source manifest.
     const manifest = JSON.parse(files.get("packages/next/package.json").data);
     delete manifest.bin;
+    manifest.files = manifest.files.filter((name) => name !== "guides");
     delete manifest.exports["./pages"];
     delete manifest.exports["./pages/handlers"];
     delete manifest.exports["./pages/routing"];

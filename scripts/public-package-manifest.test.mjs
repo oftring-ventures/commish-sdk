@@ -7,7 +7,7 @@ function source() {
   const files = new Map();
   for (const pkg of ["sdk", "next"]) {
     const root = `packages/${pkg}`;
-    const names = ["package.json", "LICENSE", "README.md", ...["src", "bin"]
+    const names = ["package.json", "LICENSE", "README.md", ...["src", "bin", ...(pkg === "next" ? ["guides"] : [])]
       .flatMap((dir) => readdirSync(new URL(`../${root}/${dir}/`, import.meta.url)).map((name) => `${dir}/${name}`))];
     for (const name of names) {
       const path = `${root}/${name}`, url = new URL(`../${path}`, import.meta.url), stat = statSync(url);

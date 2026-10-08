@@ -38,7 +38,7 @@ export function normalizePackage(files, dir, manifest, original, work, run, pars
     ...[...files.keys()].filter((name) => name.startsWith(`${dir}/src/`)).flatMap((name) => {
       const stem = name.slice(`${dir}/src/`.length).replace(/\.tsx?$/, "");
       return [`package/dist/${stem}.js`, `package/dist/${stem}.d.ts`];
-    }), ...[...files.keys()].filter((name) => name.startsWith(`${dir}/bin/`)).map((name) => `package/${name.slice(dir.length + 1)}`)].sort();
+    }), ...[...files.keys()].filter((name) => (name.startsWith(`${dir}/bin/`) || name.startsWith(`${dir}/guides/`))).map((name) => `package/${name.slice(dir.length + 1)}`)].sort();
   assert.deepEqual([...original.keys()].sort(), wanted, "unexpected release member inventory");
   const stage = join(work, "release-stage", manifest.name.slice(9)), destination = `${stage}-packed`;
   mkdirSync(stage, { recursive: true }); mkdirSync(destination);
@@ -49,7 +49,7 @@ export function normalizePackage(files, dir, manifest, original, work, run, pars
     // Pinned pnpm pack serializes package.json without a trailing newline.
     const data = name === "package/package.json" ? Buffer.from(JSON.stringify(manifest, null, 2))
       : original.get(name).data;
-    if ((["package/LICENSE", "package/README.md"].includes(name) || name.startsWith("package/bin/")))
+    if ((["package/LICENSE", "package/README.md"].includes(name) || (name.startsWith("package/bin/") || name.startsWith("package/guides/"))))
       assert(data.equals(files.get(`${dir}/${name.slice(8)}`).data), "release source member changed");
     const path = join(stage, name.slice(8)); mkdirSync(dirname(path), { recursive: true });
     writeFileSync(path, data, { mode, flag: "wx" }); expected.set(name, { data, mode });

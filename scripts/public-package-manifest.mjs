@@ -37,13 +37,15 @@ export function publicPackageManifests(files) {
       exports["./pages"] = target("pages", true);
       for (const name of ["pages-client.tsx", "pages-handlers.ts", "pages-routing.ts"]) read(root + "/src/" + name);
     }
+    const pagesInstaller = pkg === "next" && files.has(root + "/bin/pages.mjs");
+    if (pagesInstaller) for (const file of ["src/pages.tsx","guides/pages.md","guides/agents.md"]) read(root + "/" + file);
     assert.deepEqual(manifest.exports, exports, "incomplete release exports");
     const peers = pkg === "sdk" ? undefined
       : { "@commish/sdk": common.version, next: ">=16.3.6 <17", react: ">=19.2.8 <20" };
     assert.deepEqual(manifest.peerDependencies, peers, "unsupported release peers");
     const bin = pkg === "sdk" ? { commish: "./bin/init.mjs" } : { "commish-next": "./bin/init.mjs" };
     assert.deepEqual(manifest.bin, bin, "incomplete release bin");
-    assert.deepEqual(manifest.files, ["dist", "README.md", "LICENSE", ...(bin ? ["bin"] : [])]);
+    assert.deepEqual(manifest.files, [...(pagesInstaller ? ["guides"] : []), "dist", "README.md", "LICENSE", ...(bin ? ["bin"] : [])]);
     for (const name of ["dependencies", "optionalDependencies", "bundledDependencies", "bundleDependencies"])
       assert(!Object.hasOwn(manifest, name), "unexpected release dependency");
     for (const name of pkg === "sdk" ? ["browser.ts", "index.ts", "types.ts", "reads.ts", "webhooks.ts", "pages.ts"]

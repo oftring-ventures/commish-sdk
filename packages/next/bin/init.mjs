@@ -164,7 +164,24 @@ const setup = async (values) => {
 
 const args = process.argv.slice(2);
 const json = args.includes("--json");
-if (args[0] === "setup") {
+if (args[0] === "pages") {
+  try {
+    const { runPages } = await import("./pages.mjs");
+    const result = await runPages(args.slice(1));
+    console.log(
+      json ? JSON.stringify(result) : JSON.stringify(result, null, 2),
+    );
+  } catch (error) {
+    console.error(
+      JSON.stringify({
+        status: "error",
+        code: error.message,
+        integrationVerified: false,
+      }),
+    );
+    process.exitCode = 1;
+  }
+} else if (args[0] === "setup") {
   try {
     const result = await setup(args.slice(1));
     console.log(json ? JSON.stringify(result) :
