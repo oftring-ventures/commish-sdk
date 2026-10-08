@@ -27,6 +27,12 @@ export function publicPackageManifests(files) {
     const exports = pkg === "sdk"
       ? { ".": target("index", true), "./browser": target("browser"), "./webhooks": target("webhooks", true) }
       : { ".": target("index", true), "./browser": target("browser"), "./react": target("provider") };
+    if (pkg === "next") for (const name of ["handlers", "routing"]) {
+      if (files.has(root + "/src/pages-" + name + ".ts")) {
+        exports["./pages/" + name] = target("pages-" + name, true);
+        read("packages/sdk/src/pages.ts"); read(root + "/src/pages-routing.ts");
+      }
+    }
     assert.deepEqual(manifest.exports, exports, "incomplete release exports");
     const peers = pkg === "sdk" ? undefined
       : { "@commish/sdk": common.version, next: ">=16.3.6 <17", react: ">=19.2.8 <20" };

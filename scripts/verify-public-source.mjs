@@ -104,7 +104,7 @@ const roots = [...Object.keys(bootstrap), "package.json", "pnpm-workspace.yaml",
 const common = ["package.json", "LICENSE", "README.md", "build.mjs", "tsconfig.build.json"];
 const sources = {
   sdk: ["browser", "types", "webhooks", "index", "reads", "pages"],
-  next: ["browser", "provider", "index", "metadata", "capture"],
+  next: ["browser", "provider", "index", "metadata", "capture", "pages-handlers", "pages-routing"],
 };
 const sha = (data) => createHash("sha256").update(data).digest("hex");
 const bytes = (files, name) => {
@@ -123,6 +123,7 @@ export function inspect(files) {
     ...roots,
     ...automation,
     "scripts/pages-sdk.test.mjs",
+    "scripts/pages-routing.test.mjs",
     "packages/next/bin/init.mjs",
     "packages/sdk/bin/init.mjs",
     "packages/sdk/bin/setup-session.mjs",
@@ -245,6 +246,13 @@ export function inspect(files) {
     } else if (pkg === "sdk" && has("types")) exports["."] = pair("types", true);
     if (pkg === "sdk" && has("webhooks")) exports["./webhooks"] = pair("webhooks", true);
     if (pkg === "next" && react) exports["./react"] = pair("provider");
+    if (pkg === "next") for (const name of ["handlers", "routing"]) {
+      if (has("pages-" + name)) {
+        exports["./pages/" + name] = pair("pages-" + name, true);
+        bytes(files, "packages/sdk/src/pages.ts");
+        bytes(files, dir + "/src/pages-routing.ts");
+      }
+    }
     assert.deepEqual(manifest.exports, exports, "exports do not match present source");
     const bin =
       files.has(`${dir}/bin/init.mjs`)
