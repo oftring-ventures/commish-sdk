@@ -173,3 +173,17 @@ may update key-usage metadata. It never prints credentials/provider bodies or re
 denied/revoked keys, inaccessible programs, mismatches and unavailable responses exit
 with code 1 and a stable JSON error code. On older deployments that reject LIVE reads,
 verification fails with `access_denied`; it never falls back to TEST.
+
+## Creator Pages (unreleased preview)
+
+Pages is not in published 0.2.3. Evaluate only reviewed paired artifacts; publication and production enablement are separate actions.
+
+For manual integration, create a server-only configuration function returning `{secretKey, programId, origin, prefix:'/c'}`. Keep credentials out of client props and use the exact verified merchant origin.
+
+- In `app/c/[creator]/page.tsx`, export `dynamic='force-dynamic'` and `createCreatorPage(options)` as the default page from `@commish/next/pages`.
+- In a same-origin POST route at `/api/commish/pages`, use `createCreatorPageHandlers({options,publishableKey,consent})` from `@commish/next/pages/handlers`. Read real merchant consent server-side; attribution and measurement default denied.
+- Pass authenticated Checkout parameters through `withCommishPageMeasurement(params,measurementAllowed)`, alongside the existing attribution helper. Call `withdrawCreatorPageMeasurement(options)` from the consent-update server handler on withdrawal, retrying a false receipt.
+- Optional aliases use `creatorPageFallbackRewrite()` from `@commish/next/pages/routing` only in fallback rewrites after merchant routing. CMS-owned paths require explicit delegation. Never add a blanket interceptor.
+- The alias handler answers every one-segment path that is not a creator alias, and every Commish failure, with a 404 (never a 5xx). Pass `createCreatorAliasHandler(options, { notFound })` to return your own not-found response for those paths. Misses are remembered briefly and uncached lookups are bounded per instance.
+
+Content and new eligible creators resolve at request time without a merchant rebuild. Test typed visits, consent withdrawal, root conflicts, capture failures and trusted TEST conversion/refund before enabling production. Installing the module is not end-to-end verification.
