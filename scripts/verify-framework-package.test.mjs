@@ -53,7 +53,7 @@ function fixture(sdk, cli, run, sdkCli = false) {
     for (const [name, member] of packed) write(join(root, name.slice(8)), member.data, member.mode);
     const nextManifest = JSON.stringify({
       name: "next",
-      version: "16.3.6",
+      version: "16.3.8",
       bin: { next: "./dist/bin/next" },
     });
     const nextBin = "#!/usr/bin/env node\n// Fixture target; never executed.\n";
@@ -64,7 +64,7 @@ function fixture(sdk, cli, run, sdkCli = false) {
     symlinkSync(next, join(modules, "next"));
     const registry = [
       [
-        "next@16.3.6",
+        "next@16.3.8",
         relative(consumer, next),
         [
           ["package.json", hash(nextManifest), 0o644],
