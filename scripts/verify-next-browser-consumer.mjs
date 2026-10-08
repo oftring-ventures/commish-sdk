@@ -143,7 +143,7 @@ function verifyNextConsumer(provider, sdk, next, context, execute = execFileSync
     assert(Object.hasOwn(manifests[1].peerDependencies, "next"), "provider framework peer missing");
   }
   if (Object.hasOwn(manifests[1].peerDependencies, "next")) {
-    Object.assign(peers, { next: ">=16.3.6 <17", react: ">=19.2.8 <20" });
+    Object.assign(peers, { next: ">=16.3.8 <17", react: ">=19.2.8 <20" });
   }
   for (const name of ["handlers", "routing"]) {
     if (Object.hasOwn(manifests[1].exports, "./pages/" + name))
