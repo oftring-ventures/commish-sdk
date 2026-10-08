@@ -461,6 +461,28 @@ process.on('SIGTERM',()=>{server.closeAllConnections();server.close();Promise.re
       assert.equal(fastCheckout.metadata.commish_page_visit, visitId);
       assert.equal(fastCheckout.metadata.merchant, "retained");
     }
+    // Recover a completed background failure at shopping time, with the same
+    // capture identity even when measurement had already succeeded.
+    captureDelay = 0;captureFailure = true;
+    await context.clearCookies();
+    await context.addCookies([{name:"fixture_consent",value:"yes",url:origin,secure:true}]);
+    const failedStart = page.waitForResponse(response =>
+      response.url().endsWith("/api/commish/pages") && response.request().postDataJSON()?.action === "start");
+    await page.goto(`${origin}/c/creator02`);
+    const failedResponse = await failedStart, failedReceipt = await failedResponse.json();
+    assert.equal(failedReceipt.data.captured,false);
+    assert.equal(failedReceipt.data.retryable,true);
+    assert.equal(failedReceipt.data.visitToken,visitId);
+    captureFailure = false;
+    const retryRequest = page.waitForRequest(request =>
+      request.url().endsWith("/api/commish/pages") && request.postDataJSON()?.action === "start");
+    await page.getByRole("link", {name:"Explore the collection"}).click();
+    assert.equal((await retryRequest).postDataJSON().captureId,
+      failedResponse.request().postDataJSON().captureId);
+    await page.waitForURL("**/shop");
+    const recoveredCheckout = JSON.parse(await page.locator("body").innerText());
+    assert.equal(recoveredCheckout.metadata.commish_attribution,"atr_pages_artifact1234");
+    assert.equal(recoveredCheckout.metadata.commish_page_visit,visitId);
     captureDelay = 0;captureFailure = false;
     await context.clearCookies();
     await context.addCookies([{name:"fixture_consent",value:"yes",url:origin,secure:true}]);
