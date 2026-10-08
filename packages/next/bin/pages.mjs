@@ -400,8 +400,14 @@ export async function runPages(args) {
             : "temporarily_unavailable";
       if (response.ok) {
         const data = (await response.json()).data;
-        const origin = new URL(process.env.COMMISH_PAGES_ORIGIN);
+        let origin;
+        try {
+          origin = new URL(process.env.COMMISH_PAGES_ORIGIN);
+        } catch {
+          // Keep successful API resolution separate from local configuration.
+        }
         if (
+          !origin ||
           origin.protocol !== "https:" ||
           origin.origin !== process.env.COMMISH_PAGES_ORIGIN ||
           data.origin !== origin.origin ||
@@ -411,21 +417,29 @@ export async function runPages(args) {
           configuration = "origin_or_prefix_mismatch";
         } else {
           configuration = "matches_resolved_page";
-          const canonical = await probe(new URL(data.canonicalPath, origin));
-          canonicalRoute =
-            canonical.response.status === 200 &&
-            canonical.body.includes(`data-commish-page="${data.pageId}"`)
-              ? "correct_page_marker"
-              : "missing_conflicting_or_unavailable";
+          try {
+            const canonical = await probe(new URL(data.canonicalPath, origin));
+            canonicalRoute =
+              canonical.response.status === 200 &&
+              canonical.body.includes(`data-commish-page="${data.pageId}"`)
+                ? "correct_page_marker"
+                : "missing_conflicting_or_unavailable";
+          } catch {
+            canonicalRoute = "missing_conflicting_or_unavailable";
+          }
           if (data.rootAliasEnabled) {
-            const alias = await probe(new URL(`/${value.creator}`, origin));
-            aliasRoute =
-              alias.response.status === 307 &&
-              alias.response.headers.get("location") ===
-                new URL(data.canonicalPath, origin).href &&
-              alias.response.headers.get("x-commish-page-id") === data.pageId
-                ? "correct_temporary_redirect_not_promoted"
-                : "conflict_or_unavailable";
+            try {
+              const alias = await probe(new URL(`/${value.creator}`, origin));
+              aliasRoute =
+                alias.response.status === 307 &&
+                alias.response.headers.get("location") ===
+                  new URL(data.canonicalPath, origin).href &&
+                alias.response.headers.get("x-commish-page-id") === data.pageId
+                  ? "correct_temporary_redirect_not_promoted"
+                  : "conflict_or_unavailable";
+            } catch {
+              aliasRoute = "conflict_or_unavailable";
+            }
           } else aliasRoute = "disabled";
           const publicKey =
             process.env.NEXT_PUBLIC_COMMISH_PUBLISHABLE_KEY ?? "";

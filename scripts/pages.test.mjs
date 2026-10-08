@@ -13,6 +13,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import { runPages } from "../packages/next/bin/pages.mjs";
 const cli = fileURLToPath(
   new URL("../packages/next/bin/init.mjs", import.meta.url),
 );
@@ -181,3 +182,47 @@ test("doctor checks every Pages entry point and the installed peer floors withou
   put("@commish/next", adapter);
   assert.equal(status(), "pages_export_or_peer_not_installed");
 });
+
+
+for (const failedProbe of ["canonical", "alias", "configuration"]) {
+  test(`doctor preserves independent diagnostic results after ${failedProbe} failure`, async t => {
+    const f = fixture(t), cwd = process.cwd();
+    const values = {
+      COMMISH_API_URL: "https://api.example.test/api/v1",
+      COMMISH_SECRET_KEY: "cm_test_sk_fixture_123456789012",
+      COMMISH_PAGES_PROGRAM_ID: "prg_123456789012",
+      COMMISH_PAGES_ORIGIN: "https://brand.example",
+    };
+    const before = Object.fromEntries(Object.keys(values).map(key => [key, process.env[key]]));
+    t.after(() => {
+      process.chdir(cwd);
+      for (const [key, value] of Object.entries(before))
+        value === undefined ? delete process.env[key] : process.env[key] = value;
+    });
+    process.chdir(f.root);
+    Object.assign(process.env, values);
+    if (failedProbe === "configuration") delete process.env.COMMISH_PAGES_ORIGIN;
+    t.mock.method(globalThis, "fetch", async url => {
+      if (String(url).startsWith("https://api.example.test/"))
+        return Response.json({data: {pageId: "cpg_123456789012", origin: values.COMMISH_PAGES_ORIGIN,
+          canonicalPath: "/c/maya", rootAliasEnabled: true, status: "ready", mode: "test"}});
+      if (String(url).endsWith("/c/maya")) {
+        if (failedProbe === "canonical") return new Response("x".repeat(262145));
+        return new Response('data-commish-page="cpg_123456789012"');
+      }
+      if (failedProbe === "alias") throw new Error("timeout");
+      return new Response(null, {status: 307, headers: {
+        location: "https://brand.example/c/maya", "x-commish-page-id": "cpg_123456789012"}});
+    });
+    const result = await runPages(["doctor", "--creator", "maya", "--json"]);
+    assert.equal(result.resolution, "api_resolved_not_browser_verified");
+    assert.equal(result.configuration, failedProbe === "configuration"
+      ? "origin_or_prefix_mismatch" : "matches_resolved_page");
+    if (failedProbe !== "configuration") {
+      assert.equal(result.canonicalRoute, failedProbe === "canonical"
+        ? "missing_conflicting_or_unavailable" : "correct_page_marker");
+      assert.equal(result.aliasRoute, failedProbe === "alias"
+        ? "conflict_or_unavailable" : "correct_temporary_redirect_not_promoted");
+    }
+  });
+}
