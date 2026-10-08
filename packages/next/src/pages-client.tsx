@@ -72,6 +72,8 @@ export function CreatorPageView({
       const response = await fetch(integrationPath, {
         method: "POST",
         credentials: "same-origin",
+        // Let the small click receipt finish after the CTA starts navigation.
+        keepalive: action === "click",
         cache: "no-store",
         headers: { "content-type": "application/json" },
         signal: AbortSignal.timeout(action === "identify" ? 750 : 2500),
