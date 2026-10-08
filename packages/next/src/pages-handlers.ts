@@ -281,6 +281,9 @@ export function createCreatorPageHandlers(
           : undefined;
       const response = json({
         captured,
+        retryable:
+          (consent.attribution && !captured) ||
+          (consent.measurement && measurementReady && !visitToken),
         variation: visit?.variation === "alternate" ? "alternate" : "standard",
         visitToken,
       });
