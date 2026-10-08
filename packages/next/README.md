@@ -1,11 +1,11 @@
 # @commish/next
 
-**Pages preview:** [installation, consent, routing and verification](guides/pages.md); [agent guide](guides/agents.md). Not included in published 0.2.3.
+**Pages 0.3.0 release candidate:** [installation, consent, routing and verification](guides/pages.md); [agent guide](guides/agents.md). Not included in published 0.2.3.
 
 MIT-licensed Next.js App Router integration for permanent Commish TEST and LIVE modes.
 This source checkpoint is verified with Node 24.15.0, Next 16.3.8 and React 19.2.8.
 It does not establish npm availability or acceptance against a hosted Commish API.
-Use the exact paired `0.2.3` SDK/Next packages and keep the consumer lockfile.
+Use the exact paired `0.3.0` SDK/Next packages after approved publication and keep the consumer lockfile.
 Accepted candidate tarballs remain available for prepublication qualification.
 
 The `next` peer range is `>=16.3.8 <17`, which excludes Next.js versions

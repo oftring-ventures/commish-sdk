@@ -2,7 +2,7 @@
 
 Experimental measurement requires same-origin browser Web Locks to establish one visitor identity across concurrent tabs. Unsupported browsers or bounded identity failures receive the standard page without new experimental measurement; consent-authorized attribution and shopping remain available.
 
-This checkout includes an optional Pages module. It is **not included in the published 0.2.3 packages**. Use a reviewed, paired candidate artifact with its checksum and consumer lockfile for evaluation. Package publication and production enablement require separate approval. Do not install an older registry release and expect these exports to exist.
+This checkout targets the optional Pages module in paired version 0.3.0. It is **not included in the published 0.2.3 packages**. Use a reviewed, paired candidate artifact with its checksum and consumer lockfile for evaluation. Package publication and production enablement require separate approval. Do not install an older registry release and expect these exports to exist.
 
 ## Product boundaries
 

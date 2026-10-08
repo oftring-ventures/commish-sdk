@@ -2,7 +2,7 @@
 
 ## Unreleased Pages preview
 
-This checkout adds server-only `commish.pages.resolve({ programId, handle })`. It returns a versioned authorized page description using an application-scoped key. It does not ship in published 0.2.3. Use reviewed paired candidate artifacts for preview testing. See the [Next Pages guide](../next/guides/pages.md) for dynamic rendering, permission, consent and verification; existing integrations remain unchanged.
+This checkout adds server-only `commish.pages.resolve({ programId, handle })`. It returns a versioned authorized page description using an application-scoped key. It does not ship in published 0.2.3. The reviewed source targets 0.3.0. Verify approved paired registry availability or use paired candidate artifacts for testing. See the [Next Pages guide](../next/guides/pages.md) for dynamic rendering, permission, consent and verification; existing integrations remain unchanged.
 
 Commish's Node 24 SDK for permanent TEST and LIVE integrations. Install an exact
 paired release from npm; use accepted candidate tarballs only for prepublication
@@ -37,13 +37,13 @@ completed attributed TEST conversion. Run `commish --help` for available command
 
 ## Install and configure
 
-Install `@commish/sdk@0.2.3` from npm and keep the consumer lockfile. Next.js
-applications can additionally install the matching `@commish/next@0.2.3` package.
+After the approved paired 0.3.0 release, install `@commish/sdk@0.3.0` from npm and keep the consumer lockfile. Next.js
+applications can additionally install the matching `@commish/next@0.3.0` package.
 No Commish checkout or database credentials are required. For prepublication
 qualification, install the accepted candidate tarballs after checking `SHA512SUMS`.
 
 ```sh
-pnpm add @commish/sdk@0.2.3
+pnpm add @commish/sdk@0.3.0
 ```
 
 Obtain a mode-matched secret key scoped to the verified application, a publishable
