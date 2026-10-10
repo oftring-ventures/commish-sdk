@@ -18,6 +18,7 @@ function bootstrap() {
     "# Commish public packages\n\nMIT-licensed source for integrating applications with Commish in TEST and LIVE modes.\n\nThis repository is receiving independently buildable source layers.\nVerify npm availability, provenance and hosted acceptance separately from this source checkout.\n\nSee LICENSE for copyright and permission terms.\n",
   );
   for (const name of [
+    "scripts/catalog.test.mjs",
     "scripts/setup-session.test.mjs",
     "scripts/setup-intent.test.mjs",
     "scripts/setup-resources.test.mjs",

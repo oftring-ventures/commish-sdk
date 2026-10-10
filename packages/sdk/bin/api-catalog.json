@@ -1,0 +1,702 @@
+{
+  "version": 1,
+  "source": "https://commish.sh/openapi.json",
+  "operations": {
+    "getWebhookDelivery": {
+      "method": "GET",
+      "path": "/webhook-deliveries/{deliveryId}",
+      "summary": "Read one workspace delivery's metadata",
+      "parameters": [
+        {
+          "schema": {
+            "type": "string",
+            "pattern": "^evt_[A-Za-z0-9_-]{12,}$"
+          },
+          "required": true,
+          "name": "deliveryId",
+          "in": "path"
+        }
+      ],
+      "body": null,
+      "paginated": false,
+      "workspaceKeyOnly": true
+    },
+    "listWebhookDeliveries": {
+      "method": "GET",
+      "path": "/webhook-deliveries",
+      "summary": "Read workspace delivery metadata",
+      "parameters": [
+        {
+          "schema": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512,
+            "pattern": "^[A-Za-z0-9_-]+$"
+          },
+          "required": false,
+          "name": "cursor",
+          "in": "query"
+        },
+        {
+          "schema": {
+            "type": "string",
+            "maxLength": 255,
+            "pattern": "^whe_[A-Za-z0-9_-]{12,}$"
+          },
+          "required": false,
+          "name": "endpointId",
+          "in": "query"
+        },
+        {
+          "schema": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "processing",
+              "delivered",
+              "failed"
+            ]
+          },
+          "required": false,
+          "name": "status",
+          "in": "query"
+        },
+        {
+          "schema": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 50
+          },
+          "required": false,
+          "name": "limit",
+          "in": "query"
+        }
+      ],
+      "body": null,
+      "paginated": true,
+      "workspaceKeyOnly": true
+    },
+    "getPayout": {
+      "method": "GET",
+      "path": "/payouts/{payoutId}",
+      "summary": "Read related payout status in the key's mode",
+      "parameters": [
+        {
+          "schema": {
+            "type": "string",
+            "pattern": "^pay_[A-Za-z0-9_-]{12,}$"
+          },
+          "required": true,
+          "name": "payoutId",
+          "in": "path"
+        }
+      ],
+      "body": null,
+      "paginated": false,
+      "workspaceKeyOnly": false
+    },
+    "listMemberships": {
+      "method": "GET",
+      "path": "/memberships",
+      "summary": "Page through memberships in the key's mode and immutable accepted offers",
+      "parameters": [
+        {
+          "schema": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512,
+            "pattern": "^[A-Za-z0-9_-]+$"
+          },
+          "required": false,
+          "name": "cursor",
+          "in": "query"
+        },
+        {
+          "schema": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 50
+          },
+          "required": false,
+          "name": "limit",
+          "in": "query"
+        }
+      ],
+      "body": null,
+      "paginated": true,
+      "workspaceKeyOnly": false
+    },
+    "getMembership": {
+      "method": "GET",
+      "path": "/memberships/{membershipId}",
+      "summary": "Read mode-scoped membership status and latest immutable terms acceptance",
+      "parameters": [
+        {
+          "schema": {
+            "type": "string",
+            "pattern": "^mbr_[A-Za-z0-9_-]{12,}$"
+          },
+          "required": true,
+          "name": "membershipId",
+          "in": "path"
+        }
+      ],
+      "body": null,
+      "paginated": false,
+      "workspaceKeyOnly": false
+    },
+    "lookupConversion": {
+      "method": "GET",
+      "path": "/conversions",
+      "summary": "Look up a conversion by the payment's external ID",
+      "parameters": [
+        {
+          "schema": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          },
+          "required": true,
+          "name": "externalId",
+          "in": "query"
+        }
+      ],
+      "body": null,
+      "paginated": false,
+      "workspaceKeyOnly": false
+    },
+    "createConversion": {
+      "method": "POST",
+      "path": "/conversions",
+      "summary": "Record a conversion",
+      "parameters": [
+        {
+          "schema": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          },
+          "required": true,
+          "name": "Idempotency-Key",
+          "in": "header"
+        }
+      ],
+      "body": {
+        "type": "object",
+        "properties": {
+          "externalId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          },
+          "programId": {
+            "type": "string",
+            "pattern": "^prg_[A-Za-z0-9_-]{12,}$"
+          },
+          "customerId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          },
+          "emailHash": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "amount": {
+            "type": "integer",
+            "exclusiveMinimum": 0
+          },
+          "currency": {
+            "type": "string",
+            "enum": [
+              "usd"
+            ]
+          },
+          "attributionToken": {
+            "type": "string",
+            "minLength": 16
+          },
+          "couponCode": {
+            "type": "string",
+            "minLength": 2,
+            "maxLength": 64
+          },
+          "occurredAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "metadata": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string",
+              "maxLength": 500
+            },
+            "default": {}
+          }
+        },
+        "required": [
+          "externalId",
+          "programId",
+          "customerId",
+          "amount",
+          "currency",
+          "occurredAt"
+        ]
+      },
+      "paginated": false,
+      "workspaceKeyOnly": false
+    },
+    "getConversion": {
+      "method": "GET",
+      "path": "/conversions/{conversionId}",
+      "summary": "Read one conversion in the key's mode/application/workspace scope",
+      "parameters": [
+        {
+          "schema": {
+            "type": "string",
+            "pattern": "^cnv_[A-Za-z0-9_-]{12,}$"
+          },
+          "required": true,
+          "name": "conversionId",
+          "in": "path"
+        }
+      ],
+      "body": null,
+      "paginated": false,
+      "workspaceKeyOnly": false
+    },
+    "listConversionRefunds": {
+      "method": "GET",
+      "path": "/conversions/{conversionId}/refunds",
+      "summary": "Page through mode-scoped refunds in creation order",
+      "parameters": [
+        {
+          "schema": {
+            "type": "string",
+            "pattern": "^cnv_[A-Za-z0-9_-]{12,}$"
+          },
+          "required": true,
+          "name": "conversionId",
+          "in": "path"
+        },
+        {
+          "schema": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512,
+            "pattern": "^[A-Za-z0-9_-]+$"
+          },
+          "required": false,
+          "name": "cursor",
+          "in": "query"
+        },
+        {
+          "schema": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 50
+          },
+          "required": false,
+          "name": "limit",
+          "in": "query"
+        }
+      ],
+      "body": null,
+      "paginated": true,
+      "workspaceKeyOnly": false
+    },
+    "listConversionCommissions": {
+      "method": "GET",
+      "path": "/conversions/{conversionId}/commissions",
+      "summary": "Page through mode-scoped earnings and signed adjustments",
+      "parameters": [
+        {
+          "schema": {
+            "type": "string",
+            "pattern": "^cnv_[A-Za-z0-9_-]{12,}$"
+          },
+          "required": true,
+          "name": "conversionId",
+          "in": "path"
+        },
+        {
+          "schema": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512,
+            "pattern": "^[A-Za-z0-9_-]+$"
+          },
+          "required": false,
+          "name": "cursor",
+          "in": "query"
+        },
+        {
+          "schema": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 50
+          },
+          "required": false,
+          "name": "limit",
+          "in": "query"
+        }
+      ],
+      "body": null,
+      "paginated": true,
+      "workspaceKeyOnly": false
+    },
+    "getRefund": {
+      "method": "GET",
+      "path": "/refunds/{refundId}",
+      "summary": "Resolve a webhook subject in the key's scope",
+      "parameters": [
+        {
+          "schema": {
+            "type": "string",
+            "pattern": "^rfd_[A-Za-z0-9_-]{12,}$"
+          },
+          "required": true,
+          "name": "refundId",
+          "in": "path"
+        }
+      ],
+      "body": null,
+      "paginated": false,
+      "workspaceKeyOnly": false
+    },
+    "getCommission": {
+      "method": "GET",
+      "path": "/commissions/{commissionId}",
+      "summary": "Resolve a webhook subject in the key's scope",
+      "parameters": [
+        {
+          "schema": {
+            "type": "string",
+            "pattern": "^cms_[A-Za-z0-9_-]{12,}$"
+          },
+          "required": true,
+          "name": "commissionId",
+          "in": "path"
+        }
+      ],
+      "body": null,
+      "paginated": false,
+      "workspaceKeyOnly": false
+    },
+    "getProgram": {
+      "method": "GET",
+      "path": "/programs/{programId}",
+      "summary": "Read current program configuration and terms in the key's mode",
+      "parameters": [
+        {
+          "schema": {
+            "type": "string",
+            "pattern": "^prg_[A-Za-z0-9_-]{12,}$"
+          },
+          "required": true,
+          "name": "programId",
+          "in": "path"
+        }
+      ],
+      "body": null,
+      "paginated": false,
+      "workspaceKeyOnly": false
+    },
+    "listCustomers": {
+      "method": "GET",
+      "path": "/customers",
+      "summary": "Page through customers in the key's mode in creation order",
+      "parameters": [
+        {
+          "schema": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512,
+            "pattern": "^[A-Za-z0-9_-]+$"
+          },
+          "required": false,
+          "name": "cursor",
+          "in": "query"
+        },
+        {
+          "schema": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 50
+          },
+          "required": false,
+          "name": "limit",
+          "in": "query"
+        },
+        {
+          "schema": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "required": false,
+          "name": "createdAfter",
+          "in": "query"
+        },
+        {
+          "schema": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "required": false,
+          "name": "createdBefore",
+          "in": "query"
+        }
+      ],
+      "body": null,
+      "paginated": true,
+      "workspaceKeyOnly": false
+    },
+    "getCustomer": {
+      "method": "GET",
+      "path": "/customers/{customerId}",
+      "summary": "Read one customer in the key's workspace and mode",
+      "parameters": [
+        {
+          "schema": {
+            "type": "string",
+            "pattern": "^cst_[A-Za-z0-9_-]{12,}$"
+          },
+          "required": true,
+          "name": "customerId",
+          "in": "path"
+        }
+      ],
+      "body": null,
+      "paginated": false,
+      "workspaceKeyOnly": false
+    },
+    "identifyCustomer": {
+      "method": "POST",
+      "path": "/customers/identify",
+      "summary": "Identify a customer from pseudonymous aliases",
+      "parameters": [
+        {
+          "schema": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          },
+          "required": true,
+          "name": "Idempotency-Key",
+          "in": "header"
+        }
+      ],
+      "body": {
+        "type": "object",
+        "properties": {
+          "externalId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255,
+            "pattern": "^[A-Za-z0-9._:-]{1,255}$"
+          },
+          "email": {
+            "type": "string",
+            "maxLength": 320,
+            "format": "email"
+          },
+          "stripe": {
+            "type": "object",
+            "properties": {
+              "accountId": {
+                "type": "string",
+                "maxLength": 255,
+                "pattern": "^acct_[A-Za-z0-9_]+$"
+              },
+              "customerId": {
+                "type": "string",
+                "maxLength": 255,
+                "pattern": "^cus_[A-Za-z0-9_]+$"
+              },
+              "paymentIntentId": {
+                "type": "string",
+                "maxLength": 255,
+                "pattern": "^pi_[A-Za-z0-9_]+$"
+              },
+              "chargeId": {
+                "type": "string",
+                "maxLength": 255,
+                "pattern": "^ch_[A-Za-z0-9_]+$"
+              }
+            },
+            "required": [
+              "accountId"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      },
+      "paginated": false,
+      "workspaceKeyOnly": false
+    },
+    "createRefund": {
+      "method": "POST",
+      "path": "/refunds",
+      "summary": "Record a full or partial refund",
+      "parameters": [
+        {
+          "schema": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          },
+          "required": true,
+          "name": "Idempotency-Key",
+          "in": "header"
+        }
+      ],
+      "body": {
+        "type": "object",
+        "properties": {
+          "externalId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          },
+          "conversionId": {
+            "type": "string",
+            "pattern": "^cnv_[A-Za-z0-9_-]{12,}$"
+          },
+          "programId": {
+            "type": "string",
+            "pattern": "^prg_[A-Za-z0-9_-]{12,}$"
+          },
+          "amount": {
+            "type": "integer",
+            "exclusiveMinimum": 0
+          },
+          "currency": {
+            "type": "string",
+            "enum": [
+              "usd"
+            ]
+          },
+          "occurredAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "reason": {
+            "type": "string",
+            "maxLength": 500
+          }
+        },
+        "required": [
+          "externalId",
+          "conversionId",
+          "amount",
+          "currency",
+          "occurredAt"
+        ]
+      },
+      "paginated": false,
+      "workspaceKeyOnly": false
+    },
+    "createInvitation": {
+      "method": "POST",
+      "path": "/programs/{programId}/invitations",
+      "summary": "Invite a creator to a program",
+      "parameters": [
+        {
+          "schema": {
+            "type": "string",
+            "pattern": "^prg_[A-Za-z0-9_-]{12,}$"
+          },
+          "required": true,
+          "name": "programId",
+          "in": "path"
+        },
+        {
+          "schema": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          },
+          "required": true,
+          "name": "Idempotency-Key",
+          "in": "header"
+        }
+      ],
+      "body": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "format": "email"
+          },
+          "terms": {
+            "oneOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "enum": [
+                      "percentage"
+                    ]
+                  },
+                  "basisPoints": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 10000
+                  }
+                },
+                "required": [
+                  "type",
+                  "basisPoints"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "enum": [
+                      "fixed"
+                    ]
+                  },
+                  "amount": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0
+                  },
+                  "currency": {
+                    "type": "string",
+                    "enum": [
+                      "usd"
+                    ]
+                  }
+                },
+                "required": [
+                  "type",
+                  "amount",
+                  "currency"
+                ],
+                "additionalProperties": false
+              }
+            ]
+          },
+          "note": {
+            "type": "string",
+            "maxLength": 2000
+          }
+        },
+        "required": [
+          "email"
+        ]
+      },
+      "paginated": false,
+      "workspaceKeyOnly": false
+    }
+  }
+}

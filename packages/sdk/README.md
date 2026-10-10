@@ -490,3 +490,10 @@ No replay or application-scoped delivery capability is added.
 Beta.9 provides MIT-licensed public source and reserved mirror metadata. Runtime
 behavior is unchanged. Preserve prior candidates; publication and hosted acceptance
 remain separately recorded.
+
+## Integration operation catalog
+
+The package includes `bin/api-catalog.json`, a reviewed snapshot of the public
+OpenAPI operations with self-contained input schemas. It defines fixed methods
+and relative paths and contains no credentials. New executable operations must
+use this allowlist and retain the API's existing authorization boundaries.

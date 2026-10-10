@@ -25,6 +25,7 @@ import {
 } from "./verify-next-browser-consumer.mjs";
 
 const automation = [
+  "scripts/catalog.test.mjs",
   "scripts/setup-session.test.mjs",
   "scripts/setup-intent.test.mjs",
     "scripts/setup-resources.test.mjs",
@@ -132,6 +133,7 @@ export function inspect(files) {
     "packages/next/guides/agents.md",
     "packages/next/bin/init.mjs",
     "packages/sdk/bin/init.mjs",
+    "packages/sdk/bin/api-catalog.json",
     "packages/sdk/bin/setup-session.mjs",
     "packages/sdk/bin/setup-resources.mjs",
     "packages/sdk/bin/setup-files.mjs",
@@ -301,7 +303,7 @@ export function archiveFiles(compressed) {
       size = Number.parseInt(field(124, 12).trim(), 8);
     const mode = Number.parseInt(field(100, 8).trim(), 8);
     assert(
-      /^(package\/(?:dist\/)?[a-zA-Z0-9_.-]+|package\/guides\/(?:pages|agents)\.md|package\/bin\/(?:init|pages|setup-session|setup-authorization|setup-resources|setup-files|setup-config|setup-progress|setup-secrets|setup-provisioning|setup-arguments|setup-workflow|setup-command|setup-plan|setup-intent)\.mjs)$/.test(name) &&
+      /^(package\/(?:dist\/)?[a-zA-Z0-9_.-]+|package\/guides\/(?:pages|agents)\.md|package\/bin\/(?:init|pages|setup-session|setup-authorization|setup-resources|setup-files|setup-config|setup-progress|setup-secrets|setup-provisioning|setup-arguments|setup-workflow|setup-command|setup-plan|setup-intent)\.mjs|package\/bin\/(?:api-catalog)\.json)$/.test(name) &&
         !files.has(name),
       "unsafe archive entry",
     );
