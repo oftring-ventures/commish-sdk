@@ -52,7 +52,7 @@ export function publicPackageManifests(files) {
       : ["browser.ts", "index.ts", "metadata.ts", "capture.ts", "provider.tsx"])
       assert(read(`${root}/src/${name}`).length > 0, "empty release source");
     if (pkg === "sdk") {
-      for (const name of ["api-command", "cli-http", "test-command", "setup-session", "setup-authorization", "setup-resources", "setup-files", "setup-config", "setup-progress", "setup-secrets", "setup-provisioning", "setup-arguments", "setup-workflow", "setup-command", "setup-plan", "setup-intent"]) {
+      for (const name of ["api-command", "auth-command", "cli-http", "management-client", "test-command", "setup-session", "setup-authorization", "setup-resources", "setup-files", "setup-config", "setup-progress", "setup-secrets", "setup-provisioning", "setup-arguments", "setup-workflow", "setup-command", "setup-plan", "setup-intent"]) {
         assert(read(`${root}/bin/${name}.mjs`).length > 0, "missing CLI setup module");
         assert.equal(files.get(`${root}/bin/${name}.mjs`).mode, "100644");
       }

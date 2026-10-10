@@ -21,6 +21,7 @@ function bootstrap() {
     "scripts/catalog.test.mjs",
     "scripts/setup-session.test.mjs",
   "scripts/api-command.test.mjs",
+  "scripts/headless-command.test.mjs",
     "scripts/setup-intent.test.mjs",
     "scripts/setup-resources.test.mjs",
     "scripts/setup-files.test.mjs",
