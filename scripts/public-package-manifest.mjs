@@ -57,7 +57,7 @@ export function publicPackageManifests(files) {
         assert.equal(files.get(`${root}/bin/${name}.mjs`).mode, "100644");
       }
     }
-    if (pkg === "sdk") for (const name of ["api-catalog"]) {
+    if (pkg === "sdk") for (const name of ["api-catalog", "management-catalog"]) {
       assert(read(`${root}/bin/${name}.json`).length > 0, "missing CLI catalog");
       assert.equal(files.get(`${root}/bin/${name}.json`).mode, "100644");
     }
