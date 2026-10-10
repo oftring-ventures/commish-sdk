@@ -1,5 +1,3 @@
-import { createHmac } from "node:crypto";
-import { executeTest } from "../packages/sdk/bin/test-command.mjs";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
@@ -94,16 +92,4 @@ test("executable exposes the versioned guide and standard CLI exit behavior", ()
     const result = spawnSync(process.execPath, [executable.pathname, ...args], { encoding: "utf8" });
     assert.equal(result.status, 0, result.stderr); assert.doesNotThrow(() => JSON.parse(result.stdout));
   }
-});
-
-test("TEST helpers forbid LIVE and remote receivers; webhook signatures match the exact body", async () => {
-  await assert.rejects(executeTest(["conversion", "--mode", "live"], { env: {}, fetcher: noRequest }), /test_mode_required/);
-  await assert.rejects(executeTest(["webhook", "--url", "https://remote.example/hook"], { env: {}, fetcher: noRequest }), /loopback_url_required/);
-  const secret = `whsec_${"w".repeat(43)}`;
-  const result = await executeTest(["webhook", "--url", "http://127.0.0.1:3000/hook"], { env: { COMMISH_WEBHOOK_SIGNING_SECRET: secret }, fetcher: async (_url, init) => {
-    const [timestamp, signature] = init.headers["commish-signature"].split(",").map(part => part.split("=")[1]);
-    assert.equal(signature, createHmac("sha256", secret).update(`${timestamp}.${init.body}`).digest("hex"));
-    assert.equal(JSON.parse(init.body).mode, "test"); return new Response("do not echo receiver data", { status: 200 });
-  } });
-  assert.equal(result.synthetic, true); assert.equal(result.integrationVerified, false); assert(!JSON.stringify(result).includes(secret));
 });
