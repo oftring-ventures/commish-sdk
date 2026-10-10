@@ -84,6 +84,13 @@ export async function verifySetupCli(executable) {
   });
   try {
     await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
+    // The installed package must contain every imported runtime module and both
+    // reviewed catalogs. These operations work without credentials or a server.
+    for (const args of [["api", "list"], ["test", "--help"], ["agent"]]) {
+      await new Promise((resolve, reject) => execFile(executable, [...args, "--json"], { cwd: root, env: { PATH: process.env.PATH }, timeout: 10000 }, (error, stdout, stderr) => {
+        try { assert.equal(error, null); assert.equal(stderr, ""); assert.doesNotThrow(() => JSON.parse(stdout)); resolve(); } catch (failure) { reject(failure); }
+      }));
+    }
     assert.equal((await run(["--help"])).result.status, "help");
     assert.equal((await run([])).code, 2); assert.equal(requests.length, 0); assert.deepEqual(readdirSync(root), []);
     const config = { version: 1, workspace: { kind: "new", name: "Guestbook", slug: "guestbook" }, application: { name: "Guestbook" },

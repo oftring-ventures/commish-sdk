@@ -491,9 +491,58 @@ Beta.9 provides MIT-licensed public source and reserved mirror metadata. Runtime
 behavior is unchanged. Preserve prior candidates; publication and hosted acceptance
 remain separately recorded.
 
-## Integration operation catalog
+## Headless operations and agent use
 
-The package includes `bin/api-catalog.json`, a reviewed snapshot of the public
-OpenAPI operations with self-contained input schemas. It defines fixed methods
-and relative paths and contains no credentials. New executable operations must
-use this allowlist and retain the API's existing authorization boundaries.
+`commish agent --json` is the versioned workflow guide. Discovery works offline:
+
+```sh
+commish api list --json
+commish api schema createConversion --json
+```
+
+Integration commands use `COMMISH_SECRET_KEY` from your environment, default to
+TEST, and require `--mode live` or `COMMISH_MODE=live` for LIVE. Never put keys on
+the command line. Examples:
+
+```sh
+commish customers list --limit 50 --json
+commish conversions lookup merchant-order-123 --json
+commish conversions commissions cnv_123456789012 --all --json
+commish api getProgram --param programId=prg_123456789012 --json
+commish conversions create --body-file conversion.json --idempotency-key order-123 --json
+```
+
+`api <operationId>` is a fixed catalog of documented public operations, with
+`--param name=value` and `--query name=value`. It does not forward arbitrary URLs
+or RPCs. Resource commands cover programs, customers, memberships, conversions,
+refunds, commissions, payouts, invitations and webhook deliveries. Browser
+attribution capture uses the browser SDK; Pages continue through the Pages SDK.
+Existing integration-key boundaries still apply: customer reads are workspace
+and mode scoped; webhook metadata requires a workspace key.
+
+Successful commands emit one JSON object on stdout. Errors emit a sanitized
+JSON object on stderr with a stable code and, when available, HTTP status and
+request ID. No mutation retries automatically. Retain each write's exact input
+and idempotency identity when resolving uncertainty. `--all` follows at most
+100 pages; `--max-pages` can lower that bound. Check `complete` and retain the
+returned cursor before considering a list exhaustive. A failed later page
+produces an error rather than a partial success receipt.
+
+### Test locally
+
+```sh
+commish test fixture --program prg_123456789012 --json
+commish test conversion --body-file reviewed-test-conversion.json --idempotency-key test-order-1 --json
+commish test webhook --url http://127.0.0.1:3000/api/commish/webhook --json
+```
+
+The fixture command only prints a template under `data`; save and review that
+object before submitting it. Add real TEST referral attribution to exercise
+commission creation. The conversion command uses the normal manual TEST API.
+Never submit a Stripe purchase through both its Stripe integration and the
+manual API. Test Stripe purchases through the normal Stripe TEST integration.
+
+The webhook command signs a clearly synthetic TEST event with
+`COMMISH_WEBHOOK_SIGNING_SECRET` and sends it only to a literal loopback address.
+It creates no stored conversion or delivery and proves only receiver HTTP
+acceptance. Remote forwarding and MCP are not included.
