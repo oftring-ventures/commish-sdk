@@ -1,0 +1,976 @@
+{
+  "version": 1,
+  "protocol": "commish-management-v1",
+  "credential": "delegated_management_grant",
+  "authorization": {
+    "browserConsent": true,
+    "integrationKeysAccepted": false,
+    "automationReadOnly": true,
+    "writeMaximumSeconds": 600,
+    "sessionReadMaximumSeconds": 3600,
+    "automationMaximumSeconds": 2592000,
+    "tokenStorage": "hash_only"
+  },
+  "grantInput": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "challengeHash": {
+        "type": "string",
+        "pattern": "^[a-f0-9]{64}$"
+      },
+      "workspaceId": {
+        "type": "string",
+        "pattern": "^wrk_[A-Za-z0-9_-]{12,}$"
+      },
+      "applicationId": {
+        "anyOf": [
+          {
+            "type": "string",
+            "pattern": "^app_[A-Za-z0-9_-]{12,}$"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "mode": {
+        "type": "string",
+        "enum": [
+          "test",
+          "live"
+        ]
+      },
+      "kind": {
+        "type": "string",
+        "enum": [
+          "session",
+          "automation"
+        ]
+      },
+      "scopes": {
+        "minItems": 1,
+        "maxItems": 15,
+        "type": "array",
+        "items": {
+          "type": "string",
+          "enum": [
+            "resources.read",
+            "diagnostics.read",
+            "credentials.read",
+            "credentials.write",
+            "destinations.read",
+            "destinations.write",
+            "programs.read",
+            "programs.write",
+            "terms.read",
+            "terms.write",
+            "invitations.read",
+            "invitations.write",
+            "webhooks.read",
+            "webhooks.write",
+            "webhooks.replay"
+          ]
+        }
+      },
+      "expiresIn": {
+        "type": "integer",
+        "minimum": 60,
+        "maximum": 2592000
+      }
+    },
+    "required": [
+      "challengeHash",
+      "workspaceId",
+      "applicationId",
+      "mode",
+      "kind",
+      "scopes",
+      "expiresIn"
+    ],
+    "additionalProperties": false
+  },
+  "operations": {
+    "workspace.get": {
+      "method": "GET",
+      "path": "/api/management/v1/workspace.get",
+      "scope": "resources.read",
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      },
+      "response": "application/json"
+    },
+    "applications.list": {
+      "method": "GET",
+      "path": "/api/management/v1/applications.list",
+      "scope": "resources.read",
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "limit": {
+            "default": 50,
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "cursor": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{1,255}$"
+          },
+          "applicationId": {
+            "type": "string",
+            "pattern": "^app_[A-Za-z0-9_-]{12,}$"
+          }
+        },
+        "additionalProperties": false
+      },
+      "response": "application/json"
+    },
+    "programs.list": {
+      "method": "GET",
+      "path": "/api/management/v1/programs.list",
+      "scope": "programs.read",
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "limit": {
+            "default": 50,
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "cursor": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{1,255}$"
+          },
+          "applicationId": {
+            "type": "string",
+            "pattern": "^app_[A-Za-z0-9_-]{12,}$"
+          }
+        },
+        "additionalProperties": false
+      },
+      "response": "application/json"
+    },
+    "programs.activate": {
+      "method": "POST",
+      "path": "/api/management/v1/programs.activate",
+      "scope": "programs.write",
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "termVersion": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000000
+          },
+          "expectedCurrentTermVersion": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 1000000
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "expectedCurrentStatus": {
+            "type": "string",
+            "enum": [
+              "draft",
+              "active",
+              "paused"
+            ]
+          },
+          "programId": {
+            "type": "string",
+            "pattern": "^prg_[A-Za-z0-9_-]{12,}$"
+          }
+        },
+        "required": [
+          "termVersion",
+          "expectedCurrentTermVersion",
+          "expectedCurrentStatus",
+          "programId"
+        ],
+        "additionalProperties": false
+      },
+      "response": "application/json"
+    },
+    "terms.list": {
+      "method": "GET",
+      "path": "/api/management/v1/terms.list",
+      "scope": "terms.read",
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "limit": {
+            "default": 50,
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "cursor": {
+            "type": "string",
+            "pattern": "^[1-9][0-9]{0,6}$"
+          },
+          "programId": {
+            "type": "string",
+            "pattern": "^prg_[A-Za-z0-9_-]{12,}$"
+          }
+        },
+        "required": [
+          "programId"
+        ],
+        "additionalProperties": false
+      },
+      "response": "application/json"
+    },
+    "terms.create": {
+      "method": "POST",
+      "path": "/api/management/v1/terms.create",
+      "scope": "terms.write",
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "programId": {
+            "type": "string",
+            "pattern": "^prg_[A-Za-z0-9_-]{12,}$"
+          },
+          "operationKey": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "terms": {
+            "type": "object",
+            "properties": {
+              "commission": {
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "type": {
+                        "type": "string",
+                        "const": "percentage"
+                      },
+                      "basisPoints": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 10000
+                      }
+                    },
+                    "required": [
+                      "type",
+                      "basisPoints"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "type": {
+                        "type": "string",
+                        "const": "fixed"
+                      },
+                      "amount": {
+                        "type": "integer",
+                        "exclusiveMinimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      "currency": {
+                        "type": "string",
+                        "const": "usd"
+                      }
+                    },
+                    "required": [
+                      "type",
+                      "amount",
+                      "currency"
+                    ],
+                    "additionalProperties": false
+                  }
+                ]
+              },
+              "recurrence": {
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "const": "first_payment"
+                      }
+                    },
+                    "required": [
+                      "kind"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "const": "fixed_months"
+                      },
+                      "months": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 120
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "months"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "const": "lifetime"
+                      }
+                    },
+                    "required": [
+                      "kind"
+                    ],
+                    "additionalProperties": false
+                  }
+                ]
+              },
+              "perSaleCap": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "amount": {
+                        "type": "integer",
+                        "exclusiveMinimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      "currency": {
+                        "type": "string",
+                        "const": "usd"
+                      }
+                    },
+                    "required": [
+                      "amount",
+                      "currency"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "returnWindowDays": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 180
+              },
+              "disclosureText": {
+                "type": "string",
+                "maxLength": 2000
+              },
+              "prohibitedClaims": {
+                "maxItems": 20,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 280
+                }
+              },
+              "effectiveAt": {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+              }
+            },
+            "required": [
+              "commission",
+              "recurrence",
+              "perSaleCap",
+              "returnWindowDays",
+              "disclosureText",
+              "prohibitedClaims",
+              "effectiveAt"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "programId",
+          "operationKey",
+          "terms"
+        ],
+        "additionalProperties": false
+      },
+      "response": "application/json"
+    },
+    "credentials.list": {
+      "method": "GET",
+      "path": "/api/management/v1/credentials.list",
+      "scope": "credentials.read",
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "limit": {
+            "default": 50,
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "cursor": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{1,255}$"
+          },
+          "applicationId": {
+            "type": "string",
+            "pattern": "^app_[A-Za-z0-9_-]{12,}$"
+          }
+        },
+        "additionalProperties": false
+      },
+      "response": "application/json"
+    },
+    "credentials.create": {
+      "method": "POST",
+      "path": "/api/management/v1/credentials.create",
+      "scope": "credentials.write",
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "applicationId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^app_[A-Za-z0-9_-]{12,}$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "label": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "publishableKey": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^cm_(test|live)_pk_[A-Za-z0-9_-]{12,}$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "secretHash": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "idempotencyKey": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          }
+        },
+        "required": [
+          "applicationId",
+          "label",
+          "publishableKey",
+          "secretHash",
+          "idempotencyKey"
+        ],
+        "additionalProperties": false
+      },
+      "response": "application/json"
+    },
+    "credentials.rotate": {
+      "method": "POST",
+      "path": "/api/management/v1/credentials.rotate",
+      "scope": "credentials.write",
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "keyId": {
+            "type": "string",
+            "pattern": "^key_[A-Za-z0-9_-]{12,}$"
+          },
+          "label": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "publishableKey": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^cm_(test|live)_pk_[A-Za-z0-9_-]{12,}$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "secretHash": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "idempotencyKey": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          }
+        },
+        "required": [
+          "keyId",
+          "label",
+          "publishableKey",
+          "secretHash",
+          "idempotencyKey"
+        ],
+        "additionalProperties": false
+      },
+      "response": "application/json"
+    },
+    "credentials.revoke": {
+      "method": "POST",
+      "path": "/api/management/v1/credentials.revoke",
+      "scope": "credentials.write",
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "keyId": {
+            "type": "string",
+            "pattern": "^key_[A-Za-z0-9_-]{12,}$"
+          }
+        },
+        "required": [
+          "keyId"
+        ],
+        "additionalProperties": false
+      },
+      "response": "application/json"
+    },
+    "destinations.list": {
+      "method": "GET",
+      "path": "/api/management/v1/destinations.list",
+      "scope": "destinations.read",
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "limit": {
+            "default": 50,
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "cursor": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{1,255}$"
+          },
+          "applicationId": {
+            "type": "string",
+            "pattern": "^app_[A-Za-z0-9_-]{12,}$"
+          }
+        },
+        "additionalProperties": false
+      },
+      "response": "application/json"
+    },
+    "destinations.create": {
+      "method": "POST",
+      "path": "/api/management/v1/destinations.create",
+      "scope": "destinations.write",
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "origin": {
+            "type": "string"
+          },
+          "applicationId": {
+            "type": "string",
+            "pattern": "^app_[A-Za-z0-9_-]{12,}$"
+          }
+        },
+        "required": [
+          "origin",
+          "applicationId"
+        ],
+        "additionalProperties": false
+      },
+      "response": "application/json"
+    },
+    "destinations.verify": {
+      "method": "POST",
+      "path": "/api/management/v1/destinations.verify",
+      "scope": "destinations.write",
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "origin": {
+            "type": "string"
+          },
+          "applicationId": {
+            "type": "string",
+            "pattern": "^app_[A-Za-z0-9_-]{12,}$"
+          }
+        },
+        "required": [
+          "origin",
+          "applicationId"
+        ],
+        "additionalProperties": false
+      },
+      "response": "application/json"
+    },
+    "invitations.list": {
+      "method": "GET",
+      "path": "/api/management/v1/invitations.list",
+      "scope": "invitations.read",
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "limit": {
+            "default": 50,
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "cursor": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{1,255}$"
+          },
+          "applicationId": {
+            "type": "string",
+            "pattern": "^app_[A-Za-z0-9_-]{12,}$"
+          }
+        },
+        "additionalProperties": false
+      },
+      "response": "application/json"
+    },
+    "invitations.create": {
+      "method": "POST",
+      "path": "/api/management/v1/invitations.create",
+      "scope": "invitations.write",
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "programId": {
+            "type": "string",
+            "pattern": "^prg_[A-Za-z0-9_-]{12,}$"
+          },
+          "email": {
+            "type": "string",
+            "format": "email",
+            "pattern": "^(?:[A-Za-z0-9_'+\\-]+\\.)*[A-Za-z0-9_'+\\-]*[A-Za-z0-9_+-]@(?:[A-Za-z0-9][A-Za-z0-9\\-]*\\.)+[A-Za-z]{2,}$"
+          },
+          "note": {
+            "type": "string",
+            "maxLength": 2000
+          },
+          "expectedTermVersion": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000000
+          },
+          "idempotencyKey": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          }
+        },
+        "required": [
+          "programId",
+          "email",
+          "expectedTermVersion",
+          "idempotencyKey"
+        ],
+        "additionalProperties": false
+      },
+      "response": "application/json"
+    },
+    "invitations.revoke": {
+      "method": "POST",
+      "path": "/api/management/v1/invitations.revoke",
+      "scope": "invitations.write",
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "invitationId": {
+            "type": "string",
+            "pattern": "^inv_[A-Za-z0-9_-]{12,}$"
+          }
+        },
+        "required": [
+          "invitationId"
+        ],
+        "additionalProperties": false
+      },
+      "response": "application/json"
+    },
+    "webhooks.list": {
+      "method": "GET",
+      "path": "/api/management/v1/webhooks.list",
+      "scope": "webhooks.read",
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "limit": {
+            "default": 50,
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "cursor": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{1,255}$"
+          }
+        },
+        "additionalProperties": false
+      },
+      "response": "application/json"
+    },
+    "webhooks.deliveries": {
+      "method": "GET",
+      "path": "/api/management/v1/webhooks.deliveries",
+      "scope": "webhooks.read",
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "limit": {
+            "default": 50,
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "cursor": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{1,255}$"
+          },
+          "endpointId": {
+            "type": "string",
+            "maxLength": 255,
+            "pattern": "^whe_[A-Za-z0-9_-]{12,}$"
+          }
+        },
+        "additionalProperties": false
+      },
+      "response": "application/json"
+    },
+    "webhooks.create": {
+      "method": "POST",
+      "path": "/api/management/v1/webhooks.create",
+      "scope": "webhooks.write",
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "maxLength": 2048,
+            "format": "uri"
+          },
+          "eventTypes": {
+            "minItems": 1,
+            "maxItems": 17,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "invitation.created",
+                "invitation.accepted",
+                "membership.activated",
+                "conversion.created",
+                "conversion.refunded",
+                "commission.pending",
+                "commission.unfunded",
+                "commission.payable",
+                "commission.reversed",
+                "commission.disputed",
+                "sale.dispute_opened",
+                "sale.dispute_recovery_required",
+                "funding.failed",
+                "payout.processing",
+                "payout.paid",
+                "payout.failed",
+                "payout.canceled"
+              ]
+            }
+          },
+          "idempotencyKey": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          }
+        },
+        "required": [
+          "url",
+          "eventTypes",
+          "idempotencyKey"
+        ],
+        "additionalProperties": false
+      },
+      "response": "application/json"
+    },
+    "webhooks.rotate": {
+      "method": "POST",
+      "path": "/api/management/v1/webhooks.rotate",
+      "scope": "webhooks.write",
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "endpointId": {
+            "type": "string",
+            "maxLength": 255,
+            "pattern": "^whe_[A-Za-z0-9_-]{12,}$"
+          },
+          "idempotencyKey": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          }
+        },
+        "required": [
+          "endpointId",
+          "idempotencyKey"
+        ],
+        "additionalProperties": false
+      },
+      "response": "application/json"
+    },
+    "webhooks.disable": {
+      "method": "POST",
+      "path": "/api/management/v1/webhooks.disable",
+      "scope": "webhooks.write",
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "endpointId": {
+            "type": "string",
+            "maxLength": 255,
+            "pattern": "^whe_[A-Za-z0-9_-]{12,}$"
+          }
+        },
+        "required": [
+          "endpointId"
+        ],
+        "additionalProperties": false
+      },
+      "response": "application/json"
+    },
+    "webhooks.replay": {
+      "method": "POST",
+      "path": "/api/management/v1/webhooks.replay",
+      "scope": "webhooks.replay",
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "deliveryId": {
+            "type": "string",
+            "pattern": "^evt_[A-Za-z0-9_-]{12,}$"
+          },
+          "idempotencyKey": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          }
+        },
+        "required": [
+          "deliveryId",
+          "idempotencyKey"
+        ],
+        "additionalProperties": false
+      },
+      "response": "application/json"
+    },
+    "webhooks.secret": {
+      "method": "POST",
+      "path": "/api/management/v1/webhooks.secret",
+      "scope": "webhooks.write",
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "endpointId": {
+            "type": "string",
+            "maxLength": 255,
+            "pattern": "^whe_[A-Za-z0-9_-]{12,}$"
+          },
+          "idempotencyKey": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          }
+        },
+        "required": [
+          "endpointId",
+          "idempotencyKey"
+        ],
+        "additionalProperties": false
+      },
+      "response": "application/octet-stream"
+    },
+    "diagnostics.get": {
+      "method": "GET",
+      "path": "/api/management/v1/diagnostics.get",
+      "scope": "diagnostics.read",
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "programId": {
+            "type": "string",
+            "pattern": "^prg_[A-Za-z0-9_-]{12,}$"
+          }
+        },
+        "required": [
+          "programId"
+        ],
+        "additionalProperties": false
+      },
+      "response": "application/json"
+    }
+  },
+  "limitations": [
+    "webhook_management_requires_workspace_scope",
+    "participants_accept_hosted_terms",
+    "stripe_connection_requires_provider_consent",
+    "diagnostics_are_current_evidence_not_financial_authority",
+    "no_arbitrary_rpc_or_sql"
+  ]
+}

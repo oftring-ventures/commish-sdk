@@ -138,6 +138,7 @@ export function inspect(files) {
     "packages/sdk/bin/cli-http.mjs",
     "packages/sdk/bin/test-command.mjs",
     "packages/sdk/bin/api-catalog.json",
+    "packages/sdk/bin/management-catalog.json",
     "packages/sdk/bin/setup-session.mjs",
     "packages/sdk/bin/setup-resources.mjs",
     "packages/sdk/bin/setup-files.mjs",
@@ -307,7 +308,7 @@ export function archiveFiles(compressed) {
       size = Number.parseInt(field(124, 12).trim(), 8);
     const mode = Number.parseInt(field(100, 8).trim(), 8);
     assert(
-      /^(package\/(?:dist\/)?[a-zA-Z0-9_.-]+|package\/guides\/(?:pages|agents)\.md|package\/bin\/(?:init|pages|setup-session|setup-authorization|setup-resources|setup-files|setup-config|setup-progress|setup-secrets|setup-provisioning|setup-arguments|setup-workflow|setup-command|setup-plan|setup-intent|api-command|cli-http|test-command)\.mjs|package\/bin\/(?:api-catalog)\.json)$/.test(name) &&
+      /^(package\/(?:dist\/)?[a-zA-Z0-9_.-]+|package\/guides\/(?:pages|agents)\.md|package\/bin\/(?:init|pages|setup-session|setup-authorization|setup-resources|setup-files|setup-config|setup-progress|setup-secrets|setup-provisioning|setup-arguments|setup-workflow|setup-command|setup-plan|setup-intent|api-command|cli-http|test-command)\.mjs|package\/bin\/(?:api-catalog|management-catalog)\.json)$/.test(name) &&
         !files.has(name),
       "unsafe archive entry",
     );
