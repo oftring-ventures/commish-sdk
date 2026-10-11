@@ -86,7 +86,7 @@ export async function verifySetupCli(executable) {
     await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
     // The installed package must contain every imported runtime module and both
     // reviewed catalogs. These operations work without credentials or a server.
-    for (const args of [["api", "list"], ["test", "--help"], ["agent"]]) {
+    for (const args of [["api", "list"], ["manage", "list"], ["manage", "schema", "terms.create"], ["auth", "--help"], ["keys", "--help"], ["doctor", "--help"], ["test", "--help"], ["agent"]]) {
       await new Promise((resolve, reject) => execFile(executable, [...args, "--json"], { cwd: root, env: { PATH: process.env.PATH }, timeout: 10000 }, (error, stdout, stderr) => {
         try { assert.equal(error, null); assert.equal(stderr, ""); assert.doesNotThrow(() => JSON.parse(stdout)); resolve(); } catch (failure) { reject(failure); }
       }));

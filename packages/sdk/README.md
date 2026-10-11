@@ -498,6 +498,8 @@ remain separately recorded.
 ```sh
 commish api list --json
 commish api schema createConversion --json
+commish manage list --json
+commish manage schema programs.activate --json
 ```
 
 Integration commands use `COMMISH_SECRET_KEY` from your environment and default to
@@ -559,6 +561,9 @@ revocation. CI may receive `COMMISH_MANAGEMENT_TOKEN` through its secret manager
 instead of a local file; supplying both is rejected.
 
 ```sh
+commish manage programs.list --auth-file .commish/management/REQUEST/authorization.json --json
+commish manage terms.list --program prg_123456789012 --auth-file .commish/management/REQUEST/authorization.json --json
+commish doctor --program prg_123456789012 --auth-file .commish/management/REQUEST/authorization.json --json
 commish auth revoke --auth-file .commish/management/REQUEST/authorization.json --json
 ```
 
@@ -567,7 +572,52 @@ servers may be selected with `--management-url` or `COMMISH_MANAGEMENT_URL`;
 they receive the credential, so use only an endpoint you trust. The CLI pins a
 stored authorization to its original endpoint and refuses redirects.
 
-### Test locally
+### Explicit management writes
+
+Request only the write scopes needed for the task with a fresh interactive
+`auth login`. `manage <operation> --body-file reviewed.json` exposes all supported
+writes; inspect its schema first. Terms require explicit commission, recurrence,
+cap, return window, prohibited claims, disclosure and effective time. Activation
+requires the selected term version and expected current status/term version.
+Read state first, review the business choices, then submit them unchanged.
+
+`keys create` and `keys rotate` generate and save integration key material
+privately before the first request. They return a credential-file path, never
+the secret. Keep the same operation identity on retries:
+
+```sh
+commish keys create --application app_123456789012 --label 'Merchant server' \
+  --idempotency-key merchant-key-1 --auth-file .commish/management/REQUEST/authorization.json --json
+commish keys rotate --application app_123456789012 --key key_123456789012 \
+  --label 'Merchant server' --idempotency-key merchant-rotation-1 \
+  --auth-file .commish/management/REQUEST/authorization.json --json
+```
+
+Creation needs `credentials.write`; rotation also needs `credentials.read` to
+verify the original key's application. Workspace keys require
+`--workspace-scope`. Use `manage credentials.revoke` to revoke a key.
+
+Destination registration returns ownership proof; only successful proof
+verification marks it verified. Destinations belong to the application across
+TEST/LIVE. Webhook management requires a workspace grant. Creation/rotation
+return metadata; `manage webhooks.secret --body-file receipt.json --output-file
+.commish/webhook.env` downloads signing material through its separate binary
+transport using the original endpoint ID and idempotency key. Webhook replay
+requires `webhooks.replay`. Invitations require an explicit expected term
+version; participants still accept their own terms. Stripe connection still
+requires provider consent in the browser. Existing LIVE eligibility and
+financial guards remain in force.
+
+### Diagnose and test
+
+`doctor` requires `diagnostics.read`. It reports readiness and actual linked
+conversion, commission and delivery IDs, plus unmet conditions. Exit 2 means a
+condition is unmet or not evaluated. Its bounded evidence window covers the
+latest ten conversions and twenty related deliveries per conversion. A delivered
+webhook shows HTTP acceptance, not correct business processing by its recipient.
+`basicFlowObserved` describes this narrow evidence; `integrationVerified` remains
+false. LIVE provider readiness, refunds, renewals, settlement and payouts need
+separate checks.
 
 ```sh
 commish test fixture --program prg_123456789012 --json
