@@ -20,7 +20,7 @@ function read(root, path, validate) {
   if (!validate(value)) fail("invalid_setup_progress");
   return value;
 }
-function protect(root) {
+export function protectPrivateState(root) {
   const git = args => spawnSync("git", args, { cwd: root, encoding: "utf8", timeout: 5000, maxBuffer: 65536,
     env: { ...process.env, GIT_DIR: undefined, GIT_WORK_TREE: undefined, GIT_INDEX_FILE: undefined, GIT_COMMON_DIR: undefined, LC_ALL: "C" }, windowsHide: true });
   const check = git(["rev-parse", "--is-inside-work-tree"]);
@@ -52,7 +52,7 @@ export function openSetupProgress(root, input, { now = () => new Date(), appUrl 
   const parsed = parseSetupConfig(input);
   if (parsed.kind !== "ready") fail("invalid_setup_config");
   const config = parsed.config, fingerprint = createHash("sha256").update(canonical({ config, appOrigin: endpoint.origin })).digest("hex");
-  protect(root);
+  protectPrivateState(root);
   const directory = `.commish/setup/${config.mode}`, path = `${directory}/intent.json`;
   const valid = v => keys(v, ["version", "fingerprint", "id", "createdAt"]) && v.version === 1 &&
     /^[0-9a-f]{64}$/.test(v.fingerprint) && uuid(v.id) && date(v.createdAt);

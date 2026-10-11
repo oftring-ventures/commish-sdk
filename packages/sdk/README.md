@@ -531,6 +531,42 @@ and idempotency identity when resolving uncertainty. `--all` follows at most
 returned cursor before considering a list exhaustive. A failed later page
 produces an error rather than a partial success receipt.
 
+### Authorize management access
+
+Management uses a separate credential; integration keys cannot authorize it.
+Choose exact scopes and either one application or explicit `--workspace-scope`:
+
+```sh
+commish auth login --workspace wrk_123456789012 --application app_123456789012 \
+  --scopes resources.read,programs.read,terms.read,diagnostics.read \
+  --automation --expires-in 86400 --no-open --non-interactive --json
+```
+
+The CLI emits an approval URL and pairing code on stderr. A workspace owner or
+admin signs in, verifies an authenticator, checks the requested authority and
+approves it. The CLI never falls back to dashboard automation. The grant and
+its mode remain bound to the request. Write sessions last at most ten minutes;
+read sessions at most one hour; explicit read-only automation at most thirty
+days. Automation survives sign-out, but expiry, revocation, account suspension
+or loss of workspace manager access removes its authority.
+
+The returned `authorizationFile` is owner-only and ignored under `.commish/`.
+Pass that path to subsequent commands; do not copy its contents into prompts or
+logs. `--wait 0` returns immediately with exit 2 while approval is pending. To
+resume, repeat login with `--auth-file <returned-path>` and the same mode.
+`auth status` and `auth revoke` use that file too. The approval page also allows
+revocation. CI may receive `COMMISH_MANAGEMENT_TOKEN` through its secret manager
+instead of a local file; supplying both is rejected.
+
+```sh
+commish auth revoke --auth-file .commish/management/REQUEST/authorization.json --json
+```
+
+`REQUEST` above is a placeholder for the exact path returned by login. Custom
+servers may be selected with `--management-url` or `COMMISH_MANAGEMENT_URL`;
+they receive the credential, so use only an endpoint you trust. The CLI pins a
+stored authorization to its original endpoint and refuses redirects.
+
 ### Test locally
 
 ```sh
