@@ -500,9 +500,11 @@ commish api list --json
 commish api schema createConversion --json
 ```
 
-Integration commands use `COMMISH_SECRET_KEY` from your environment, default to
-TEST, and require `--mode live` or `COMMISH_MODE=live` for LIVE. Never put keys on
-the command line. Examples:
+Integration commands use `COMMISH_SECRET_KEY` from your environment and default to
+TEST. LIVE reads accept `--mode live` or `COMMISH_MODE=live`; a LIVE write always
+requires `--mode live` on the command line, so a loaded `credentials.env` alone
+never sends one (`live_mode_flag_required`). Never put keys on the command line.
+Examples:
 
 ```sh
 commish customers list --limit 50 --json
@@ -521,8 +523,9 @@ Existing integration-key boundaries still apply: customer reads are workspace
 and mode scoped; webhook metadata requires a workspace key.
 
 Successful commands emit one JSON object on stdout. Errors emit a sanitized
-JSON object on stderr with a stable code and, when available, HTTP status and
-request ID. No mutation retries automatically. Retain each write's exact input
+JSON object on stderr with a stable code and, when available, HTTP status,
+request ID and `retryAfter` seconds (`busy` and `rate_limited` are retryable). No
+mutation retries automatically. Retain each write's exact input
 and idempotency identity when resolving uncertainty. `--all` follows at most
 100 pages; `--max-pages` can lower that bound. Check `complete` and retain the
 returned cursor before considering a list exhaustive. A failed later page

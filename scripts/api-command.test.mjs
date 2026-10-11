@@ -34,6 +34,27 @@ test("LIVE is explicit and secrets, unknown arguments and invalid contexts are r
   const result = await executeApi(["customers", "list", "--mode", "live"], { env: live, fetcher: async () => response({ data: [], next_cursor: null }) });
   assert.equal(result.context.mode, "live");
 });
+test("a LIVE write needs --mode live on the command line, never the environment alone", async t => {
+  const root = mkdtempSync(join(tmpdir(), "commish-api-")); t.after(() => rmSync(root, { recursive: true, force: true }));
+  writeFileSync(join(root, "conversion.json"), JSON.stringify({ externalId: "order-1" }));
+  const live = { COMMISH_SECRET_KEY: "cm_live_sk_fixture123456789", COMMISH_MODE: "live" };
+  const write = ["conversions", "create", "--body-file", "conversion.json", "--idempotency-key", "order-1"];
+  await assert.rejects(executeApi(write, { root, env: live, fetcher: noRequest }), /live_mode_flag_required/);
+  let calls = 0;
+  const result = await executeApi([...write, "--mode", "live"], { root, env: live, fetcher: async () => { calls++; return response({ data: { id: "cnv_123456789012" } }); } });
+  assert.equal(calls, 1); assert.equal(result.context.mode, "live");
+  const read = await executeApi(["customers", "list"], { env: live, fetcher: async () => response({ data: [], next_cursor: null }) });
+  assert.equal(read.context.mode, "live");
+});
+test("server request IDs, retry hints and gateway failures survive in error receipts", async () => {
+  const ok = await executeApi(["customers", "list"], { env, fetcher: async () => new Response(JSON.stringify({ data: [], next_cursor: null }), { headers: { "x-request-id": "req_01HZXK7Q2M" } }) });
+  assert.equal(ok.requestId, "req_01HZXK7Q2M");
+  await assert.rejects(executeApi(["customers", "list"], { env, fetcher: async () => Response.json({ error: { code: "busy" } }, { status: 503, headers: { "retry-after": "5", "x-request-id": "req_busy" } }) }),
+    error => error.message === "busy" && error.detail.retryable === true && error.detail.retryAfter === 5 && error.detail.requestId === "req_busy");
+  await assert.rejects(executeApi(["customers", "list"], { env, fetcher: async () => new Response("<html>Bad gateway</html>", { status: 502 }) }),
+    error => error.message === "request_failed" && error.detail.httpStatus === 502);
+  await assert.rejects(executeApi(["customers", "list"], { env, fetcher: async () => new Response("{}", { headers: { "x-request-id": "bad id with spaces" } }) }), /invalid_response/);
+});
 test("pagination is bounded, preserves filters and returns a resumable cursor", async () => {
   let calls = 0;
   const fetcher = async url => {

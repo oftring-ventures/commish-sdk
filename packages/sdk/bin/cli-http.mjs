@@ -28,13 +28,17 @@ export function apiUrl(value, path = "/api/v1") {
 const safeCodes = new Set(["invalid_request", "invalid_api_key", "unauthorized", "forbidden", "access_denied", "not_found",
   "idempotency_key_required", "idempotency_conflict", "rate_limited", "workspace_live_access_required", "mode_mismatch",
   "authorization_required", "authorization_expired", "authorization_revoked", "scope_denied", "recent_auth_required",
-  "application_key_not_supported", "program_not_found", "service_unavailable", "conflict", "program_activation_preflight_required", "challenge_mismatch", "origin_not_public"]);
+  "application_key_not_supported", "program_not_found", "service_unavailable", "conflict", "program_activation_preflight_required", "challenge_mismatch", "origin_not_public", "busy"]);
 export async function requestJson(url, init, fetcher = fetch) {
   let response;
   try { response = await fetcher(url, { ...init, redirect: "error", cache: "no-store", signal: init.signal ? AbortSignal.any([init.signal, AbortSignal.timeout(15_000)]) : AbortSignal.timeout(15_000) }); }
   catch { fail(init.signal?.aborted ? "interrupted" : "service_unavailable"); }
   const rawId = response.headers.get("x-request-id");
-  const requestId = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(rawId ?? "") ? rawId : null;
+  // Keep the server's own request ID format (req_..., platform IDs); never echo anything else.
+  const requestId = /^[A-Za-z0-9_.:-]{1,128}$/.test(rawId ?? "") ? rawId : null;
+  const retryAfter = /^[0-9]{1,4}$/.test(response.headers.get("retry-after") ?? "") ? Number(response.headers.get("retry-after")) : undefined;
+  const failure = code => new CliError(code, { httpStatus: response.status, requestId, retryable: [429, 503].includes(response.status),
+    ...(retryAfter === undefined ? {} : { retryAfter }) });
   let body;
   try {
     if (!response.body) fail("invalid_response");
@@ -45,9 +49,12 @@ export async function requestJson(url, init, fetcher = fetch) {
       chunks.push(chunk);
     }
     body = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(Buffer.concat(chunks)));
-  } catch { fail("invalid_response"); }
-  if (!response.ok) throw new CliError(safeCodes.has(body?.error?.code) ? body.error.code : "request_failed",
-    { httpStatus: response.status, requestId, retryable: [429, 503].includes(response.status) });
+  } catch {
+    // A gateway error page is still a server failure: keep its status instead of hiding it.
+    if (!response.ok) throw failure("request_failed");
+    fail("invalid_response");
+  }
+  if (!response.ok) throw failure(safeCodes.has(body?.error?.code) ? body.error.code : "request_failed");
   if (!body || typeof body !== "object" || Array.isArray(body) || !("data" in body)) fail("invalid_response");
   return { body, requestId, httpStatus: response.status };
 }

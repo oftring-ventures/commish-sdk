@@ -86,6 +86,8 @@ export async function executeApi(args, { env = process.env, root = process.cwd()
   } else if (v["body-file"] || v["idempotency-key"]) fail("invalid_arguments");
   const mode = v.mode ?? env.COMMISH_MODE ?? "test";
   if (!["test", "live"].includes(mode)) fail("invalid_arguments");
+  // A LIVE write must be requested on the command line; COMMISH_MODE alone never selects one.
+  if (op.method !== "GET" && mode === "live" && v.mode !== "live") fail("live_mode_flag_required");
   const secret = env.COMMISH_SECRET_KEY ?? "", keyMode = secret.match(/^cm_(test|live)_sk_[A-Za-z0-9_-]{12,}$/)?.[1];
   if (!keyMode) fail("invalid_configuration");
   if (keyMode !== mode) fail("key_mode_mismatch");
