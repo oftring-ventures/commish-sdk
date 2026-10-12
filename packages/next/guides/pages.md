@@ -1,8 +1,13 @@
-# Commish Pages — unreleased preview
+# Commish Pages
 
 Experimental measurement requires same-origin browser Web Locks to establish one visitor identity across concurrent tabs. Unsupported browsers or bounded identity failures receive the standard page without new experimental measurement; consent-authorized attribution and shopping remain available.
 
-This checkout targets the optional Pages module in paired version 0.3.0. It is **not included in the published 0.2.3 packages**. Use a reviewed, paired candidate artifact with its checksum and consumer lockfile for evaluation. Package publication and production enablement require separate approval. Do not install an older registry release and expect these exports to exist.
+Pages is an optional module available from SDK/Next 0.3.0. Install matching
+package versions and keep your lockfile. This guide describes 0.3.0; check npm
+for published availability. Earlier versions do not include these exports.
+Installing Pages does not enable LIVE activity, publish a creator's page or grant
+visitor consent. Your workspace administrator configures the brand content; each
+creator chooses whether to publish, and visitors control attribution and measurement.
 
 ## Product boundaries
 
@@ -12,7 +17,7 @@ Pages is not a checkout or discount engine. The button goes to your existing sho
 
 ## Install
 
-Use Node 24, paired `@commish/sdk` and `@commish/next` candidate artifacts, Next >=16.3.8 <17, and React >=19.2.8 <20. Existing non-Pages integrations remain optional and unchanged.
+Use Node 24, matching `@commish/sdk@0.3.0` and `@commish/next@0.3.0` packages, Next >=16.3.8 <17, and React >=19.2.8 <20. Existing non-Pages integrations remain optional and unchanged.
 
 ```sh
 pnpm exec commish-next pages init --dry-run --json
@@ -109,7 +114,13 @@ With `--creator`, doctor checks the resolved origin/prefix, canonical page marke
 
 ## Acceptance, upgrades and removal
 
-Before LIVE: install actual candidate artifacts into a clean external app; build; test a direct visit, fast click, capture, real TEST checkout, trusted conversion, duplicate delivery and refund. Start with ten eligible creators, then activate ten more without changing/deploying the merchant app. Verify all canonical links and only compatible aliases. Exercise consent refusal/withdrawal, old handles, key revocation, TEST/LIVE separation, service outages, mobile keyboard navigation and prefetch exclusion.
+Before LIVE, build your application and follow a creator Page through consent,
+referral capture, a simulated TEST checkout and its recorded conversion. Check
+webhook delivery and refunds if your integration uses them. Confirm that another
+participating creator becomes available without redeploying the application.
+Check consent refusal/withdrawal, existing merchant routes and mobile navigation.
+These are checks of your integration; you do not need to run the SDK maintainer's
+release suite or create a fixed number of test creators.
 
 Upgrade the paired packages in a normal reviewed dependency change and rerun those checks. To remove Pages, pause it in Commish, disable aliases and experiments independently, remove only the Pages routes/fallback rewrite/configuration you installed, and remove page measurement plumbing/cookies according to your retention policy. Keep the original attribution integration if still used. Never delete historical financial records or reuse reserved creator addresses.
 

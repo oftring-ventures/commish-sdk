@@ -1,12 +1,16 @@
 # @commish/next
 
-**Pages 0.3.0 release candidate:** [installation, consent, routing and verification](guides/pages.md); [agent guide](guides/agents.md). Not included in published 0.2.3.
+Next.js App Router integration for Commish referral capture, Checkout metadata
+and optional creator Pages. Supports permanent TEST and LIVE environments and is
+MIT licensed. Use Node 24 and matching SDK/Next versions.
 
-MIT-licensed Next.js App Router integration for permanent Commish TEST and LIVE modes.
-This source checkpoint is verified with Node 24.15.0, Next 16.3.8 and React 19.2.8.
-It does not establish npm availability or acceptance against a hosted Commish API.
-Use the exact paired `0.3.0` SDK/Next packages after approved publication and keep the consumer lockfile.
-Accepted candidate tarballs remain available for prepublication qualification.
+```sh
+pnpm add --save-exact @commish/sdk@0.3.0 @commish/next@0.3.0
+```
+
+This guide describes 0.3.0; check [npm](https://www.npmjs.com/package/@commish/next)
+for published availability. Pages first appears in 0.3.0. See the
+[Pages integration guide](guides/pages.md) and [agent guide](guides/agents.md).
 
 The `next` peer range is `>=16.3.8 <17`, which excludes Next.js versions
 with the image-optimization SSRF and associated cache-disclosure vulnerabilities.
@@ -74,7 +78,7 @@ require a Next request context. The root export is blocked in browser builds.
 The provider belongs at `@commish/next/react`; `@commish/next/browser` also exports
 `captureReferral` for direct browser integration.
 
-After installing an accepted pair, run from the consumer project root:
+After installing the matching packages, run from the consumer project root:
 
 ```sh
 pnpm exec commish-next --json          # inspect the plan; no writes
@@ -104,7 +108,11 @@ the installer will not overwrite it or guess at customer code.
 
 Package installation does not connect a Stripe account, configure a program,
 activate a creator, or prove a conversion. Complete the hosted TEST setup and
-record its acceptance separately from package build and installation evidence.
+verify a referral, simulated purchase, conversion and webhook delivery. A package
+install or successful configuration check does not prove those steps worked.
+Your own workspace administrator authorizes setup; each participant accepts their
+own terms and Page publication choice. See the SDK
+[authorization boundaries](https://github.com/oftring-ventures/commish-sdk/blob/v0.3.0/packages/sdk/README.md#authorization-boundaries).
 
 ## Provision TEST or LIVE credentials from the CLI
 
@@ -170,15 +178,17 @@ format/mode is checked locally; its server-side application binding is **not** p
 The API defaults to `https://app.commish.sh/api/v1`. Set `COMMISH_API_URL` only to a
 Commish deployment you trust: this destination receives the secret key. Custom
 bases require HTTPS, except explicit loopback development addresses. Redirects are
-rejected; responses and request duration are bounded. The CLI does not provision resources or issue mutation requests. Authentication
+rejected; responses and request duration are bounded. The verification command does not provision resources or issue mutation requests. Authentication
 may update key-usage metadata. It never prints credentials/provider bodies or retries a request. Invalid configuration,
 denied/revoked keys, inaccessible programs, mismatches and unavailable responses exit
 with code 1 and a stable JSON error code. On older deployments that reject LIVE reads,
 verification fails with `access_denied`; it never falls back to TEST.
 
-## Creator Pages (unreleased preview)
+## Creator Pages
 
-Pages is not in published 0.2.3. Evaluate only reviewed paired artifacts; publication and production enablement are separate actions.
+Pages is optional and requires SDK/Next 0.3.0 or later. Installing it does not
+enable Page publication or LIVE activity. Configure brand content, obtain each
+creator's publication permission and honor visitor consent separately.
 
 For manual integration, create a server-only configuration function returning `{secretKey, programId, origin, prefix:'/c'}`. Keep credentials out of client props and use the exact verified merchant origin.
 
