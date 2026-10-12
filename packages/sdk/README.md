@@ -1,13 +1,9 @@
 # @commish/sdk
 
-## Unreleased Pages preview
-
-This checkout adds server-only `commish.pages.resolve({ programId, handle })`. It returns a versioned authorized page description using an application-scoped key. It does not ship in published 0.2.3. The reviewed source targets 0.3.0. Verify approved paired registry availability or use paired candidate artifacts for testing. See the [Next Pages guide](../next/guides/pages.md) for dynamic rendering, permission, consent and verification; existing integrations remain unchanged.
-
-Commish's Node 24 SDK for permanent TEST and LIVE integrations. Install an exact
-paired release from npm; use accepted candidate tarballs only for prepublication
-qualification.
-Source is licensed under the MIT License; see LICENSE.
+Commish's Node 24 SDK connects creator referrals to purchases, commissions and
+webhooks. It supports permanent TEST and LIVE environments and includes a CLI for
+setup and API operations. The SDK ships ESM JavaScript and TypeScript declarations
+with no production dependencies. It is MIT licensed.
 
 ```ts
 import { Commish } from "@commish/sdk";
@@ -37,21 +33,65 @@ completed attributed TEST conversion. Run `commish --help` for available command
 
 ## Install and configure
 
-After the approved paired 0.3.0 release, install `@commish/sdk@0.3.0` from npm and keep the consumer lockfile. Next.js
+Install `@commish/sdk@0.3.0` from npm and keep the consumer lockfile. Next.js
 applications can additionally install the matching `@commish/next@0.3.0` package.
-No Commish checkout or database credentials are required. For prepublication
-qualification, install the accepted candidate tarballs after checking `SHA512SUMS`.
+No Commish checkout or database credentials are required. This guide describes
+0.3.0; check [npm](https://www.npmjs.com/package/@commish/sdk) for published
+availability, or use the documentation on your installed version's release tag.
 
 ```sh
-pnpm add @commish/sdk@0.3.0
+pnpm add --save-exact @commish/sdk@0.3.0
 ```
 
 Obtain a mode-matched secret key scoped to the verified application, a publishable
 key, program ID and endpoint signing secret from hosted setup. The API URL includes
 `/api/v1`; the public-site URL is separate. Use HTTPS for hosted origins. Never
 put the secret key or endpoint signing secret in `NEXT_PUBLIC_*`, browser props,
-logs or source control. A deployment must contain the candidate read routes;
-installing the package does not deploy Commish.
+logs or source control. Hosted integrations use `https://app.commish.sh/api/v1`
+by default; a custom Commish deployment must support the API operations you use.
+
+## Authorization boundaries
+
+Use your own Commish account and workspace. TEST setup does not require a Commish
+founder, platform operator or a maintainer's release-acceptance process.
+
+| Task | Authority and human steps |
+| --- | --- |
+| Plan setup or inspect command schemas | No account or credential; runs offline. |
+| Call integration APIs from your application or CLI | Mode-matched integration key; no browser approval per request. The key's scope and current workspace eligibility still apply. |
+| Provision through `commish setup` | Browser sign-in/signup, email verification, authenticator verification and approval of workspace, mode, scopes and proposed business choices. Approved setup authority lasts at most ten minutes. |
+| Manage resources through `commish auth login` | Separate browser-approved management grant; integration keys cannot authorize management. Interactive reads last up to one hour and writes up to ten minutes. |
+| Run read-only management automation | Explicitly approved read scopes, up to 30 days. It survives sign-out but remains subject to expiry, revocation, account suspension and manager access. |
+| Connect Stripe or accept creator terms/Page publication | The relevant account holder completes provider consent or their own participation/publication choice. CLI approval does not make those choices for them. |
+
+Longer-lived management writes are not supported. `--non-interactive` removes
+terminal prompts; it does not bypass browser authentication or consent.
+`--no-open` lets an agent present the approval link instead of opening it.
+Session management grants also require the approving browser session to remain
+signed in. [Management authorization](#authorize-management-access) describes
+scope selection, status checks and revocation.
+
+Setup and management login store credentials in owner-only, ignored local files.
+Keep them out of chat, Git, logs and browser code. Setup currently requires that
+private local storage; it does not provision directly into a secret manager.
+Management commands can instead receive an existing approved token through
+`COMMISH_MANAGEMENT_TOKEN`. Deliver application keys to your deployment using your
+normal secret-management workflow.
+
+## Understand verification results
+
+- **Installed:** the package or integration files are present.
+- **Configured:** credentials, application and program can be checked. Setup and
+  `commish verify` deliberately return `integrationVerified: false`: those checks
+  do not observe a purchase.
+- **Integration evidence:** exercise a TEST referral and simulated purchase, then
+  inspect its conversion, commission and webhook delivery. `commish doctor`
+  reports the conditions observed and those still missing; incomplete evidence
+  returns exit 2. Refunds, recurring purchases, payouts and LIVE readiness need
+  their own checks.
+
+A configured result is useful progress, not an installation failure. Follow its
+remaining actions; do not repeat setup solely to make `integrationVerified` true.
 
 ## Set up from your repository
 
@@ -295,12 +335,6 @@ Invalid input is rejected before a request; an invalid continuation rejects the
 page before yielding its rows or fetching another page. Cursor contents remain
 opaque: the SDK does not decode, normalize or manufacture a continuation.
 
-Beta.4 contains the customer read methods and invitation ID validation added
-since the immutable beta.3 handoff, plus these cursor checks. Install the matching
-SDK/Next pair and refresh the consumer lockfile. Existing valid API cursors keep
-their meaning; custom fixtures using padded base64 or more than 512 characters
-must use the API's base64url envelope. Accepted beta.3 archives remain unchanged.
-
 Lookup returns `{ data: null }` when absent. Detail reads return 404 for absent
 or out-of-scope resources. A conversion receipt's `status` describes its
 commission, not Stripe payment status; both commission fields are null when
@@ -455,41 +489,22 @@ same payload and original idempotency key. Exact replay preserves record identit
 409 conflicting reuse requires investigation. Fix 400/401/403/404/422 inputs or
 configuration instead of blind retries. A timeout does not prove the write failed.
 
-Pin exact beta versions. This beta uses `/api/v1`; beta changes can break callers
-only with a new immutable package version and migration note. Tolerate additive
-JSON fields and unhandled event types; never use status strings as payment truth.
-No live-money, renewal-invoice ingress or full API catalog is promised.
+Pin package versions and retain your lockfile. Use the versioned `/api/v1`
+contract; tolerate additive JSON fields and unhandled event types. Never treat
+status strings alone as proof that money moved.
 
-Migrating from workspace source imports: remove `@commish/contracts`, database
-and domain imports; use the SDK's exported types and public HTTP reads. Use ESM
-on Node 24. Server imports are `@commish/sdk` and `@commish/sdk/webhooks`; browser
-imports are `@commish/sdk/browser`. Deep `src`/`dist` imports are blocked. Beta.2
-adds typed diagnostic reads/pagination and rejects unsafe browser capture targets
-and invalid webhook freshness settings. Keep SDK and Next on the same beta.
+Import only public exports: `@commish/sdk` and `@commish/sdk/webhooks` on the
+server, and `@commish/sdk/browser` in the browser. Deep `src`/`dist` imports and
+private Commish contracts, database or domain modules are not supported.
 
-Beta.3 makes release archives reproducible across macOS and Linux. Install the
-new exact pair and refresh your lockfile; HTTP and runtime behavior are unchanged.
+## Optional creator Pages
 
-Beta.5 adds `memberships.list` and `memberships.iterate` with the existing
-strict cursor bounds and error propagation. Install the new exact package pair;
-beta.4 artifacts remain immutable. Existing detail calls need no changes.
-
-Beta.6 adds `payouts.retrieve` and the exported `PublicPayout` status/time union.
-Install the new exact SDK/Next pair; all beta.5 artifacts remain immutable.
-Existing calls need no changes. This is local candidate support, not registry
-publication or hosted payout acceptance.
-
-Beta.7 adds workspace-only `webhookDeliveries.list` / `iterate` and exported
-metadata/options types. Install the exact new package pair; beta.6 artifacts
-remain immutable. This grants no replay, application-scoped egress or live access.
-
-Beta.8 adds `webhookDeliveries.retrieve` using the same workspace-only metadata
-contract. Install the exact new package pair; beta.7 artifacts remain immutable.
-No replay or application-scoped delivery capability is added.
-
-Beta.9 provides MIT-licensed public source and reserved mirror metadata. Runtime
-behavior is unchanged. Preserve prior candidates; publication and hosted acceptance
-remain separately recorded.
+Version 0.3.0 adds server-only `commish.pages.resolve({ programId, handle })`.
+It returns a versioned page description using an application-scoped key. Pages
+require configured brand content and the creator's separate publication choice.
+See the [Next Pages guide](https://github.com/oftring-ventures/commish-sdk/blob/v0.3.0/packages/next/guides/pages.md)
+for rendering, routing and visitor consent. Existing referral integrations do not
+need to adopt Pages; versions before 0.3.0 do not include it.
 
 ## Headless operations and agent use
 

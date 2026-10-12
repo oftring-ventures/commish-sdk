@@ -126,6 +126,7 @@ export function inspect(files) {
   const allowed = new Set([
     ...roots,
     ...automation,
+    "RELEASING.md",
     "scripts/pages-sdk.test.mjs",
     "scripts/pages-routing.test.mjs",
     "scripts/pages-renderer.test.mjs",
