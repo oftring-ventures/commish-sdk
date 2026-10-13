@@ -1,4 +1,3 @@
-import { releaseVersion } from "./stable-release.mjs";
 import { nodeVersion, pnpmVersion } from "./toolchain.mjs";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
@@ -17,7 +16,14 @@ import { join } from "node:path";
 import { gunzipSync } from "node:zlib";
 
 import { verifyNextBuild } from "./verify-next-build.mjs";
-import { publicPackageManifests } from "./public-package-manifest.mjs";
+import {
+  inspectLockfile,
+  inspectPackageManifest,
+  inspectRootManifest,
+  inspectWorkspace,
+  packageNames,
+} from "./package-shape.mjs";
+import { licenseHash, publicPackageManifests } from "./public-package-manifest.mjs";
 import { candidateDirectory, normalizePackage, writeCandidate } from "./public-candidate.mjs";
 import { verifySdkBrowserConsumer } from "./verify-sdk-browser-consumer.mjs";
 import {
@@ -25,280 +31,78 @@ import {
   verifyNextProviderConsumer,
 } from "./verify-next-browser-consumer.mjs";
 
-const automation = [
-  "scripts/catalog.test.mjs",
-  "scripts/setup-session.test.mjs",
-  "scripts/api-command.test.mjs",
-  "scripts/headless-command.test.mjs",
-  "scripts/setup-intent.test.mjs",
-    "scripts/setup-resources.test.mjs",
-    "scripts/setup-files.test.mjs",
-    "scripts/setup-config.test.mjs",
-    "scripts/setup-progress.test.mjs",
-    "scripts/setup-secrets.test.mjs",
-    "scripts/setup-provisioning.test.mjs",
-    "scripts/setup-arguments.test.mjs",
-    "scripts/setup-workflow.test.mjs",
-    "scripts/setup-command.test.mjs",
-    "scripts/setup-authorization.test.mjs",
-  "scripts/stable-release.mjs",
-  "scripts/toolchain.mjs",
-  "scripts/stable-release.test.mjs",
-  ".github/workflows/publish-packages.yml",
-  "scripts/publication-workflow.test.mjs",
+// The tree is verified by shape: files may be added under the allowed paths, but
+// the release gate, the toolchain declaration and the pair's manifests must keep
+// these properties.
+const required = [
+  ".gitignore",
+  "LICENSE",
+  "README.md",
+  ".node-version",
+  "package.json",
+  "pnpm-workspace.yaml",
+  "pnpm-lock.yaml",
   ".github/workflows/public-source.yml",
   ".github/workflows/public-review.yml",
   ".github/workflows/public-review-merge-group.yml",
+  ".github/workflows/publish-packages.yml",
   "scripts/verify-public-source.mjs",
   "scripts/verify-public-source.test.mjs",
-  "scripts/next-metadata.test.mjs",
-  "scripts/verify-sdk-browser-consumer.mjs",
-  "scripts/verify-sdk-browser-consumer.test.mjs",
-  "scripts/verify-next-browser-consumer.mjs",
-  "scripts/verify-next-browser-consumer.test.mjs",
-  "scripts/verify-next-types.mjs",
-  "scripts/verify-next-types.test.mjs",
-  "scripts/fixtures/types-next-browser.ts",
-  "scripts/fixtures/types-next-provider.tsx",
-  "scripts/provider-types-lock.mjs",
-  "scripts/inspect-next-build.mjs",
-  "scripts/inspect-next-build.test.mjs",
-  "scripts/next-command-scope.mjs",
-  "scripts/next-command-scope.test.mjs",
-  "scripts/verify-framework-package.mjs",
-  "scripts/verify-framework-package.test.mjs",
-  "scripts/fixtures/next-peer-bin.txt",
-  "scripts/verify-next-build.mjs",
-  "scripts/verify-pages-artifact.mjs",
-  "scripts/verify-next-build.test.mjs",
-  "scripts/next-framework-lock.mjs",
-  "scripts/fixtures/next-build.mjs",
-  "scripts/fixtures/next-capture.mjs",
-  "scripts/fixtures/next-provider.mjs",
-  "scripts/fixtures/next-cli.mjs",
-  "scripts/fixtures/setup-cli.mjs",
-  "scripts/public-package-manifest.mjs",
-  "scripts/public-package-manifest.test.mjs",
-  "scripts/public-candidate.mjs",
-  "scripts/public-candidate.test.mjs",
-  "scripts/candidate-ci-receipt.mjs",
-  "scripts/candidate-ci-receipt.test.mjs",
-  "scripts/publication-preflight.mjs",
-  "scripts/publication-preflight.test.mjs",
-  "scripts/publication-executor.mjs",
-  "scripts/publication-executor.test.mjs",
-  "scripts/publication-handoff.mjs",
-  "scripts/publication-handoff.test.mjs",
-  "scripts/verify-sdk-types.mjs",
-  "scripts/verify-sdk-types.test.mjs",
-  "scripts/verify-sdk-webhooks.mjs",
-  "scripts/verify-sdk-webhooks.test.mjs",
-  "scripts/verify-sdk-http.mjs",
-  "scripts/verify-sdk-http.test.mjs",
-  "scripts/verify-sdk-reads.mjs",
-  "scripts/verify-sdk-reads.test.mjs",
-  "scripts/fixtures/types-common.ts",
-  "scripts/fixtures/types-only.ts",
-  "scripts/fixtures/types-client.ts",
+  "scripts/publication-workflow.test.mjs",
 ];
-const bootstrap = {
-  ".gitignore": "e8e70120c7fb8891ed746bb896e739a62f7f6ea1df6225461506760c146f6614",
-  LICENSE: "03f0077d06d3281e364be7f1cbb440d6996c65d3a6a19a73de41a7c6d02be702",
-  "README.md": "63d2b78b672460c3e4c586c35ad4b261645570a0c6914ddb96f1fb74aee7f380",
-};
-const roots = [...Object.keys(bootstrap), ".node-version", "package.json", "pnpm-workspace.yaml", "pnpm-lock.yaml"];
-const common = ["package.json", "LICENSE", "README.md", "build.mjs", "tsconfig.build.json"];
-const sources = {
-  sdk: ["browser", "types", "webhooks", "index", "reads", "pages"],
-  next: ["browser", "provider", "index", "metadata", "capture", "pages-handlers", "pages-routing", "pages", "pages-client"],
-};
+// Paths a change may add without editing this gate: flat modules, fixtures and
+// guides under fixed directories. Any other path (another workflow or action,
+// install or registry configuration such as .npmrc or .pnpmfile.cjs, nested or
+// unlisted files) needs a reviewed change to this list.
+const allowedPaths = [
+  /^(?:\.gitignore|\.node-version|LICENSE|README\.md|RELEASING\.md|package\.json|pnpm-workspace\.yaml|pnpm-lock\.yaml)$/,
+  /^\.github\/workflows\/(?:public-source|public-review|public-review-merge-group|publish-packages)\.yml$/,
+  /^scripts\/[a-z0-9-]+(?:\.test)?\.mjs$/,
+  /^scripts\/fixtures\/[a-z0-9-]+\.(?:mjs|ts|tsx|txt)$/,
+  /^packages\/(?:sdk|next)\/(?:LICENSE|README\.md|package\.json|build\.mjs|tsconfig\.build\.json)$/,
+  /^packages\/(?:sdk|next)\/(?:src\/[a-z0-9-]+\.tsx?|bin\/[a-z0-9-]+\.(?:mjs|json))$/,
+  /^packages\/next\/guides\/[a-z0-9-]+\.md$/,
+];
 const sha = (data) => createHash("sha256").update(data).digest("hex");
 const bytes = (files, name) => {
-  assert(files.has(name), "missing required file");
+  assert(files.has(name), `missing required file ${name}`);
   return files.get(name).data;
 };
 const json = (files, name) => JSON.parse(bytes(files, name));
-const pair = (name, server = false) => ({
-  ...(server ? { browser: null } : {}),
-  types: `./dist/${name}.d.ts`,
-  default: `./dist/${name}.js`,
-});
+const defaultConsumers = {
+  sdk: verifySdkBrowserConsumer,
+  nextBrowser: verifyNextBrowserConsumer,
+  nextProvider: verifyNextProviderConsumer,
+  nextBuild: verifyNextBuild,
+};
 
 export function inspect(files) {
-  const allowed = new Set([
-    ...roots,
-    ...automation,
-    "RELEASING.md",
-    "scripts/pages-sdk.test.mjs",
-    "scripts/pages-routing.test.mjs",
-    "scripts/pages-renderer.test.mjs",
-    "scripts/pages.test.mjs",
-    "packages/next/bin/pages.mjs",
-    "packages/next/guides/pages.md",
-    "packages/next/guides/agents.md",
-    "packages/next/bin/init.mjs",
-    "packages/sdk/bin/init.mjs",
-    "packages/sdk/bin/api-command.mjs",
-    "packages/sdk/bin/auth-command.mjs",
-    "packages/sdk/bin/cli-http.mjs",
-    "packages/sdk/bin/management-client.mjs",
-    "packages/sdk/bin/management-command.mjs",
-    "packages/sdk/bin/keys-command.mjs",
-    "packages/sdk/bin/doctor-command.mjs",
-    "packages/sdk/bin/test-command.mjs",
-    "packages/sdk/bin/api-catalog.json",
-    "packages/sdk/bin/management-catalog.json",
-    "packages/sdk/bin/setup-session.mjs",
-    "packages/sdk/bin/setup-resources.mjs",
-    "packages/sdk/bin/setup-files.mjs",
-    "packages/sdk/bin/setup-config.mjs",
-    "packages/sdk/bin/setup-progress.mjs",
-    "packages/sdk/bin/setup-secrets.mjs", "packages/sdk/bin/setup-provisioning.mjs",
-    "packages/sdk/bin/setup-arguments.mjs",
-    "packages/sdk/bin/setup-workflow.mjs",
-    "packages/sdk/bin/setup-command.mjs",
-    "packages/sdk/bin/setup-plan.mjs",
-    "packages/sdk/bin/setup-intent.mjs",
-    "packages/sdk/bin/setup-authorization.mjs",
-    ...Object.entries(sources).flatMap(([pkg, names]) =>
-      [...common, ...names.map((name) => `src/${name}.${name === "provider" || (pkg === "next" && ["pages", "pages-client"].includes(name)) ? "tsx" : "ts"}`)].map(
-        (name) => `packages/${pkg}/${name}`,
-      ),
-    ),
-  ]);
   for (const [name, file] of files) {
-    assert(allowed.has(name), "unexpected source path");
+    assert(!name.split("/").some((part) => ["", ".", ".."].includes(part)), "unsafe source path");
     assert.equal(
       file.mode,
       /^packages\/(sdk|next)\/bin\/init\.mjs$/.test(name) ? "100755" : "100644",
       "invalid source mode",
     );
-  }
-  for (const name of automation) bytes(files, name);
-  if (!files.has("package.json")) {
-    assert.equal(files.size, automation.length + 3, "incomplete package tree is not bootstrap");
-    for (const [name, hash] of Object.entries(bootstrap))
-      assert.equal(sha(bytes(files, name)), hash, "bootstrap bytes differ");
-    return [];
-  }
-  for (const name of roots) bytes(files, name);
-  assert.equal(bytes(files, ".node-version").toString().trim(), nodeVersion, "source .node-version differs from the toolchain");
-  const packages = files.has("packages/next/package.json") ? ["sdk", "next"] : ["sdk"];
-  const expectedBuild = packages.map((name) => `pnpm --filter @commish/${name} build`).join(" && ");
-  assert.deepEqual(
-    json(files, "package.json"),
-    {
-      name: "commish-public-packages",
-      private: true,
-      packageManager: `pnpm@${pnpmVersion}`,
-      engines: { node: ">=24 <25" },
-      scripts: { build: expectedBuild },
-    },
-    "unsupported root manifest",
-  );
-  const react = files.has("packages/next/src/provider.tsx");
-  const framework = packages.includes("next") &&
-    Object.hasOwn(json(files, "packages/next/package.json").devDependencies ?? {}, "next");
-  assert(!react || framework, "Next provider requires its framework dependencies");
-  const workspace = `packages:\n${packages.map((name) => `  - packages/${name}\n`).join("")}engineStrict: true\n${framework ? "overrides:\n  baseline-browser-mapping: 2.11.18\n  caniuse-lite: 1.0.30001809\n" : ""}`;
-  assert.equal(
-    bytes(files, "pnpm-workspace.yaml").toString(),
-    workspace,
-    "unsupported workspace configuration",
-  );
-  const expectedLock =
-    packages.length === 1
-      ? "7e23bad69c9b8a88d53fc992196178aecdef08a6311e54752201de147b1314f2"
-      : framework
-        ? "08d21bd244dca7a09bf92e2cd3acf2e5db87da0be448fbd2d0ba14d589fd3fe0"
-        : "0c15096dcc1644b3d0e3fd288da4ab13ddef54d9b609bc2a8547cc9d7d88bc3f";
-  assert.equal(sha(bytes(files, "pnpm-lock.yaml")), expectedLock, "unsupported lockfile");
-  for (const name of files.keys())
     if (name.startsWith("packages/"))
-      assert(packages.includes(name.split("/")[1]), "orphan package source");
-  if (packages.includes("next") && json(files, "packages/next/package.json").private !== true)
-    publicPackageManifests(files);
-  return packages.map((pkg) => {
+      assert(packageNames.includes(name.split("/")[1]), "orphan package source");
+    assert(allowedPaths.some((pattern) => pattern.test(name)), `unexpected source path ${name}`);
+  }
+  for (const name of required) bytes(files, name);
+  assert.equal(sha(bytes(files, "LICENSE")), licenseHash, "MIT license differs");
+  assert.equal(bytes(files, ".node-version").toString().trim(), nodeVersion, "source .node-version differs from the toolchain");
+  inspectRootManifest(json(files, "package.json"), pnpmVersion);
+  inspectWorkspace(bytes(files, "pnpm-workspace.yaml").toString());
+  inspectLockfile(bytes(files, "pnpm-lock.yaml").toString());
+  return packageNames.map((pkg) => {
     const dir = `packages/${pkg}`;
-    for (const name of common.filter((name) => name !== "README.md"))
+    for (const name of ["LICENSE", "README.md", "build.mjs", "tsconfig.build.json", "src/index.ts", "src/browser.ts"])
       bytes(files, `${dir}/${name}`);
-    bytes(files, `${dir}/src/browser.ts`);
+    assert.equal(sha(bytes(files, `${dir}/LICENSE`)), licenseHash, "package MIT license differs");
     const manifest = json(files, `${dir}/package.json`);
-    assert.equal(manifest.name, `@commish/${pkg}`);
-    assert.equal(manifest.version, releaseVersion);
-    assert.equal(manifest.type, "module");
-    assert.deepEqual(
-      manifest.scripts,
-      {
-        build: "node build.mjs",
-        prepack: "pnpm build",
-        typecheck: "tsc -p tsconfig.build.json --noEmit",
-      },
-      "unexpected lifecycle command",
-    );
-    assert(
-      !manifest.dependencies && !manifest.optionalDependencies,
-      "unexpected production dependencies",
-    );
-    const dev = { typescript: "5.9.2", "@types/node": "24.13.3" };
-    const peers = {};
-    if (pkg === "next") {
-      dev["@commish/sdk"] = "workspace:*";
-      peers["@commish/sdk"] = manifest.version;
-    }
-    if (pkg === "next" && framework) {
-      Object.assign(dev, {
-        next: "16.3.8",
-        react: "19.2.8",
-        "react-dom": "19.2.8",
-        "@types/react": "19.2.18",
-        "@types/react-dom": "19.2.5",
-      });
-      Object.assign(peers, { next: ">=16.3.8 <17", react: ">=19.2.8 <20" });
-    }
-    assert.deepEqual(manifest.devDependencies, dev, "unsupported development dependencies");
-    assert.deepEqual(manifest.peerDependencies ?? {}, peers, "unsupported peer dependencies");
-    const exports = { "./browser": pair("browser") };
-    const has = (name) => files.has(`${dir}/src/${name}.ts`);
-    if (has("index")) {
-      exports["."] = pair("index", true);
-      if (pkg === "sdk") {
-        bytes(files, `${dir}/src/reads.ts`);
-        bytes(files, `${dir}/src/types.ts`);
-      }
-    } else if (pkg === "sdk" && has("types")) exports["."] = pair("types", true);
-    if (pkg === "sdk" && has("webhooks")) exports["./webhooks"] = pair("webhooks", true);
-    if (pkg === "next" && react) exports["./react"] = pair("provider");
-    if (pkg === "next") for (const name of ["handlers", "routing"]) {
-      if (has("pages-" + name)) {
-        exports["./pages/" + name] = pair("pages-" + name, true);
-        bytes(files, "packages/sdk/src/pages.ts");
-        bytes(files, dir + "/src/pages-routing.ts");
-      }
-    }
-    if (pkg === "next" && files.has(dir + "/src/pages.tsx")) {
-      exports["./pages"] = pair("pages", true);
-      for (const name of ["pages-client.tsx", "pages-handlers.ts", "pages-routing.ts"]) bytes(files, dir + "/src/" + name);
-    }
-    if (pkg === "next" && files.has(dir + "/bin/pages.mjs")) {
-      for (const file of ["src/pages.tsx","guides/pages.md","guides/agents.md"]) bytes(files, dir + "/" + file);
-    }
-    assert.deepEqual(manifest.exports, exports, "exports do not match present source");
-    const bin =
-      files.has(`${dir}/bin/init.mjs`)
-        ? { [pkg === "sdk" ? "commish" : "commish-next"]: "./bin/init.mjs" }
-        : undefined;
-    if (bin) assert(has("index"), "CLI requires its server source");
-    assert.deepEqual(manifest.bin, bin, "bin does not match present source");
-    if (bin) bytes(files, `${dir}/bin/init.mjs`);
-    if (pkg === "next" && has("metadata"))
-      assert(has("index") && framework, "Next metadata module requires its framework server root");
-    if (pkg === "next" && has("capture"))
-      assert(has("metadata") && has("index") && framework, "Next capture requires its cookie helpers");
-    const targets = [
-      ...Object.values(exports).flatMap(Object.values),
-      ...Object.values(bin ?? {}),
-    ].filter((value) => typeof value === "string");
+    const has = (stem) => files.has(`${dir}/src/${stem}.ts`) || files.has(`${dir}/src/${stem}.tsx`);
+    const { targets } = inspectPackageManifest(pkg, manifest, has);
+    assert(bytes(files, `${dir}/bin/init.mjs`).toString().startsWith("#!/usr/bin/env node\n"), "entry point must start with the node shebang");
     return { dir, manifest, targets };
   });
 }
@@ -317,8 +121,9 @@ export function archiveFiles(compressed) {
     const name = field(0, 100),
       size = Number.parseInt(field(124, 12).trim(), 8);
     const mode = Number.parseInt(field(100, 8).trim(), 8);
+    // Only the manifest, documentation, built output, flat CLI modules and shipped guides.
     assert(
-      /^(package\/(?:dist\/)?[a-zA-Z0-9_.-]+|package\/guides\/(?:pages|agents)\.md|package\/bin\/(?:init|pages|setup-session|setup-authorization|setup-resources|setup-files|setup-config|setup-progress|setup-secrets|setup-provisioning|setup-arguments|setup-workflow|setup-command|setup-plan|setup-intent|api-command|auth-command|cli-http|management-client|management-command|keys-command|doctor-command|test-command)\.mjs|package\/bin\/(?:api-catalog|management-catalog)\.json)$/.test(name) &&
+      /^package\/(?:package\.json|README\.md|LICENSE|dist\/[a-zA-Z0-9_.-]+|bin\/[a-z0-9-]+\.(?:mjs|json)|guides\/[a-z-]+\.md)$/.test(name) &&
         !files.has(name),
       "unsafe archive entry",
     );
@@ -344,7 +149,7 @@ export function archiveFiles(compressed) {
   return files;
 }
 
-export async function verifyPackages(files, packages, run, checkout = process.cwd(), releaseManifests) {
+export async function verifyPackages(files, packages, run, checkout = process.cwd(), releaseManifests, consumers = defaultConsumers) {
   const artifacts = [];
   let evidence = { scopes: [] },
     sdkArchive;
@@ -393,48 +198,19 @@ export async function verifyPackages(files, packages, run, checkout = process.cw
           packed, work, run, archiveFiles));
         artifacts.push({ archive, packed });
       }
+      const context = {
+        build: realpathSync(work),
+        checkout: realpathSync(checkout),
+        lock: Buffer.from(bytes(files, "pnpm-lock.yaml")),
+      };
       if (manifest.name === "@commish/sdk") {
         sdkArchive = { archive, packed };
-        evidence = verifySdkBrowserConsumer(archive, packed, run, {
-          build: realpathSync(work),
-          checkout: realpathSync(checkout),
-          lock: Buffer.from(bytes(files, "pnpm-lock.yaml")),
-        });
+        evidence = consumers.sdk(archive, packed, run, context);
       } else {
         assert(sdkArchive, "Next browser consumer requires the verified SDK pair");
-        evidence.scopes.push(
-          ...verifyNextBrowserConsumer(
-            sdkArchive,
-            { archive, packed },
-            {
-              build: realpathSync(work),
-              checkout: realpathSync(checkout),
-              lock: Buffer.from(bytes(files, "pnpm-lock.yaml")),
-            },
-          ),
-        );
-        evidence.scopes.push(
-          ...verifyNextProviderConsumer(
-            sdkArchive,
-            { archive, packed },
-            {
-              build: realpathSync(work),
-              checkout: realpathSync(checkout),
-              lock: Buffer.from(bytes(files, "pnpm-lock.yaml")),
-            },
-          ),
-        );
-        evidence.scopes.push(
-          ...(await verifyNextBuild(
-            sdkArchive,
-            { archive, packed },
-            {
-              build: realpathSync(work),
-              checkout: realpathSync(checkout),
-              lock: Buffer.from(bytes(files, "pnpm-lock.yaml")),
-            },
-          )),
-        );
+        evidence.scopes.push(...consumers.nextBrowser(sdkArchive, { archive, packed }, context));
+        evidence.scopes.push(...consumers.nextProvider(sdkArchive, { archive, packed }, context));
+        evidence.scopes.push(...(await consumers.nextBuild(sdkArchive, { archive, packed }, context)));
       }
     }
     for (const [name, file] of files)
@@ -448,7 +224,10 @@ export async function verifyPackages(files, packages, run, checkout = process.cw
   }
 }
 
-export async function verify(root, expectedSha, candidateOutput) {
+export async function verify(root, expectedSha, candidateOutput, {
+  run = (command, args, cwd) => execFileSync(command, args, { cwd, stdio: "inherit", timeout: 600_000 }),
+  consumers = defaultConsumers,
+} = {}) {
   const git = (...args) => execFileSync("git", args, { cwd: root });
   const head = git("rev-parse", "HEAD").toString().trim();
   assert(
@@ -476,31 +255,19 @@ export async function verify(root, expectedSha, candidateOutput) {
   const packages = inspect(files);
   const output = candidateOutput === undefined ? undefined : candidateDirectory(root, candidateOutput);
   const releaseManifests = output ? publicPackageManifests(files) : undefined;
-  let evidence = { scopes: [] };
-  if (packages.length) {
-    assert.equal(
-      execFileSync("pnpm", ["--version"], { encoding: "utf8" }).trim(),
-      pnpmVersion,
-      "pnpm differs from the root packageManager",
-    );
-    evidence = await verifyPackages(
-      files,
-      packages,
-      (command, args, cwd) =>
-        execFileSync(command, args, { cwd, stdio: "inherit", timeout: 600_000 }),
-      root,
-      releaseManifests,
-    );
-  }
+  assert.equal(
+    execFileSync("pnpm", ["--version"], { encoding: "utf8" }).trim(),
+    pnpmVersion,
+    "pnpm differs from the root packageManager",
+  );
+  const evidence = await verifyPackages(files, packages, run, root, releaseManifests, consumers);
   assert.equal(git("rev-parse", "HEAD").toString().trim(), head, "source HEAD changed during verification");
   assert.equal(git("status", "--porcelain", "--untracked-files=all").length, 0, "source changed during verification");
   const candidate = output ? writeCandidate(root, output, head, evidence.artifacts, evidence.scopes,
     releaseManifests, archiveFiles) : undefined;
   return {
     sha: head,
-    scope: packages.length
-      ? "frozen-install-build-typecheck-pack-exports"
-      : "exact-bootstrap-and-automation",
+    scope: "frozen-install-build-typecheck-pack-exports",
     packages: packages.map(({ manifest }) => manifest.name),
     consumerScopes: evidence.scopes,
     ...(evidence.typeCompiler ? { typeCompiler: evidence.typeCompiler } : {}),
