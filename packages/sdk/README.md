@@ -1,6 +1,6 @@
 # @commish/sdk
 
-Commish's Node 24 SDK connects creator referrals to purchases, commissions and
+Commish's SDK for Node 22 or later connects creator referrals to purchases, commissions and
 webhooks. It supports permanent TEST and LIVE environments and includes a CLI for
 setup and API operations. The SDK ships ESM JavaScript and TypeScript declarations
 with no production dependencies. It is MIT licensed.

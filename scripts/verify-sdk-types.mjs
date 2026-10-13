@@ -13,25 +13,25 @@ const child = (root, path) => {
   assert(inside(root, actual), "type consumer escaped its owned root");
   return actual;
 };
-const pair = (name, server = false) => ({
-  ...(server ? { browser: null } : {}),
-  types: `./dist/${name}.d.ts`,
-  default: `./dist/${name}.js`,
-});
+// The source gate validated the whole export map; the type consumer re-checks the
+// typed entries it compiles against and ignores the manifest export.
 export function selectSdkTypes(packed) {
   const { exports } = JSON.parse(packed.get("package/package.json").data);
-  const expected = { "./browser": pair("browser") };
+  const browser = exports["./browser"];
+  assert(browser && !Object.hasOwn(browser, "browser") && browser.types === "./dist/browser.d.ts" &&
+    browser.default === "./dist/browser.js", "unsupported SDK root tuple");
+  const targets = [browser.types, browser.default];
   let kind = null;
-  if (Object.hasOwn(exports, ".")) {
-    kind = exports["."]?.types === "./dist/types.d.ts" ? "types" : "index";
-    expected["."] = pair(kind, true);
+  for (const [entry, value] of Object.entries(exports)) {
+    if (entry === "./browser" || entry === "./package.json") continue;
+    assert([".", "./webhooks"].includes(entry), "unsupported SDK root tuple");
+    const stem = entry === "./webhooks" ? "webhooks" : value?.types === "./dist/types.d.ts" ? "types" : "index";
+    assert(value && value.browser === null && value.types === `./dist/${stem}.d.ts` &&
+      value.default === `./dist/${stem}.js`, "unsupported SDK root tuple");
+    if (entry === ".") kind = stem;
+    targets.push(value.types, value.default);
   }
-  if (Object.hasOwn(exports, "./webhooks")) expected["./webhooks"] = pair("webhooks", true);
-  assert.deepEqual(exports, expected, "unsupported SDK root tuple");
-  for (const entry of Object.values(expected)
-    .flatMap(Object.values)
-    .filter((value) => typeof value === "string"))
-    assert(packed.has(`package/${entry.slice(2)}`), "missing promised SDK target");
+  for (const target of targets) assert(packed.has(`package/${target.slice(2)}`), "missing promised SDK target");
   return kind;
 }
 export function verifySdkTypes(consumer, packed, context, execute = execFileSync) {

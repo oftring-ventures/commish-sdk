@@ -10,8 +10,9 @@
   },
   "type": "module",
   "engines": {
-    "node": ">=24 <25"
+    "node": ">=22"
   },
+  "sideEffects": false,
   "files": [
     "dist",
     "README.md",
@@ -20,8 +21,8 @@
   ],
   "exports": {
     ".": {
-      "browser": null,
       "types": "./dist/index.d.ts",
+      "browser": null,
       "default": "./dist/index.js"
     },
     "./browser": {
@@ -29,10 +30,11 @@
       "default": "./dist/browser.js"
     },
     "./webhooks": {
-      "browser": null,
       "types": "./dist/webhooks.d.ts",
+      "browser": null,
       "default": "./dist/webhooks.js"
-    }
+    },
+    "./package.json": "./package.json"
   },
   "publishConfig": {
     "access": "public",

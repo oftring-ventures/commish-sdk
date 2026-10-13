@@ -1,5 +1,6 @@
 import { releaseVersion } from "./stable-release.mjs";
 import assert from "node:assert/strict";
+import { peerAllows } from "./package-shape.mjs";
 import { nodeVersion } from "./toolchain.mjs";
 import { createHash } from "node:crypto";
 import { lstatSync, readFileSync, readdirSync } from "node:fs";
@@ -45,7 +46,7 @@ export function readPublicationCandidate(directory, approved) {
     assert.deepEqual(metadata.publishConfig, { access: "public", tag: "latest" });
     for (const key of ["private", "scripts", "dependencies", "devDependencies", "optionalDependencies"])
       assert(!Object.hasOwn(metadata, key), "unexpected publication metadata");
-    if (index) assert.equal(metadata.peerDependencies["@commish/sdk"], item.version);
+    if (index) assert(peerAllows(metadata.peerDependencies["@commish/sdk"], item.version), "published Next peer must allow the released SDK");
   }
   const artifacts = manifest.artifacts;
   assert.equal(read("SHA512SUMS").toString(), artifacts.map((item) => `${item.sha512}  ${item.file}\n`).join(""));

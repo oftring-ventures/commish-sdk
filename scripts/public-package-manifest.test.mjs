@@ -27,8 +27,8 @@ test("complete public pair normalizes metadata without source build configuratio
   assert.equal(pair.length, 2);
   assert.equal(pair[1].peerDependencies["@commish/sdk"].replace(/^~/, ""), pair[0].version);
   assert.deepEqual(pair.map((m) => Object.keys(m).sort()), [
-    ["bin", "description", "engines", "exports", "license", "name", "publishConfig", "repository", "type", "version"],
-    ["bin", "description", "engines", "exports", "license", "name", "peerDependencies", "publishConfig", "repository", "type", "version"],
+    ["bin", "description", "engines", "exports", "license", "name", "publishConfig", "repository", "sideEffects", "type", "version"],
+    ["bin", "description", "engines", "exports", "license", "name", "peerDependencies", "publishConfig", "repository", "sideEffects", "type", "version"],
   ]);
   // Validated public fields pass through unchanged; build configuration never ships.
   const sdk = JSON.parse(source().get("packages/sdk/package.json").data);

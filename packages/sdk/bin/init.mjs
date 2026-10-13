@@ -11,7 +11,7 @@ import { testHelp, runTestCommand } from "./test-command.mjs";
 const setupGuide = {
   guideVersion: 1,
   sdkVersion: manifest.version,
-  node: ">=24 <25",
+  node: manifest.engines.node,
   configurationFile: "commish.setup.json",
   configurationContainsSecrets: false,
   discoveryUrl: "https://app.commish.sh/api/cli/setup/capabilities",

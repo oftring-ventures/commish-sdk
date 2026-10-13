@@ -7,7 +7,8 @@ Both packages are MIT licensed.
 
 ## Install
 
-Use Node 24 and your application's package manager. Keep the dependency lockfile.
+Use Node 22 or later and your application's package manager. Keep the dependency
+lockfile. Releases are built on the Node version in `.node-version`.
 This source documents version 0.3.0; check the [npm SDK package](https://www.npmjs.com/package/@commish/sdk)
 for published availability. Documentation on a release tag matches that release.
 
@@ -17,7 +18,7 @@ pnpm add --save-exact @commish/sdk@0.3.0
 pnpm add --save-exact @commish/next@0.3.0
 ```
 
-The Next adapter requires the matching SDK version, Next >=16.3.8 <17 and
+The Next adapter requires the same SDK minor version (`~0.3.0`), Next >=16.3.8 <17 and
 React >=19.2.8 <20. Other frameworks can use the core SDK directly.
 
 ## Start in TEST

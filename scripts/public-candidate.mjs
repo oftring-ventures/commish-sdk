@@ -1,5 +1,6 @@
 import { releaseVersion } from "./stable-release.mjs";
 import assert from "node:assert/strict";
+import { peerAllows } from "./package-shape.mjs";
 import { createHash } from "node:crypto";
 import { lstatSync, mkdirSync, readFileSync, readdirSync, realpathSync, writeFileSync } from "node:fs";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
@@ -75,7 +76,7 @@ export function writeCandidate(root, output, source, artifacts, scopes, manifest
     const manifest = JSON.parse(packed.get("package/package.json").data), name = `@commish/${index ? "next" : "sdk"}`;
     assert.equal(manifest.name, name); assert.equal(manifest.version, releaseVersion);
     assert.deepEqual(manifest, manifests[index], "candidate manifest differs from normalized source");
-    if (index) assert.equal(manifest.peerDependencies["@commish/sdk"], manifest.version);
+    if (index) assert(peerAllows(manifest.peerDependencies["@commish/sdk"], manifest.version), "candidate Next peer must allow the released SDK");
     const hash = digest(archive);
     return { name, version: manifest.version, file: `commish-${name.slice(9)}-${manifest.version}.tgz`,
       bytes: archive.length, sha512: hash.toString("hex"), integrity: `sha512-${hash.toString("base64")}`,
