@@ -1,52 +1,67 @@
-import { releaseVersion } from "./stable-release.mjs";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { readFileSync, readdirSync, realpathSync, statSync } from "node:fs";
 import { isAbsolute, join, relative, sep } from "node:path";
+import { readFrameworkSource, yamlKey, yamlValue } from "./next-framework-lock.mjs";
 
-export const providerTypeDependencies = { "@types/react": "19.2.18", csstype: "3.2.3" };
-const typePackages = [
-  [
-    "@types/react",
-    "19.2.18",
-    "sha512-AnzbBERsrLKtk2XSfTbYRLjQPdy116Sty4q+T+Bp3IC4l6jNBvreVPAHmpq9qhXQM7CXZPjLVmGMw9sy+hxQ3w==",
-  ],
-  [
-    "csstype",
-    "3.2.3",
-    "sha512-z1HGKcYy2xA8AGQfwrn0PAy+PB7X/GSj3UVJW9qKyn43xWa+gl5nXmU4qqLMRzWVLFC8KusUX8T/0kCiOYpAIQ==",
-  ],
-];
 const sri = (bytes) => `sha512-${createHash("sha512").update(bytes).digest("base64")}`;
+const escape = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
-// inspect binds the whole source lock. Registry types install frozen before the offline pair.
+// The provider declaration gate installs @types/react and its one dependency from
+// the registry at the versions the workspace lockfile resolved, bound by integrity,
+// then adds the offline pair. Engines and peers come from the archives themselves.
+export function providerTypeVersions(sourceLock) {
+  const lock = readFrameworkSource(sourceLock);
+  const reactTypes = lock.dependencies["@types/react"];
+  assert(reactTypes, "provider type dependency absent from source lock");
+  const csstype = lock.snapshots.match(
+    new RegExp(`^  '@types/react@${escape(reactTypes)}':\\n    dependencies:\\n      csstype: (\\S+)$`, "m"),
+  )?.[1];
+  assert(csstype, "provider type dependency absent from source lock");
+  return { "@types/react": reactTypes, csstype };
+}
+
 export function providerTypesLock(sdk, next, sourceLock) {
-  for (const [, , integrity] of typePackages)
-    assert(sourceLock.includes(integrity), "provider type integrity absent from source lock");
+  const lock = readFrameworkSource(sourceLock);
+  const { "@types/react": reactTypes, csstype } = providerTypeVersions(sourceLock);
+  const integrity = (id) => {
+    const match = lock.packages.match(
+      new RegExp(`^  ${escape(id)}:\\n    resolution: \\{integrity: (sha512-[A-Za-z0-9+/=]+)\\}$`, "m"),
+    );
+    assert(match, "provider type integrity absent from source lock");
+    return match[1];
+  };
+  const typePackages = [
+    ["@types/react", reactTypes, integrity(`'@types/react@${reactTypes}'`)],
+    ["csstype", csstype, integrity(`csstype@${csstype}`)],
+  ];
   const manifests = [sdk, next].map(({ packed }) =>
     JSON.parse(packed.get("package/package.json").data),
   );
+  assert(typeof manifests[0].engines?.node === "string", "provider package engines missing");
   for (const manifest of manifests)
-    assert.deepEqual(manifest.engines, { node: ">=24 <25" }, "provider package engines changed");
+    assert.deepEqual(manifest.engines, manifests[0].engines, "provider package engines differ");
+  const engines = `engines: {node: ${yamlValue(manifests[0].engines.node)}}`;
+  const peers = manifests[1].peerDependencies ?? {};
   const sdkId = "@commish/sdk@file:sdk.tgz";
   const typeImports = `      '@types/react':
-        specifier: 19.2.18
-        version: 19.2.18
+        specifier: ${reactTypes}
+        version: ${reactTypes}
       csstype:
-        specifier: 3.2.3
-        version: 3.2.3`;
+        specifier: ${csstype}
+        version: ${csstype}`;
   const typeRecords = typePackages
     .map(
-      ([name, version, integrity]) =>
+      ([name, version, hash]) =>
         `  ${name.startsWith("@") ? `'${name}@${version}'` : `${name}@${version}`}:
-    resolution: {integrity: ${integrity}}`,
+    resolution: {integrity: ${hash}}`,
     )
     .join("\n\n");
-  const typeSnapshots = `  '@types/react@19.2.18':
+  const typeSnapshots = `  '@types/react@${reactTypes}':
     dependencies:
-      csstype: 3.2.3
+      csstype: ${csstype}
 
-  csstype@3.2.3: {}`;
+  csstype@${csstype}: {}`;
   const header = `lockfileVersion: '9.0'
 
 settings:
@@ -81,18 +96,16 @@ packages:
 
   '@commish/next@file:next.tgz':
     resolution: {integrity: ${sri(next.archive)}, tarball: file:next.tgz}
-    version: ${releaseVersion}
-    engines: {node: '>=24 <25'}
+    version: ${manifests[1].version}
+    ${engines}
 ${manifests[1].bin ? "    hasBin: true\n" : ""}    peerDependencies:
-      '@commish/sdk': ${releaseVersion}
-      next: '>=16.3.8 <17'
-      react: '>=19.2.8 <20'
+${Object.keys(peers).sort().map((name) => `      ${yamlKey(name)}: ${yamlValue(peers[name])}`).join("\n")}
 
   '${sdkId}':
     resolution: {integrity: ${sri(sdk.archive)}, tarball: file:sdk.tgz}
-    version: ${releaseVersion}
-    engines: {node: '>=24 <25'}
-${manifests[0].bin ? '    hasBin: true\n' : ''}
+    version: ${manifests[0].version}
+    ${engines}
+${manifests[0].bin ? "    hasBin: true\n" : ""}
 ${typeRecords}
 
 snapshots:
@@ -105,6 +118,7 @@ snapshots:
 
 ${typeSnapshots}
 `,
+    dependencies: { "@types/react": reactTypes, csstype },
   };
 }
 
@@ -119,12 +133,12 @@ function ownedChild(root, path) {
 }
 
 // Bind type package identity and every byte across extension and the browser probe.
-export function readProviderTypeInputs(consumer) {
+export function readProviderTypeInputs(consumer, dependencies) {
   const roots = ["@types/react", "csstype"].map((name) => {
     const root = ownedChild(consumer, join(consumer, "node_modules", name));
     const manifest = JSON.parse(readFileSync(join(root, "package.json")));
     assert.equal(manifest.name, name);
-    assert.equal(manifest.version, name === "csstype" ? "3.2.3" : "19.2.18");
+    assert.equal(manifest.version, dependencies[name], "provider type version differs from the source lock");
     for (const file of name === "csstype" ? ["index.d.ts"] : ["index.d.ts", "jsx-runtime.d.ts"])
       ownedChild(root, join(root, file));
     return root;

@@ -1,59 +1,79 @@
-import { releaseVersion } from "./stable-release.mjs";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 
-export const frameworkDependencies = {
-  "@types/node": "24.13.3",
-  "@types/react": "19.2.18",
-  "@types/react-dom": "19.2.5",
-  next: "16.3.8",
-  react: "19.2.8",
-  "react-dom": "19.2.8",
-  typescript: "5.9.2",
-};
-export const frameworkWorkspace = `packages: ['.']
-autoInstallPeers: false
-engineStrict: true
-overrides:
-  baseline-browser-mapping: 2.11.18
-  caniuse-lite: 1.0.30001809
-`;
-// These two SRI-bound local test tarballs have no registry publication timestamp.
-// All registry dependencies retain pnpm's release-age policy.
-export const frameworkPairWorkspace = `${frameworkWorkspace}minimumReleaseAgeExclude:
-  - '@commish/sdk@${releaseVersion}'
-  - '@commish/next@${releaseVersion}'
-`;
 const sri = (bytes) => `sha512-${createHash("sha512").update(bytes).digest("base64")}`;
+// pnpm writes YAML keys and scalars plain unless they start with an indicator or
+// contain spaces: scoped names and ranges such as '>=16.3.8 <17' are single-quoted.
+export const yamlKey = (name) => (/^[A-Za-z0-9_.-]+$/.test(name) ? name : `'${name}'`);
+export const yamlValue = (value) =>
+  /^[A-Za-z0-9~_.][A-Za-z0-9~_.-]*$/.test(value) ? value : `'${value}'`;
 
-// Project only this reviewed, complete registry closure; the local pair is added offline.
-export function frameworkLocks(source, sdk, next) {
-  assert.equal(
-    createHash("sha256").update(source).digest("hex"),
-    "08d21bd244dca7a09bf92e2cd3acf2e5db87da0be448fbd2d0ba14d589fd3fe0",
+// Reads what the framework fixtures need from the workspace lockfile: its header
+// settings and overrides, the Next package's registry dependencies with their
+// resolved versions, and the registry closure. Any other lockfile shape is refused.
+export function readFrameworkSource(source) {
+  const text = source.toString();
+  const importersAt = text.indexOf("\nimporters:\n"),
+    packagesAt = text.indexOf("\npackages:\n\n"),
+    snapshotsAt = text.indexOf("\nsnapshots:\n\n");
+  assert(
+    text.startsWith("lockfileVersion: '9.0'\n") && importersAt > 0 && packagesAt > importersAt && snapshotsAt > packagesAt,
     "unsupported framework source lock",
   );
-  const text = source.toString();
-  const header = text
-    .slice(0, text.indexOf("importers:\n"))
-    .replace("autoInstallPeers: true", "autoInstallPeers: false");
-  const imports = text.slice(
-    text.indexOf("      '@types/node':"),
-    text.indexOf("\n\n  packages/sdk:"),
-  );
-  const [packages, snapshots] = text.split("\npackages:\n\n")[1].split("\nsnapshots:\n\n");
-  const nextVersion = "16.3.8(@types/node@24.13.3)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)";
-  const sdkId = "@commish/sdk@file:sdk.tgz";
-  const peerSuffix = `(${sdkId})(next@${nextVersion})(react@19.2.8)`;
-  const packageRecord = (name, artifact, peers = "") => `  '@commish/${name}@file:${name}.tgz':
-    resolution: {integrity: ${sri(artifact.archive)}, tarball: file:${name}.tgz}
-    version: ${releaseVersion}
-    engines: {node: '>=24 <25'}
-${JSON.parse(artifact.packed.get("package/package.json").data).bin ? "    hasBin: true\n" : ""}${peers}
-`;
+  const start = text.indexOf("\n  packages/next:\n", importersAt);
+  assert(start > 0 && start < packagesAt, "unsupported framework source lock");
+  const block = text.slice(start + 1, text.indexOf("\n\n", start + 1));
+  const entries = [...block.matchAll(/^      ('?)([^\s:'][^:']*)\1:\n        specifier: (.+)\n        version: (.+)$/gm)]
+    .map(([, , name, specifier, version]) => ({ name, specifier, version }));
+  assert(entries.some(({ name, version }) => name === "@commish/sdk" && version === "link:../sdk"),
+    "unsupported framework source lock");
+  const registry = entries.filter(({ name }) => name !== "@commish/sdk");
+  assert(registry.length > 0 && registry.every(({ specifier }) => /^\d+\.\d+\.\d+$/.test(specifier)),
+    "unsupported framework source lock");
+  const overrides = [...(text.match(/^overrides:\n((?:  .+\n)+)/m)?.[1] ?? "").matchAll(/^  (\S+): (\S+)$/gm)]
+    .map(([, name, version]) => [name, version]);
   return {
-    registry: `${header}importers:\n\n  .:\n    dependencies:\n${imports}\n\npackages:\n\n${packages}\nsnapshots:\n\n${snapshots}`,
-    paired: `${header}importers:
+    header: text.slice(0, importersAt + 1).replace("autoInstallPeers: true", "autoInstallPeers: false"),
+    overrides,
+    dependencies: Object.fromEntries(registry.map(({ name, specifier }) => [name, specifier])),
+    resolved: Object.fromEntries(registry.map(({ name, version }) => [name, version])),
+    imports: registry
+      .map(({ name, specifier, version }) => `      ${yamlKey(name)}:\n        specifier: ${specifier}\n        version: ${version}`)
+      .join("\n"),
+    packages: text.slice(packagesAt + 12, snapshotsAt),
+    snapshots: text.slice(snapshotsAt + 13),
+  };
+}
+
+const peerLines = (manifest) =>
+  manifest.peerDependencies
+    ? `    peerDependencies:\n${Object.keys(manifest.peerDependencies).sort()
+      .map((name) => `      ${yamlKey(name)}: ${yamlValue(manifest.peerDependencies[name])}`).join("\n")}\n`
+    : "";
+
+// Project the reviewed registry closure for the framework consumer, then the same
+// closure with the local pair added offline. Versions, engines and peers come from
+// the lockfile and the archives themselves.
+export function frameworkLocks(source, sdk, next) {
+  const lock = readFrameworkSource(source);
+  const manifests = [sdk, next].map((artifact) => JSON.parse(artifact.packed.get("package/package.json").data));
+  for (const manifest of manifests)
+    assert(typeof manifest.engines?.node === "string" && typeof manifest.version === "string", "framework pair manifests incomplete");
+  const { next: nextVersion, react: reactVersion } = lock.resolved;
+  assert(nextVersion && reactVersion, "unsupported framework source lock");
+  const sdkId = "@commish/sdk@file:sdk.tgz";
+  const peerSuffix = `(${sdkId})(next@${nextVersion})(react@${reactVersion})`;
+  const packageRecord = (name, artifact, manifest) => `  '@commish/${name}@file:${name}.tgz':
+    resolution: {integrity: ${sri(artifact.archive)}, tarball: file:${name}.tgz}
+    version: ${manifest.version}
+    engines: {node: ${yamlValue(manifest.engines.node)}}
+${manifest.bin ? "    hasBin: true\n" : ""}${peerLines(manifest)}
+`;
+  const workspace = `packages: ['.']\nautoInstallPeers: false\nengineStrict: true\n${
+    lock.overrides.length ? `overrides:\n${lock.overrides.map(([name, version]) => `  ${name}: ${version}`).join("\n")}\n` : ""}`;
+  return {
+    registry: `${lock.header}importers:\n\n  .:\n    dependencies:\n${lock.imports}\n\npackages:\n\n${lock.packages}\nsnapshots:\n\n${lock.snapshots}`,
+    paired: `${lock.header}importers:
 
   .:
     dependencies:
@@ -63,35 +83,32 @@ ${JSON.parse(artifact.packed.get("package/package.json").data).bin ? "    hasBin
       '@commish/sdk':
         specifier: file:./sdk.tgz
         version: file:sdk.tgz
-${imports}
+${lock.imports}
 
 packages:
 
-${packageRecord(
-  "next",
-  next,
-  `    peerDependencies:
-      '@commish/sdk': ${releaseVersion}
-      next: '>=16.3.8 <17'
-      react: '>=19.2.8 <20'
-`,
-)}${packageRecord("sdk", sdk)}${packages}
+${packageRecord("next", next, manifests[1])}${packageRecord("sdk", sdk, manifests[0])}${lock.packages}
 snapshots:
 
   '@commish/next@file:next.tgz${peerSuffix}':
     dependencies:
       '@commish/sdk': file:sdk.tgz
       next: ${nextVersion}
-      react: 19.2.8
+      react: ${reactVersion}
 
   '${sdkId}': {}
 
-${snapshots}`,
-    registryIds: [...packages.matchAll(/^  '?([^\s'][^'\n]*)'?:\n/gm)].map((match) => match[1]),
-    requiredIds: snapshots
+${lock.snapshots}`,
+    registryIds: [...lock.packages.matchAll(/^  '?([^\s'][^'\n]*)'?:\n/gm)].map((match) => match[1]),
+    requiredIds: lock.snapshots
       .split(/\n(?=  \S)/)
       .filter((block) => !block.includes("    optional: true"))
       .map((block) => block.match(/^  '?([^'(\n:]+)(?:\(|'?:)/)?.[1])
       .filter(Boolean),
+    dependencies: lock.dependencies,
+    workspace,
+    // The two SRI-bound local test tarballs have no registry publication timestamp.
+    // All registry dependencies retain pnpm's release-age policy.
+    pairWorkspace: `${workspace}minimumReleaseAgeExclude:\n  - '@commish/sdk@${manifests[0].version}'\n  - '@commish/next@${manifests[1].version}'\n`,
   };
 }

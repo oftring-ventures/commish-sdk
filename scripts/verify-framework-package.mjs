@@ -80,7 +80,7 @@ export function frameworkRegistryBinHash(consumer, root, name) {
 }
 
 // Registry bytes are frozen by the caller before extension and compared again after this check.
-export function verifyFrameworkPackage(consumer, root, artifact, registry, sdk) {
+export function verifyFrameworkPackage(consumer, root, artifact, registry, sdk, nextVersion) {
   consumer = realpathSync(consumer);
   root = child(consumer, root);
   const members = files(root);
@@ -104,10 +104,10 @@ export function verifyFrameworkPackage(consumer, root, artifact, registry, sdk) 
     );
     const next = JSON.parse(readFileSync(nextManifest));
     assert.equal(next.name, "next");
-    assert.equal(next.version, "16.3.8");
+    assert.equal(next.version, nextVersion, "framework version differs from the source lock");
     assert.deepEqual(next.bin, { next: "./dist/bin/next" });
     const source = dirname(nextManifest);
-    const frozen = registry.find(([id]) => id === "next@16.3.8");
+    const frozen = registry.find(([id]) => id === `next@${nextVersion}`);
     assert(frozen && frozen[1] === relative(consumer, source), "bin source identity differs");
     for (const name of ["package.json", "dist/bin/next"]) {
       const path = child(source, join(source, name));

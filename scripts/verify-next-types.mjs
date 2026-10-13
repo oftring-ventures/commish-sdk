@@ -70,7 +70,7 @@ function verifyNextTypes(kind, consumer, sdk, next, context, execute = execFileS
     return { packed, installed, declaration };
   });
   const typeInputs = () =>
-    kind === "provider" ? readProviderTypeInputs(consumer) : { roots: [], files: [] };
+    kind === "provider" ? readProviderTypeInputs(consumer, context.typeVersions) : { roots: [], files: [] };
   const originalTypes = typeInputs();
   const typeRoots = originalTypes.roots;
   const env = Object.freeze({
