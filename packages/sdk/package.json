@@ -48,8 +48,8 @@
     "typecheck": "tsc -p tsconfig.build.json --noEmit"
   },
   "devDependencies": {
-    "typescript": "5.9.2",
-    "@types/node": "24.13.3"
+    "typescript": "5.9.3",
+    "@types/node": "24.19.2"
   },
   "bin": {
     "commish": "./bin/init.mjs"
