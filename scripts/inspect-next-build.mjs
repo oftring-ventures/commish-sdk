@@ -33,16 +33,29 @@ export function inspectNextBuild(consumer) {
   const serverFiles = nextBuildFiles(server).filter((path) => path.endsWith(".js"));
   const clientFiles = nextBuildFiles(client).filter((path) => path.endsWith(".js"));
   assert(serverFiles.length && clientFiles.length, "empty Next build JavaScript inventory");
-  const witness = serverFiles.find((path) => readFileSync(path).includes(serverMarker));
+  // The SDK client must also bundle for the Edge runtime: its route is compiled by
+  // the edge compiler and listed as a function in the middleware manifest.
+  const edge = JSON.parse(
+    readFileSync(nextBuildChild(server, join(server, "middleware-manifest.json"))),
+  );
+  const edgeRoute = edge.functions?.["/api/edge/route"];
+  assert(Array.isArray(edgeRoute?.files) && edgeRoute.files.length > 0, "missing edge route");
+  const edgeFiles = edgeRoute.files.map((file) => nextBuildChild(build, join(build, file)));
+  const witness = serverFiles
+    .filter((path) => !edgeFiles.includes(path))
+    .find((path) => readFileSync(path).includes(serverMarker));
   assert(witness, "server marker witness missing");
   assert(
     clientFiles.every((path) => !readFileSync(path).includes(serverMarker)),
     "server marker leaked into client output",
   );
+  const edgeWitness = edgeFiles.find((path) => readFileSync(path).includes(serverMarker));
+  assert(edgeWitness, "edge marker witness missing");
   return {
     serverFiles: serverFiles.length,
     clientFiles: clientFiles.length,
     witness: relative(build, witness),
     sha256: hash(readFileSync(witness)),
+    edgeWitness: relative(build, edgeWitness),
   };
 }

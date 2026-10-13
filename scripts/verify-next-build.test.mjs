@@ -108,6 +108,9 @@ test("only declared framework capabilities select a build and invalid inputs fai
       "return Response.json({ kind: typeof client })",
     ),
   );
+  assert(nextBuildFixture["app/api/edge/route.ts"].includes("export const runtime = 'edge'"));
+  assert(nextBuildFixture["app/api/edge/route.ts"].includes(serverMarker));
+  assert(nextServerBuildFixture["app/api/edge/route.ts"] === nextBuildFixture["app/api/edge/route.ts"]);
   assert(!nextBuildFixture["app/layout.tsx"].includes('"use client"'));
   assert(nextBuildFixture["app/layout.tsx"].includes("@commish/next/react"));
   assert(!nextServerBuildFixture["app/layout.tsx"].includes("@commish/next/react"));

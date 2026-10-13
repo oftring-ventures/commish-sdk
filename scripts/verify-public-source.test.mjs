@@ -159,6 +159,8 @@ test("source shape fails closed on modes, orphans, toolchain drift, lockfile ori
     ["browser entry excluded", (f) => patch(f, sdk, (m) => { m.exports["./browser"] = { types: "./dist/browser.d.ts", browser: null, default: "./dist/browser.js" }; }), /is a browser entry/],
     ["unknown condition", (f) => patch(f, sdk, (m) => { m.exports["."].import = "./dist/index.js"; }), /unknown export condition/],
     ["edge runtime on webhooks", (f) => patch(f, sdk, (m) => { m.exports["./webhooks"]["edge-light"] = "./dist/webhooks.js"; }), /supported only by the SDK client/],
+    ["edge runtime behind browser", (f) => patch(f, sdk, (m) => { m.exports["."] = { types: "./dist/index.d.ts", browser: null, "edge-light": "./dist/index.js", default: "./dist/index.js" }; }), /must precede the browser condition/],
+    ["edge runtime to another build", (f) => patch(f, sdk, (m) => { m.exports["."]["edge-light"] = "./dist/browser.js"; }), /resolve the default build/],
     ["outside target", (f) => patch(f, sdk, (m) => { m.exports["./browser"].default = "../../outside.js"; }), /default target/],
     ["manifest export", (f) => patch(f, sdk, (m) => { m.exports["./package.json"] = "./dist/index.js"; }), /package.json export/],
     ["other bin", (f) => patch(f, sdk, (m) => { m.bin = { other: "./bin/other" }; }), /entry point/],
