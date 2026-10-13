@@ -10,6 +10,8 @@ concurrency:
 jobs:
   admit:
     name: Validate public review admission
+    # Drafts are skipped here and still rejected by the script below if one is admitted.
+    if: github.event.pull_request.draft == false
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:

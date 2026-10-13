@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { createRequire } from "node:module";
 import { gzipSync } from "node:zlib";
 import test from "node:test";
-import { archiveFiles, inspect, verify, verifyPackages } from "./verify-public-source.mjs";
+import { archiveFiles, failureDiagnostic, inspect, verify, verifyPackages } from "./verify-public-source.mjs";
 
 function bootstrap() {
   const files = new Map();
@@ -751,4 +751,19 @@ test("skipped model jobs cannot impersonate the required gate and group bridging
 test("archive admits only reviewed CLI modules", () => {
   assert.equal(archiveFiles(tar([["package/bin/setup-session.mjs", "// reviewed module"]])).size, 1);
   assert.throws(() => archiveFiles(tar([["package/bin/arbitrary.mjs", "extra"]])));
+});
+
+test("the failure diagnostic names the assertion without printing generated diffs", () => {
+  let authored;
+  try { assert.equal(1, 2, "unsupported lockfile"); } catch (error) { authored = error; }
+  assert.equal(failureDiagnostic(authored),
+    "Public source verification failed (ERR_ASSERTION: unsupported lockfile); no acceptance receipt issued.");
+  let generated;
+  try { assert.equal("secret-bearing actual", "expected"); } catch (error) { generated = error; }
+  assert.equal(failureDiagnostic(generated),
+    "Public source verification failed (ERR_ASSERTION); no acceptance receipt issued.");
+  assert.equal(failureDiagnostic(new Error("ENOENT: /private/path")),
+    "Public source verification failed (unknown); no acceptance receipt issued.");
+  assert.equal(failureDiagnostic(undefined),
+    "Public source verification failed (unknown); no acceptance receipt issued.");
 });

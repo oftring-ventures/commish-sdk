@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -82,7 +82,8 @@ test("compiler context, exact project, resolution, mutation and failure boundari
     { kind: "index", failure: "client-command" },
   ]) {
     const names = ["types-common.ts", kind === "types" ? "types-only.ts" : "types-client.ts"];
-    const root = mkdtempSync(join(tmpdir(), "commish-types-test-"));
+    // macOS places temporary files behind a symlink; the verifier reports real paths.
+    const root = realpathSync(mkdtempSync(join(tmpdir(), "commish-types-test-")));
     const build = join(root, "build"),
       checkout = join(root, "checkout"),
       consumer = join(root, "consumer");
