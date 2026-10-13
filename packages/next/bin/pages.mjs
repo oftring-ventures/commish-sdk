@@ -433,8 +433,7 @@ export async function runPages(args) {
             // Keep successful API resolution separate from local configuration.
           }
           if (
-            !origin ||
-            origin.protocol !== "https:" ||
+            origin?.protocol !== "https:" ||
             origin.origin !== process.env.COMMISH_PAGES_ORIGIN ||
             data.origin !== origin.origin ||
             data.canonicalPath !== `${value.prefix}/${value.creator}` ||

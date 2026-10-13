@@ -5,7 +5,7 @@ import { isAbsolute, join, relative, sep } from "node:path";
 import { readFrameworkSource, yamlKey, yamlValue } from "./next-framework-lock.mjs";
 
 const sri = (bytes) => `sha512-${createHash("sha512").update(bytes).digest("base64")}`;
-const escape = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const escapePattern = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 // The provider declaration gate installs @types/react and its one dependency from
 // the registry at the versions the workspace lockfile resolved, bound by integrity,
@@ -15,7 +15,7 @@ export function providerTypeVersions(sourceLock) {
   const reactTypes = lock.dependencies["@types/react"];
   assert(reactTypes, "provider type dependency absent from source lock");
   const csstype = lock.snapshots.match(
-    new RegExp(`^  '@types/react@${escape(reactTypes)}':\\n    dependencies:\\n      csstype: (\\S+)$`, "m"),
+    new RegExp(`^  '@types/react@${escapePattern(reactTypes)}':\\n    dependencies:\\n      csstype: (\\S+)$`, "m"),
   )?.[1];
   assert(csstype, "provider type dependency absent from source lock");
   return { "@types/react": reactTypes, csstype };
@@ -26,7 +26,7 @@ export function providerTypesLock(sdk, next, sourceLock) {
   const { "@types/react": reactTypes, csstype } = providerTypeVersions(sourceLock);
   const integrity = (id) => {
     const match = lock.packages.match(
-      new RegExp(`^  ${escape(id)}:\\n    resolution: \\{integrity: (sha512-[A-Za-z0-9+/=]+)\\}$`, "m"),
+      new RegExp(`^  ${escapePattern(id)}:\\n    resolution: \\{integrity: (sha512-[A-Za-z0-9+/=]+)\\}$`, "m"),
     );
     assert(match, "provider type integrity absent from source lock");
     return match[1];

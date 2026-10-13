@@ -10,7 +10,12 @@ With the Node version in `.node-version` and the pnpm version in the root
 ```sh
 pnpm install --frozen-lockfile --ignore-scripts --registry=https://registry.npmjs.org
 pnpm build
+pnpm lint
+pnpm test
 ```
+
+`pnpm lint` runs Biome with the rules in `biome.json`; CI runs the same command and
+reports test coverage for the CLI and release scripts.
 
 The complete source pair targets the stable version declared in both package
 manifests, which `scripts/stable-release.mjs` reads, on npm's `latest` tag.

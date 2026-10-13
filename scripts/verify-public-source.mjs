@@ -55,7 +55,7 @@ const required = [
 // install or registry configuration such as .npmrc or .pnpmfile.cjs, nested or
 // unlisted files) needs a reviewed change to this list.
 const allowedPaths = [
-  /^(?:\.gitignore|\.node-version|LICENSE|README\.md|RELEASING\.md|package\.json|pnpm-workspace\.yaml|pnpm-lock\.yaml)$/,
+  /^(?:\.gitignore|\.node-version|LICENSE|README\.md|RELEASING\.md|biome\.json|package\.json|pnpm-workspace\.yaml|pnpm-lock\.yaml)$/,
   /^\.github\/workflows\/(?:public-source|public-review|public-review-merge-group|publish-packages)\.yml$/,
   /^scripts\/[a-z0-9-]+(?:\.test)?\.mjs$/,
   /^scripts\/fixtures\/[a-z0-9-]+\.(?:mjs|ts|tsx|txt)$/,
@@ -184,7 +184,7 @@ export async function verifyPackages(files, packages, run, checkout = process.cw
       for (const target of targets) {
         const entry = packed.get(`package/${target.slice(2)}`);
         assert(
-          entry && entry.data.equals(readFileSync(join(cwd, target))),
+          entry?.data.equals(readFileSync(join(cwd, target))),
           "declared target is missing or changed in archive",
         );
         assert.equal(

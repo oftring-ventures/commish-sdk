@@ -11,7 +11,7 @@ export async function executeDoctor(args, options = {}) {
   const client = managementClient({ ...options, authFile: v["auth-file"], mode: v.mode, url: v["management-url"] });
   const receipt = await client.call("diagnostics.get", { programId: v.program });
   const report = receipt.data?.report;
-  if (!report || report.version !== 1 || report.mode !== client.mode || report.programId !== v.program ||
+  if (report?.version !== 1 || report.mode !== client.mode || report.programId !== v.program ||
     !["observed", "incomplete"].includes(report.status) || report.integrationVerified !== false || !Array.isArray(report.unmetConditions)) fail("invalid_response");
   return { ...receipt, status: report.status, integrationVerified: false };
 }
