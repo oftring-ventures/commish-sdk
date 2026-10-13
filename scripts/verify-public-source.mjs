@@ -31,8 +31,9 @@ import {
   verifyNextProviderConsumer,
 } from "./verify-next-browser-consumer.mjs";
 
-// The tree is verified by shape: any file may be added, but the release gate, the
-// toolchain declaration and the pair's manifests must keep these properties.
+// The tree is verified by shape: files may be added under the allowed paths, but
+// the release gate, the toolchain declaration and the pair's manifests must keep
+// these properties.
 const required = [
   ".gitignore",
   "LICENSE",
@@ -48,6 +49,19 @@ const required = [
   "scripts/verify-public-source.mjs",
   "scripts/verify-public-source.test.mjs",
   "scripts/publication-workflow.test.mjs",
+];
+// Paths a change may add without editing this gate: flat modules, fixtures and
+// guides under fixed directories. Any other path (another workflow or action,
+// install or registry configuration such as .npmrc or .pnpmfile.cjs, nested or
+// unlisted files) needs a reviewed change to this list.
+const allowedPaths = [
+  /^(?:\.gitignore|\.node-version|LICENSE|README\.md|RELEASING\.md|package\.json|pnpm-workspace\.yaml|pnpm-lock\.yaml)$/,
+  /^\.github\/workflows\/(?:public-source|public-review|public-review-merge-group|publish-packages)\.yml$/,
+  /^scripts\/[a-z0-9-]+(?:\.test)?\.mjs$/,
+  /^scripts\/fixtures\/[a-z0-9-]+\.(?:mjs|ts|tsx|txt)$/,
+  /^packages\/(?:sdk|next)\/(?:LICENSE|README\.md|package\.json|build\.mjs|tsconfig\.build\.json)$/,
+  /^packages\/(?:sdk|next)\/(?:src\/[a-z0-9-]+\.tsx?|bin\/[a-z0-9-]+\.(?:mjs|json))$/,
+  /^packages\/next\/guides\/[a-z0-9-]+\.md$/,
 ];
 const sha = (data) => createHash("sha256").update(data).digest("hex");
 const bytes = (files, name) => {
@@ -72,6 +86,7 @@ export function inspect(files) {
     );
     if (name.startsWith("packages/"))
       assert(packageNames.includes(name.split("/")[1]), "orphan package source");
+    assert(allowedPaths.some((pattern) => pattern.test(name)), `unexpected source path ${name}`);
   }
   for (const name of required) bytes(files, name);
   assert.equal(sha(bytes(files, "LICENSE")), licenseHash, "MIT license differs");

@@ -123,6 +123,7 @@ test("the committed pair is admitted and archive targets follow the exports", ()
 test("source shape fails closed on modes, orphans, toolchain drift, lockfile origins and manifest contracts", () => {
   const sdk = "packages/sdk/package.json", next = "packages/next/package.json", lock = "pnpm-lock.yaml";
   const lockText = (files) => files.get(lock).data.toString();
+  const workspaceText = (files) => files.get("pnpm-workspace.yaml").data.toString();
   for (const [label, change, expected] of [
     ["symlinked license", (f) => { f.get("LICENSE").mode = "120000"; }, /invalid source mode/],
     ["executable module", (f) => { f.get("packages/sdk/bin/cli-http.mjs").mode = "100755"; }, /invalid source mode/],
@@ -172,11 +173,32 @@ test("source shape fails closed on modes, orphans, toolchain drift, lockfile ori
     ["next peer unbounded", (f) => patch(f, next, (m) => { m.peerDependencies.next = ">=16"; }), /next peer range/],
     ["sdk with peers", (f) => patch(f, sdk, (m) => { m.peerDependencies = { react: ">=19.0.0 <20" }; }), /no peers/],
     ["shebang", (f) => { put(f, "packages/sdk/bin/init.mjs", "console.log(1)\n"); f.get("packages/sdk/bin/init.mjs").mode = "100755"; }, /shebang/],
+    ["registry configuration", (f) => put(f, ".npmrc", "registry=https://example.invalid/\n"), /unexpected source path/],
+    ["package registry configuration", (f) => put(f, "packages/sdk/.npmrc", "@types:registry=https://example.invalid/\n"), /unexpected source path/],
+    ["install hook", (f) => put(f, ".pnpmfile.cjs", "module.exports = {};\n"), /unexpected source path/],
+    ["extra workflow", (f) => put(f, ".github/workflows/deploy.yml", "on: push\n"), /unexpected source path/],
+    ["nested source", (f) => put(f, "packages/sdk/src/internal/config.ts", ""), /unexpected source path/],
+    ["unlisted document", (f) => put(f, "docs/internal-runbook.md", ""), /unexpected source path/],
+    ["root pnpm settings", (f) => patch(f, "package.json", (m) => { m.pnpm = { onlyBuiltDependencies: ["left"] }; }), /root manifest field/],
+    ["workspace registry", (f) => put(f, "pnpm-workspace.yaml", `${workspaceText(f)}registries:\n  default: https://example.invalid/\n`), /workspace setting/],
+    ["workspace build permissions", (f) => put(f, "pnpm-workspace.yaml", `${workspaceText(f)}dangerouslyAllowAllBuilds: true\n`), /workspace setting/],
+    ["ranged override", (f) => put(f, "pnpm-workspace.yaml", workspaceText(f).replace(": 2.11.18", ": ^2.11.18")), /exact versions/],
+    ["next peer below the floor", (f) => patch(f, next, (m) => { m.peerDependencies.next = ">=15.0.0 <16"; m.devDependencies.next = "15.0.0"; }), /below 16\.3\.8/],
+    ["untested next peer floor", (f) => patch(f, next, (m) => { m.peerDependencies.next = ">=16.4.0 <17"; }), /tested version/],
+    ["react peer across majors", (f) => patch(f, next, (m) => { m.peerDependencies.react = ">=19.2.8 <99"; }), /within its major/],
   ]) {
     const files = repositoryTree();
     change(files);
     assert.throws(() => inspect(files), expected, label);
   }
+});
+
+test("new flat modules, tests, fixtures and guides need no gate change", () => {
+  const files = repositoryTree();
+  for (const name of ["scripts/new-check.mjs", "scripts/new-check.test.mjs", "scripts/fixtures/new-fixture.ts",
+    "packages/sdk/src/new-module.ts", "packages/sdk/bin/new-command.mjs", "packages/next/guides/new-guide.md"])
+    put(files, name, "");
+  inspect(files);
 });
 
 test("archive inspection rejects traversal, duplicate paths, links, truncated bodies and nested modules", () => {
