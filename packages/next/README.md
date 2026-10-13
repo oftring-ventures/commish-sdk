@@ -2,7 +2,9 @@
 
 Next.js App Router integration for Commish referral capture, Checkout metadata
 and optional creator Pages. Supports permanent TEST and LIVE environments and is
-MIT licensed. Use Node 22 or later with the same SDK minor version (`~0.3.0`) and a supported Next version.
+MIT licensed. Use Node 22 or later with the same SDK minor version (`~0.3.0`) and a
+supported Next version. The CLI runs on macOS, Linux and WSL; native Windows is not
+supported.
 
 ```sh
 pnpm add --save-exact @commish/sdk@0.3.0 @commish/next@0.3.0
@@ -124,65 +126,12 @@ run the Next installer above and complete layout and Checkout wiring. Map its
 public `COMMISH_PUBLISHABLE_KEY` and `COMMISH_APPLICATION_ID` values to the
 corresponding `NEXT_PUBLIC_*` variables; keep `COMMISH_SECRET_KEY` server-only.
 
-The existing `commish-next setup` credential-only command remains compatible.
-An owner or admin can authorize an agent-driven setup without copying a secret
-from the dashboard:
-
-```sh
-pnpm exec commish-next setup \
-  --workspace wrk_your_workspace_id \
-  --application-name "Your product" \
-  --key-label "Local agent setup" \
-  --output .env.commish \
-  --json
-```
-
-The command defaults to TEST; add `--mode live` for LIVE credentials. LIVE requires
-current workspace eligibility and provider readiness at approval and exchange;
-it never falls back to TEST. The command generates the selected mode's keys on the developer's
-machine, opens a ten-minute approval page on `https://app.commish.sh`, and polls
-for the approved exchange. The browser requires an authenticated workspace owner
-or admin with a recent authenticator check. Only hashes and the publishable key
-cross the browser boundary; Commish never receives or stores the raw secret.
-
-After approval, the CLI atomically creates the explicitly named output with mode
-`0600`. It never overwrites an existing path. The file contains
-`COMMISH_API_URL`, `COMMISH_SECRET_KEY`,
-`NEXT_PUBLIC_COMMISH_PUBLISHABLE_KEY`, and
-`NEXT_PUBLIC_COMMISH_APPLICATION_ID`. Add that path to the product's local secret
-handling policy; do not commit it. An interrupted exchange can safely retry the
-same verifier and receives the same application and key.
-
-Use `--no-open` when the controlling agent will present the printed approval URL
-itself. For a trusted local Commish runtime, `--app-url` accepts an explicit
-loopback HTTP origin; other custom origins require HTTPS. Setup creates application
-credentials in the approved mode. Program configuration and the complete transaction
-journey remain separate verification steps.
-
-## Verify configuration from the CLI
-
-With the installed packages and configured environment, set `COMMISH_PROGRAM_ID`
-to your existing program ID and run `pnpm exec commish-next verify --json`.
-The command reads `COMMISH_SECRET_KEY`, `NEXT_PUBLIC_COMMISH_PUBLISHABLE_KEY`,
-`NEXT_PUBLIC_COMMISH_APPLICATION_ID` and `COMMISH_PROGRAM_ID` from the process
-environment. Use Node's `--env-file` support or your existing environment runner
-if needed; the CLI does not search for or change dotenv files.
-
-It performs one authenticated, read-only program lookup in the key's TEST or LIVE
-mode. `configuration_verified` means the key can read that program and its
-application/mode match the configured values. The receipt includes program status;
-a paused or draft program is not declared ready for transactions. Publishable-key
-format/mode is checked locally; its server-side application binding is **not** proved.
-`integrationVerified: false` and `unverified` identify the remaining real journey.
-
-The API defaults to `https://app.commish.sh/api/v1`. Set `COMMISH_API_URL` only to a
-Commish deployment you trust: this destination receives the secret key. Custom
-bases require HTTPS, except explicit loopback development addresses. Redirects are
-rejected; responses and request duration are bounded. The verification command does not provision resources or issue mutation requests. Authentication
-may update key-usage metadata. It never prints credentials/provider bodies or retries a request. Invalid configuration,
-denied/revoked keys, inaccessible programs, mismatches and unavailable responses exit
-with code 1 and a stable JSON error code. On older deployments that reject LIVE reads,
-verification fails with `access_denied`; it never falls back to TEST.
+Credential setup and configuration verification live in that CLI: run
+`pnpm exec commish setup` to provision and `pnpm exec commish verify --json` with
+`COMMISH_PROGRAM_ID` to check a configured key. `commish-next` keeps the installer
+above and the Pages commands; its former `setup` and `verify` subcommands exit with
+`command_moved` and name the replacement. `commish-next --version` prints the
+installed version.
 
 ## Creator Pages
 

@@ -198,121 +198,35 @@ export async function verifyCliProbe(executable, { generic = false } = {}) {
   }
 }
 
-export async function setupCliProbe(executable, mode = "test", responseMode = mode) {
+// commish-next keeps the installer and Pages commands; credential setup and
+// verification moved to the framework-independent commish CLI.
+export async function retiredCommandsProbe(executable, version) {
   const { default: assert } = await import("node:assert/strict");
-  const { spawn, spawnSync } = await import("node:child_process");
-  const { createHash } = await import("node:crypto");
-  const { createServer } = await import("node:http");
-  const { lstatSync, mkdtempSync, readFileSync, readdirSync, rmSync } = await import("node:fs");
+  const { spawnSync } = await import("node:child_process");
+  const { mkdtempSync, readdirSync, rmSync } = await import("node:fs");
   const { tmpdir } = await import("node:os");
   const { join } = await import("node:path");
-  const cwd = mkdtempSync(join(tmpdir(), "commish-setup-probe-"));
-  const output = join(cwd, ".env.commish"), workspaceId = "wrk_fixture_only_123456";
-  let approval, requests = 0, verifier;
-  const server = createServer(async (request, response) => {
-    requests++;
-    const chunks = [];
-    for await (const chunk of request) chunks.push(chunk);
-    verifier = JSON.parse(Buffer.concat(chunks).toString("utf8")).verifier;
-    for (let count = 0; !approval && count < 100; count++)
-      await new Promise((resolve) => setImmediate(resolve));
-    assert(approval, "approval URL was not emitted before exchange");
-    assert.equal(request.method, "POST");
-    assert.equal(request.url, "/api/cli/setup-grants/exchange");
-    assert.equal(createHash("sha256").update(verifier).digest("hex"), approval.searchParams.get("challengeHash"));
-    if (requests === 1) {
-      request.socket.destroy();
-      return;
-    }
-    const body = {
-      data: {
-        protocol: "commish-cli-setup-v1", status: "complete", workspaceId, mode: responseMode,
-        application: {
-          id: "app_fixture_only_123456", name: "Lockin",
-          verifiedOrigins: [], createdAt: "2026-09-19T12:00:00.000Z",
-        },
-        apiKey: {
-          id: "key_fixture_only_123456", applicationId: "app_fixture_only_123456",
-          mode: responseMode, publishableKey: approval.searchParams.get("publishableKey"),
-          label: "Lockin agent setup", lastUsedAt: null, revokedAt: null,
-          createdAt: "2026-09-19T12:00:00.000Z",
-        },
-        expiresAt: approval.searchParams.get("expiresAt"), replayed: true,
-      },
-    };
-    response.writeHead(200, { "content-type": "application/json" });
-    response.end(JSON.stringify(body));
-  });
-  const run = (args) => new Promise((resolve, reject) => {
-    const child = spawn(executable, args, {
-      cwd, env: { PATH: process.env.PATH }, stdio: ["ignore", "pipe", "pipe"],
-    });
-    let stdout = "", stderr = "";
-    child.stdout.on("data", (chunk) => { stdout += chunk; });
-    child.stderr.on("data", (chunk) => {
-      stderr += chunk;
-      const match = stderr.match(/https?:\/\/[^\s]+\/cli\/setup\?[^\s]+/);
-      if (match) approval = new URL(match[0]);
-    });
-    child.once("error", reject);
-    child.once("close", (code, signal) => resolve({ code, signal, stdout, stderr }));
-  });
+  const cwd = mkdtempSync(join(tmpdir(), "commish-retired-probe-"));
+  const run = (args) => spawnSync(executable, args, { cwd, env: { PATH: process.env.PATH }, encoding: "utf8", timeout: 10_000 });
   try {
-    await new Promise((resolve, reject) => {
-      server.once("error", reject); server.listen(0, "127.0.0.1", resolve);
-    });
-    const origin = `http://127.0.0.1:${server.address().port}`;
-    const result = await run([
-      "setup", "--workspace", workspaceId, "--application-name", "Lockin",
-      ...(mode === "live" ? ["--mode", "live"] : []),
-      "--key-label", "Lockin agent setup", "--output", output,
-      "--app-url", origin, "--no-open", "--json",
-    ]);
-    assert.equal(result.signal, null);
-    if (responseMode !== mode) {
-      assert.equal(result.code, 1);
-      assert.equal(JSON.parse(result.stderr.split("\n").filter(Boolean).at(-1)).code, "invalid_response");
-      assert.deepEqual(readdirSync(cwd), [], "mismatched receipt saved credentials");
-      return;
+    for (const command of ["setup", "verify"]) {
+      const result = run([command, "--json"]);
+      assert.equal(result.status, 1, result.stderr);
+      const receipt = JSON.parse(result.stderr);
+      assert.equal(receipt.code, "command_moved");
+      assert.equal(receipt.command, `commish ${command}`);
+      assert.equal(run([command]).status, 1);
     }
-    assert.equal(result.code, 0, result.stderr);
-    assert.equal(approval.searchParams.get("mode"), mode);
-    assert.equal(requests, 2, "lost exchange response was not replayed exactly");
-    const receipt = JSON.parse(result.stdout);
-    assert.deepEqual(receipt, {
-      status: `${mode}_credentials_configured`, mode, workspaceId,
-      applicationId: "app_fixture_only_123456", apiKeyId: "key_fixture_only_123456",
-      output, replayed: true, integrationVerified: false,
-      next: `Configure a ${mode.toUpperCase()} program, then run commish-next verify --json with COMMISH_PROGRAM_ID.`,
-    });
-    const environment = Object.fromEntries(readFileSync(output, "utf8").trim().split("\n").map((line) => line.split("=")));
-    assert(environment.COMMISH_SECRET_KEY.startsWith(`cm_${mode}_sk_`));
-    assert(environment.NEXT_PUBLIC_COMMISH_PUBLISHABLE_KEY.startsWith(`cm_${mode}_pk_`));
-    assert.equal(environment.COMMISH_API_URL, `${origin}/api/v1`);
-    assert.equal(environment.NEXT_PUBLIC_COMMISH_APPLICATION_ID, receipt.applicationId);
-    assert.equal(environment.NEXT_PUBLIC_COMMISH_PUBLISHABLE_KEY, approval.searchParams.get("publishableKey"));
-    assert.equal(createHash("sha256").update(environment.COMMISH_SECRET_KEY).digest("hex"), approval.searchParams.get("secretHash"));
-    assert.equal(lstatSync(output).mode & 0o777, 0o600);
-    assert(!result.stdout.includes(environment.COMMISH_SECRET_KEY));
-    assert(!result.stderr.includes(environment.COMMISH_SECRET_KEY));
-    assert(!result.stdout.includes(verifier));
-    assert(!result.stderr.includes(verifier));
-    const existing = spawnSync(executable, [
-      "setup", "--workspace", workspaceId, "--application-name", "Lockin",
-      "--output", output, "--app-url", origin, "--no-open", "--json",
-    ], { cwd, env: { PATH: process.env.PATH }, encoding: "utf8" });
-    assert.equal(existing.status, 1);
-    assert.equal(JSON.parse(existing.stderr).code, "output_exists");
-    assert.equal(requests, 2, "existing destination provisioned another credential");
-    const invalid = spawnSync(executable, ["setup", "--json"], {
-      cwd, env: { PATH: process.env.PATH }, encoding: "utf8",
-    });
-    assert.equal(invalid.status, 1);
-    assert.equal(JSON.parse(invalid.stderr).code, "invalid_arguments");
-    assert.deepEqual(readdirSync(cwd), [".env.commish"]);
+    const help = run(["--help", "--json"]);
+    assert.equal(help.status, 0, help.stderr);
+    assert.equal(JSON.parse(help.stdout).status, "help");
+    assert.equal(run(["-h"]).status, 0);
+    const printed = run(["--version"]);
+    assert.equal(printed.status, 0, printed.stderr);
+    assert.equal(printed.stdout.trim(), version);
+    assert.equal(run(["--unknown"]).status, 1);
+    assert.deepEqual(readdirSync(cwd), [], "probe changed consumer files");
   } finally {
-    server.closeAllConnections();
-    await new Promise((resolve) => server.close(resolve));
     rmSync(cwd, { recursive: true, force: true });
   }
 }
