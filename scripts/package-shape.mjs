@@ -92,7 +92,7 @@ export function inspectPackageManifest(pkg, manifest, has) {
     assert(has(stem), `export ${entry} has no source`);
     assert(record(value), `export ${entry} must map conditions`);
     const names = Object.keys(value);
-    assert(names.includes("types"), `export ${entry} must declare types`);
+    assert.equal(names[0], "types", `types condition of ${entry} must come first`);
     for (const name of names) assert(conditions.includes(name), `unknown export condition in ${entry}`);
     assert.equal(value.types, `./dist/${stem}.d.ts`, `unexpected types target for ${entry}`);
     assert.equal(value.default, `./dist/${stem}.js`, `unexpected default target for ${entry}`);

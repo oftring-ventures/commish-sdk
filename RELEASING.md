@@ -16,7 +16,7 @@ The complete source pair targets the stable version declared in both package
 manifests, which `scripts/stable-release.mjs` reads, on npm's `latest` tag.
 Package stability is independent of TEST/LIVE mode and workspace eligibility.
 Both packages include MIT LICENSE
-and setup documentation, and Next requires that exact SDK version. Release candidate
+and setup documentation, and Next requires the same SDK minor version. Release candidate
 preparation and hosted acceptance remain separate steps; use an accepted artifact
 receipt before installing the pair.
 

@@ -17,7 +17,7 @@ Pages is not a checkout or discount engine. The button goes to your existing sho
 
 ## Install
 
-Use Node 24, matching `@commish/sdk@0.3.0` and `@commish/next@0.3.0` packages, Next >=16.3.8 <17, and React >=19.2.8 <20. Existing non-Pages integrations remain optional and unchanged.
+Use Node 22 or later, `@commish/sdk` and `@commish/next` from the same minor version (0.3.x), Next >=16.3.8 <17, and React >=19.2.8 <20. Existing non-Pages integrations remain optional and unchanged.
 
 ```sh
 pnpm exec commish-next pages init --dry-run --json

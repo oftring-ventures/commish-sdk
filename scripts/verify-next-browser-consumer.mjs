@@ -140,6 +140,10 @@ function verifyNextConsumer(provider, sdk, next, context, execute = execFileSync
   // peers name the released SDK and bounded framework ranges.
   const nextExports = manifests[1].exports;
   for (const entry of Object.keys(nextExports)) {
+    if (entry === "./package.json") {
+      assert.equal(nextExports[entry], "./package.json", "unsupported Next export tuple");
+      continue;
+    }
     assert(["./browser", ".", "./react", "./pages", "./pages/handlers", "./pages/routing"].includes(entry),
       "unsupported Next export tuple");
     if (["./browser", "./react"].includes(entry)) assert(!Object.hasOwn(nextExports[entry], "browser"), "unsupported Next export tuple");
@@ -154,7 +158,7 @@ function verifyNextConsumer(provider, sdk, next, context, execute = execFileSync
     assert(Object.hasOwn(peers, "next"), "provider framework peer missing");
   for (const [index, { packed }] of [sdk, next].entries())
     for (const target of [
-      ...Object.values(manifests[index].exports).flatMap(Object.values),
+      ...Object.values(manifests[index].exports).flatMap((value) => (typeof value === "string" ? [value] : Object.values(value))),
       ...Object.values(manifests[index].bin ?? {}),
     ].filter((value) => typeof value === "string"))
       assert(packed.has(`package/${target.slice(2)}`), "missing promised paired artifact");

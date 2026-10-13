@@ -2,7 +2,7 @@
 
 Next.js App Router integration for Commish referral capture, Checkout metadata
 and optional creator Pages. Supports permanent TEST and LIVE environments and is
-MIT licensed. Use Node 24 and matching SDK/Next versions.
+MIT licensed. Use Node 22 or later with the same SDK minor version (`~0.3.0`) and a supported Next version.
 
 ```sh
 pnpm add --save-exact @commish/sdk@0.3.0 @commish/next@0.3.0

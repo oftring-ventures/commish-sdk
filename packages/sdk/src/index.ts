@@ -48,6 +48,7 @@ export class CommishError extends Error {
     readonly requestId?: string,
   ) {
     super(message);
+    this.name = "CommishError";
   }
 }
 
