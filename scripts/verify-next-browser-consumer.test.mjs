@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { pnpmVersion } from "./toolchain.mjs";
 import { execFileSync } from "node:child_process";
 import {
   existsSync,
@@ -187,7 +188,7 @@ test("all Next shapes run the actual browser identity probe from isolated paired
       const execute = (command, args, options) => {
         root = options.cwd;
         calls.push([command, args]);
-        if (args[0] === "--version") return "11.1.3\n";
+        if (args[0] === "--version") return `${pnpmVersion}\n`;
         if (command === "pnpm") {
           assert.deepEqual(args, [
             "install",
@@ -198,7 +199,7 @@ test("all Next shapes run the actual browser identity probe from isolated paired
           ]);
           assert.equal(
             JSON.parse(readFileSync(join(root, "package.json"))).packageManager,
-            "pnpm@11.1.3",
+            `pnpm@${pnpmVersion}`,
           );
           for (const [index, name] of ["sdk", "next"].entries())
             assert(readFileSync(join(root, `${name}.tgz`)).equals(packages[index].archive));
@@ -235,7 +236,7 @@ test("installed Node root rejects wrong exports or behavior and cleans its consu
     let root;
     const execute = (command, args, options) => {
       root = options.cwd;
-      if (args[0] === "--version") return "11.1.3\n";
+      if (args[0] === "--version") return `${pnpmVersion}\n`;
       if (command === "pnpm") return install(root, packages);
       if (args[0] === join(compiler, "bin/tsc")) return compilerResult(args, root);
       return execFileSync(command, args, options);
@@ -293,7 +294,7 @@ test("first failures suppress the scope and remove the entire owned consumer", (
     let root;
     const execute = (command, args, options) => {
       root = options.cwd;
-      if (args[0] === "--version") return failure === "version" ? "wrong\n" : "11.1.3\n";
+      if (args[0] === "--version") return failure === "version" ? "wrong\n" : `${pnpmVersion}\n`;
       const browser = join(root, "node_modules/@commish/next/dist/browser.js");
       if (command === "pnpm") {
         if (failure === "install") throw new Error("controlled install failure");
@@ -385,7 +386,7 @@ test("provider layout freezes registry types then extends the exact local pair o
       const execute = (command, args, options) => {
         consumer = options.cwd;
         calls.push([command, args]);
-        if (command === "pnpm" && args[0] === "--version") return "11.1.3";
+        if (command === "pnpm" && args[0] === "--version") return pnpmVersion;
         if (command === "pnpm") {
           const registry = args.includes("--frozen-lockfile");
           assert.deepEqual(args, [

@@ -20,7 +20,7 @@ test("only the publication job receives OIDC; no package install or token fallba
   assert.match(jobs, /permissions:\n      contents: read\n      actions: read\n      id-token: write\n/);
   assert.doesNotMatch(workflow, /NODE_AUTH_TOKEN|NPM_TOKEN|secrets\.|registry-url:|npm install|pnpm install|npm publish|contents: write/);
   assert.match(workflow, /persist-credentials: false/);
-  assert.match(workflow, /node-version: 24\.15\.0/);
+  assert.match(workflow, /node-version-file: \.node-version/);
   for (const match of workflow.matchAll(/uses: ([^\n]+)/g)) assert.match(match[1], /@[a-f0-9]{40}(?: |$)/);
 });
 

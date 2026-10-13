@@ -1,4 +1,5 @@
 import { releaseVersion } from "./stable-release.mjs";
+import { nodeVersion, pnpmVersion } from "./toolchain.mjs";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -41,6 +42,7 @@ const automation = [
     "scripts/setup-command.test.mjs",
     "scripts/setup-authorization.test.mjs",
   "scripts/stable-release.mjs",
+  "scripts/toolchain.mjs",
   "scripts/stable-release.test.mjs",
   ".github/workflows/publish-packages.yml",
   "scripts/publication-workflow.test.mjs",
@@ -104,7 +106,7 @@ const bootstrap = {
   LICENSE: "03f0077d06d3281e364be7f1cbb440d6996c65d3a6a19a73de41a7c6d02be702",
   "README.md": "63d2b78b672460c3e4c586c35ad4b261645570a0c6914ddb96f1fb74aee7f380",
 };
-const roots = [...Object.keys(bootstrap), "package.json", "pnpm-workspace.yaml", "pnpm-lock.yaml"];
+const roots = [...Object.keys(bootstrap), ".node-version", "package.json", "pnpm-workspace.yaml", "pnpm-lock.yaml"];
 const common = ["package.json", "LICENSE", "README.md", "build.mjs", "tsconfig.build.json"];
 const sources = {
   sdk: ["browser", "types", "webhooks", "index", "reads", "pages"],
@@ -180,6 +182,7 @@ export function inspect(files) {
     return [];
   }
   for (const name of roots) bytes(files, name);
+  assert.equal(bytes(files, ".node-version").toString().trim(), nodeVersion, "source .node-version differs from the toolchain");
   const packages = files.has("packages/next/package.json") ? ["sdk", "next"] : ["sdk"];
   const expectedBuild = packages.map((name) => `pnpm --filter @commish/${name} build`).join(" && ");
   assert.deepEqual(
@@ -187,7 +190,7 @@ export function inspect(files) {
     {
       name: "commish-public-packages",
       private: true,
-      packageManager: "pnpm@11.1.3",
+      packageManager: `pnpm@${pnpmVersion}`,
       engines: { node: ">=24 <25" },
       scripts: { build: expectedBuild },
     },
@@ -457,7 +460,7 @@ export async function verify(root, expectedSha, candidateOutput) {
     0,
     "source checkout must be clean",
   );
-  assert.equal(process.versions.node, "24.15.0", "Node must be 24.15.0");
+  assert.equal(process.versions.node, nodeVersion, "Node differs from .node-version");
   const files = new Map(
     git("ls-tree", "-rz", "HEAD")
       .toString()
@@ -477,8 +480,8 @@ export async function verify(root, expectedSha, candidateOutput) {
   if (packages.length) {
     assert.equal(
       execFileSync("pnpm", ["--version"], { encoding: "utf8" }).trim(),
-      "11.1.3",
-      "pnpm must be 11.1.3",
+      pnpmVersion,
+      "pnpm differs from the root packageManager",
     );
     evidence = await verifyPackages(
       files,

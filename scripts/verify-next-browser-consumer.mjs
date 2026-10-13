@@ -1,5 +1,6 @@
 import { releaseVersion } from "./stable-release.mjs";
 import assert from "node:assert/strict";
+import { pnpmVersion } from "./toolchain.mjs";
 import { execFileSync } from "node:child_process";
 import {
   mkdtempSync,
@@ -191,7 +192,7 @@ function verifyNextConsumer(provider, sdk, next, context, execute = execFileSync
         JSON.stringify({
           private: true,
           type: "module",
-          packageManager: "pnpm@11.1.3",
+          packageManager: `pnpm@${pnpmVersion}`,
           dependencies,
         }),
       );
@@ -200,7 +201,7 @@ function verifyNextConsumer(provider, sdk, next, context, execute = execFileSync
     writeFileSync(join(consumer, "next.tgz"), next.archive);
     const common = ["--ignore-scripts", "--ignore-workspace", "--config.auto-install-peers=false"];
     const checkVersion = () =>
-      assert.equal(run("pnpm", ["--version"]).trim(), "11.1.3", "paired consumer pnpm version");
+      assert.equal(run("pnpm", ["--version"]).trim(), pnpmVersion, "paired consumer pnpm version");
     checkVersion();
     let originalTypes;
     if (provider) {
