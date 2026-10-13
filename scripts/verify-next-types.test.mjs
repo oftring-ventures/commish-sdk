@@ -119,7 +119,7 @@ test("Next declaration compiler, project, resolution and mutation boundaries fai
         const entries = {
           "package.json": JSON.stringify({
             name: `@commish/${name}`,
-            version: "0.3.0",
+            version: "0.4.0",
             exports: {
               "./browser": { types: "./dist/browser.d.ts", default: "./dist/browser.js" },
               ...(provider && index

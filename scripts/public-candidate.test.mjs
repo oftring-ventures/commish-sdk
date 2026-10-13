@@ -95,7 +95,7 @@ test("candidate paths reject overlap, relative paths, existing outputs and symli
 
 test("normalized packing keeps exact payload and modes while stripping source metadata", () =>
   fixture((work) => {
-    const manifest = { name: "@commish/sdk", version: "0.3.0" },
+    const manifest = { name: "@commish/sdk", version: "0.4.0" },
       dir = "packages/sdk";
     const files = new Map(
       [
@@ -124,7 +124,7 @@ test("normalized packing keeps exact payload and modes while stripping source me
           ? JSON.stringify(JSON.parse(readFileSync(join(cwd, name.slice(8)))), null, 2)
           : readFileSync(join(cwd, name.slice(8))),
       ]);
-      writeFileSync(join(args[2], "commish-sdk-0.3.0.tgz"), tar(packed));
+      writeFileSync(join(args[2], "commish-sdk-0.4.0.tgz"), tar(packed));
     };
     const result = normalizePackage(files, dir, manifest, original, work, run, archiveFiles);
     assert.deepEqual(JSON.parse(result.packed.get("package/package.json").data), manifest);
@@ -152,8 +152,8 @@ test("candidate receipt binds exact archive bytes and refuses incomplete evidenc
       output = join(work, "candidate");
     const manifests = ["sdk", "next"].map((pkg) => ({
       name: `@commish/${pkg}`,
-      version: "0.3.0",
-      ...(pkg === "next" ? { peerDependencies: { "@commish/sdk": "0.3.0" } } : {}),
+      version: "0.4.0",
+      ...(pkg === "next" ? { peerDependencies: { "@commish/sdk": "0.4.0" } } : {}),
     }));
     const artifacts = manifests.map((m) => ({
       archive: tar([["package/package.json", JSON.stringify(m)]]),

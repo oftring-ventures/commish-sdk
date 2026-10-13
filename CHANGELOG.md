@@ -3,10 +3,10 @@
 Notable changes to `@commish/sdk` and `@commish/next`, which release together
 with one version. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## Unreleased
+## 0.4.0 - 2026-10-13
 
-The removals and the wider `mode` type below are breaking, so these changes
-release as 0.4.0.
+The removals and the wider `mode` type below are breaking, hence the minor
+version.
 
 ### Fixed
 
@@ -49,7 +49,7 @@ release as 0.4.0.
 
 ## Earlier releases
 
-Releases before this changelog are described by their Git tags: `v0.3.0`
+Releases before 0.4.0 are described by their Git tags: `v0.3.0`
 (2026-10-12), `v0.2.3` (2026-10-06), `v0.2.2` and `v0.2.1` (2026-10-05),
 and `v0.2.0` (2026-10-04). `0.1.0-beta.10` (2026-09-28) was published to npm
 without a Git tag.
