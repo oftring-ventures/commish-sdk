@@ -1,5 +1,6 @@
 import { releaseVersion } from "./stable-release.mjs";
 import assert from "node:assert/strict";
+import { nodeVersion } from "./toolchain.mjs";
 import { createHash } from "node:crypto";
 import { lstatSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -23,7 +24,7 @@ export function writeCiReceipt(directory, env) {
   assert.equal(manifest.source, env.EXPECTED_SHA, "candidate source differs from checkout");
   assert.equal(manifest.status, "local-artifacts-verified");
   assert.equal(manifest.npmPublished, false); assert.equal(manifest.hostedAccepted, false);
-  assert.equal(manifest.node, "v24.15.0");
+  assert.equal(manifest.node, `v${nodeVersion}`, "candidate built with another Node version");
   assert.deepEqual([...manifest.consumerScopes].sort(), [...candidateScopes].sort());
   assert.equal(manifest.artifacts.length, 2);
   const artifacts = manifest.artifacts.map((item, index) => {

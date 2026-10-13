@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { pnpmVersion } from "./toolchain.mjs";
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -68,7 +69,7 @@ test("consumer isolates the verified artifact, invokes browser conditions, and c
         assert(readFileSync(join(cwd, "sdk.tgz")).equals(archive));
         assert.equal(
           JSON.parse(readFileSync(join(cwd, "package.json"))).packageManager,
-          "pnpm@11.1.3",
+          `pnpm@${pnpmVersion}`,
         );
         assert.deepEqual(JSON.parse(readFileSync(join(cwd, "package.json"))).dependencies, {
           "@commish/sdk": "file:./sdk.tgz",

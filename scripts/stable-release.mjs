@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
-// Change this reviewed version together with both source manifests and their
-// consumer fixtures. Approval still binds source SHA, exact archives and CI.
 export function stableReleaseVersion(version) {
   assert.equal(typeof version, "string");
   assert.match(version, /^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$/,
@@ -11,4 +10,7 @@ export function stableReleaseVersion(version) {
   return version;
 }
 
-export const releaseVersion = stableReleaseVersion("0.3.0");
+// The release version is the SDK manifest's. The source verifier requires the Next
+// manifest to carry the same version; approval still binds source SHA, exact archives and CI.
+const manifest = JSON.parse(readFileSync(new URL("../packages/sdk/package.json", import.meta.url), "utf8"));
+export const releaseVersion = stableReleaseVersion(manifest.version);
