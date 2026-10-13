@@ -40,9 +40,42 @@ export function readFrameworkSource(source) {
     imports: registry
       .map(({ name, specifier, version }) => `      ${yamlKey(name)}:\n        specifier: ${specifier}\n        version: ${version}`)
       .join("\n"),
+    registry,
     packages: text.slice(packagesAt + 12, snapshotsAt),
     snapshots: text.slice(snapshotsAt + 13),
   };
+}
+
+const blocksOf = (section) => {
+  const blocks = new Map();
+  for (const block of section.split(/\n(?=  \S)/)) {
+    const id = block.match(/^  ('?)([^'\n]+?)\1:/)?.[2];
+    if (id) blocks.set(id, block.replace(/\n+$/, ""));
+  }
+  return blocks;
+};
+const edgesOf = (block) =>
+  [...block.matchAll(/^      ('?)([^\s:'][^:']*)\1: (\S+)$/gm)].map(([, , name, spec]) => `${name}@${spec}`);
+
+// Keep only the packages reachable from the Next package's registry dependencies.
+// The workspace lockfile also resolves root-only tooling, which the framework
+// consumer never installs and must not be asked to.
+function projectClosure(registry, packagesText, snapshotsText) {
+  const packages = blocksOf(packagesText), snapshots = blocksOf(snapshotsText);
+  const needed = new Set();
+  const queue = registry.map(({ name, version }) => `${name}@${version}`);
+  while (queue.length) {
+    const id = queue.pop();
+    if (needed.has(id)) continue;
+    const block = snapshots.get(id);
+    assert(block, `unsupported framework source lock: unresolved ${id.split("(")[0]}`);
+    needed.add(id);
+    queue.push(...edgesOf(block));
+  }
+  const bases = new Set([...needed].map((id) => id.replace(/\(.*$/, "")));
+  for (const base of bases) assert(packages.has(base), "unsupported framework source lock");
+  const emit = (blocks, keep) => `${[...blocks].filter(([id]) => keep.has(id)).map(([, block]) => block).join("\n\n")}\n`;
+  return { packages: emit(packages, bases), snapshots: emit(snapshots, needed) };
 }
 
 const peerLines = (manifest) =>
@@ -61,6 +94,7 @@ export function frameworkLocks(source, sdk, next) {
     assert(typeof manifest.engines?.node === "string" && typeof manifest.version === "string", "framework pair manifests incomplete");
   const { next: nextVersion, react: reactVersion } = lock.resolved;
   assert(nextVersion && reactVersion, "unsupported framework source lock");
+  const closure = projectClosure(lock.registry, lock.packages, lock.snapshots);
   const sdkId = "@commish/sdk@file:sdk.tgz";
   const peerSuffix = `(${sdkId})(next@${nextVersion})(react@${reactVersion})`;
   const packageRecord = (name, artifact, manifest) => `  '@commish/${name}@file:${name}.tgz':
@@ -72,7 +106,7 @@ ${manifest.bin ? "    hasBin: true\n" : ""}${peerLines(manifest)}
   const workspace = `packages: ['.']\nautoInstallPeers: false\nengineStrict: true\n${
     lock.overrides.length ? `overrides:\n${lock.overrides.map(([name, version]) => `  ${name}: ${version}`).join("\n")}\n` : ""}`;
   return {
-    registry: `${lock.header}importers:\n\n  .:\n    dependencies:\n${lock.imports}\n\npackages:\n\n${lock.packages}\nsnapshots:\n\n${lock.snapshots}`,
+    registry: `${lock.header}importers:\n\n  .:\n    dependencies:\n${lock.imports}\n\npackages:\n\n${closure.packages}\nsnapshots:\n\n${closure.snapshots}`,
     paired: `${lock.header}importers:
 
   .:
@@ -87,7 +121,7 @@ ${lock.imports}
 
 packages:
 
-${packageRecord("next", next, manifests[1])}${packageRecord("sdk", sdk, manifests[0])}${lock.packages}
+${packageRecord("next", next, manifests[1])}${packageRecord("sdk", sdk, manifests[0])}${closure.packages}
 snapshots:
 
   '@commish/next@file:next.tgz${peerSuffix}':
@@ -98,9 +132,9 @@ snapshots:
 
   '${sdkId}': {}
 
-${lock.snapshots}`,
-    registryIds: [...lock.packages.matchAll(/^  '?([^\s'][^'\n]*)'?:\n/gm)].map((match) => match[1]),
-    requiredIds: lock.snapshots
+${closure.snapshots}`,
+    registryIds: [...closure.packages.matchAll(/^  '?([^\s'][^'\n]*)'?:\n/gm)].map((match) => match[1]),
+    requiredIds: closure.snapshots
       .split(/\n(?=  \S)/)
       .filter((block) => !block.includes("    optional: true"))
       .map((block) => block.match(/^  '?([^'(\n:]+)(?:\(|'?:)/)?.[1])
