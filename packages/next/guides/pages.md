@@ -88,7 +88,7 @@ async function rewrites() {
 
 Do not copy the empty arrays over existing rules. When there is no config and no root dynamic route, `--apply --root-aliases` can create the fallback config. Existing configurations require a reviewed manual merge. A CMS catch-all prevents automatic fallback even when it returns notFound(); only that CMS may explicitly relinquish a path and call `createCreatorAliasHandler`. If uncertain, keep aliases off and use `/c/`.
 
-The brand must independently enable aliases in Commish. An eligible root alias returns 307 to the canonical prefix. Every other one-segment path, and every Commish failure, stays a 404 (never a 5xx); pass `createCreatorAliasHandler(pagesOptions, { notFound })` to return your own not-found response there. Misses are remembered briefly and uncached lookups are bounded per server instance. A 404 at the root is **not** permission to claim it. Promote a preferred short link only after a probe proves the exact redirect and target page:
+The brand must independently enable aliases in Commish. An eligible root alias returns 307 to the canonical prefix. Every other one-segment path, and every Commish failure, stays a 404 (never a 5xx); pass `createCreatorAliasHandler(pagesOptions, { notFound })` to return your own not-found response there. Verified aliases and misses are remembered briefly, an alias verified within the last ten minutes keeps redirecting while Commish is unreachable, and uncached lookups are bounded per server instance. A 404 at the root is **not** permission to claim it. Promote a preferred short link only after a probe proves the exact redirect and target page:
 
 ```sh
 pnpm exec commish-next pages verify-alias --creator maya --dry-run

@@ -61,54 +61,84 @@ export type CreatorAliasHandlerOptions = {
   notFound?: (request: Request) => Response | Promise<Response>;
 };
 
-// Unmatched one-segment URLs are mostly crawlers. Remember misses briefly and
-// cap uncached lookups per instance so they never become Commish traffic.
-const MISS_TTL_MS = 60_000,
+// Unmatched one-segment URLs are mostly crawlers, and a published alias is read
+// far more often than it changes. Remember both outcomes briefly and cap uncached
+// lookups per instance so neither crawler noise nor a popular link becomes
+// Commish traffic, and so crawler noise cannot starve a verified alias.
+const HIT_TTL_MS = 60_000,
+  STALE_TTL_MS = 600_000,
+  MISS_TTL_MS = 60_000,
   FAILURE_TTL_MS = 10_000,
-  MAX_MISSES = 1024,
+  MAX_ENTRIES = 1024,
   LOOKUP_WINDOW_MS = 10_000,
   MAX_LOOKUPS_PER_WINDOW = 60;
+type VerifiedAlias = { page: CreatorPage; freshUntil: number; staleUntil: number };
+const hits = new Map<string, VerifiedAlias>();
 const misses = new Map<string, number>();
 const pending = new Map<string, Promise<CreatorPage | null>>();
 let windowStart = 0,
   windowLookups = 0;
-function rememberMiss(key: string, ttl: number) {
-  misses.delete(key);
-  if (misses.size >= MAX_MISSES)
-    misses.delete(misses.keys().next().value as string);
-  misses.set(key, Date.now() + ttl);
+function remember<T>(cache: Map<string, T>, key: string, value: T) {
+  cache.delete(key);
+  if (cache.size >= MAX_ENTRIES)
+    cache.delete(cache.keys().next().value as string);
+  cache.set(key, value);
+}
+function forget(key: string, ttl: number) {
+  hits.delete(key);
+  remember(misses, key, Date.now() + ttl);
 }
 async function lookupAlias(
   options: CreatorPageOptions,
   handle: string,
 ): Promise<CreatorPage | null> {
   const key = `${options.programId}/${handle}`;
+  const now = Date.now();
+  const hit = hits.get(key);
+  if (hit && hit.freshUntil > now) return hit.page;
   const expiry = misses.get(key);
   if (expiry !== undefined) {
-    if (expiry > Date.now()) return null;
+    if (expiry > now) return null;
     misses.delete(key);
   }
   const inFlight = pending.get(key);
   if (inFlight) return inFlight;
-  const now = Date.now();
   if (now - windowStart >= LOOKUP_WINDOW_MS) {
     windowStart = now;
     windowLookups = 0;
   }
-  if (windowLookups >= MAX_LOOKUPS_PER_WINDOW) return null;
+  // An exhausted budget protects Commish from crawler noise; a recently verified
+  // alias keeps redirecting until its next revalidation fits in the budget.
+  if (windowLookups >= MAX_LOOKUPS_PER_WINDOW)
+    return hit && hit.staleUntil > now ? hit.page : null;
   windowLookups += 1;
   const lookup = resolveCreatorPage(options, handle)
     .then((page) => {
-      if (!page.rootAliasEnabled) rememberMiss(key, MISS_TTL_MS);
-      return page.rootAliasEnabled ? page : null;
+      if (!page.rootAliasEnabled) {
+        forget(key, MISS_TTL_MS);
+        return null;
+      }
+      const verifiedAt = Date.now();
+      remember(hits, key, {
+        page,
+        freshUntil: verifiedAt + HIT_TTL_MS,
+        staleUntil: verifiedAt + STALE_TTL_MS,
+      });
+      return page;
     })
     .catch((error: unknown) => {
-      rememberMiss(
-        key,
-        error instanceof CommishError && error.status === 404
-          ? MISS_TTL_MS
-          : FAILURE_TTL_MS,
-      );
+      if (error instanceof CommishError && error.status === 404) {
+        forget(key, MISS_TTL_MS);
+        return null;
+      }
+      // Any other failure is an outage, not a verdict: a recently verified alias
+      // keeps redirecting, and only an unverified handle is remembered as a miss.
+      const stale = hits.get(key);
+      if (stale && stale.staleUntil > Date.now()) {
+        stale.freshUntil = Date.now() + FAILURE_TTL_MS;
+        return stale.page;
+      }
+      forget(key, FAILURE_TTL_MS);
       return null;
     })
     .finally(() => pending.delete(key));
@@ -118,8 +148,10 @@ async function lookupAlias(
 
 /**
  * Also usable by an existing CMS catch-all, ONLY after it explicitly
- * relinquishes a path. Anything that is not a verified creator alias, including
- * a Commish outage, stays a merchant 404: aliases never turn into 5xx errors.
+ * relinquishes a path. Anything that is not a verified creator alias stays a
+ * merchant 404, and aliases never turn into 5xx errors: during a Commish outage
+ * an alias verified within the last ten minutes keeps redirecting, and every
+ * other path is a 404.
  */
 export function createCreatorAliasHandler(
   source: PageOptionsSource,
