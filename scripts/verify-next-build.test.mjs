@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -8,7 +8,7 @@ import { verifyNextBuild } from "./verify-next-build.mjs";
 import { cookieRequestProbe, nextBuildFixture, nextServerBuildFixture } from "./fixtures/next-build.mjs";
 import { providerProbe } from "./fixtures/next-provider.mjs";
 import { captureRequestProbe } from "./fixtures/next-capture.mjs";
-import { cliProbe, setupCliProbe, verifyCliProbe } from "./fixtures/next-cli.mjs";
+import { cliProbe, retiredCommandsProbe } from "./fixtures/next-cli.mjs";
 import { serverMarker } from "./inspect-next-build.mjs";
 
 test("initializer installs idempotently, refuses conflicts and unsafe paths, and the probe rejects mutation", async () => {
@@ -23,15 +23,9 @@ test("initializer installs idempotently, refuses conflicts and unsafe paths, and
   await assert.rejects(() => cliProbe(null, () => ({ status: 0, signal: null, stdout: "", stderr: "" })));
 });
 
-test("verification CLI checks both modes and fails closed without writes or credential disclosure", async () => {
-  await verifyCliProbe(fileURLToPath(new URL("../packages/next/bin/init.mjs", import.meta.url)));
-});
-
-test("setup CLI exchanges mode-bound consent and rejects mismatched receipts", async () => {
-  const executable = fileURLToPath(new URL("../packages/next/bin/init.mjs", import.meta.url));
-  await setupCliProbe(executable);
-  await setupCliProbe(executable, "live");
-  await setupCliProbe(executable, "live", "test");
+test("retired credential commands point at the commish CLI; help and version exit cleanly", async () => {
+  const { version } = JSON.parse(readFileSync(new URL("../packages/next/package.json", import.meta.url), "utf8"));
+  await retiredCommandsProbe(fileURLToPath(new URL("../packages/next/bin/init.mjs", import.meta.url)), version);
 });
 
 test("only declared framework capabilities select a build and invalid inputs fail before commands", async () => {

@@ -21,7 +21,7 @@ import { frameworkLocks } from "./next-framework-lock.mjs";
 import { peerAllows } from "./package-shape.mjs";
 import { nextBuildFixture, nextCookieBuildFixture, nextServerBuildFixture } from "./fixtures/next-build.mjs";
 import { providerProbe } from "./fixtures/next-provider.mjs";
-import { cliProbe, setupCliProbe, verifyCliProbe } from "./fixtures/next-cli.mjs";
+import { cliProbe, retiredCommandsProbe } from "./fixtures/next-cli.mjs";
 import { nextCaptureBuildFixture } from "./fixtures/next-capture.mjs";
 import { metadataProbe, nextMetadataScope } from "./verify-next-browser-consumer.mjs";
 import {
@@ -221,10 +221,8 @@ export async function verifyNextBuild(sdk, next, context, execute) {
     if (manifest.bin) {
       writeFileSync(join(consumer, "cli-probe.mjs"), `await (${cliProbe.toString()})(${JSON.stringify(join(consumer, "node_modules/.bin/commish-next"))});\n`);
       await run(process.execPath, ["cli-probe.mjs"]);
-      writeFileSync(join(consumer, "verify-cli-probe.mjs"), `await (${verifyCliProbe.toString()})(${JSON.stringify(join(consumer, "node_modules/.bin/commish-next"))});\n`);
-      await run(process.execPath, ["verify-cli-probe.mjs"]);
-      writeFileSync(join(consumer, "setup-cli-probe.mjs"), `const probe = ${setupCliProbe.toString()}; const bin = ${JSON.stringify(join(consumer, "node_modules/.bin/commish-next"))}; await probe(bin); await probe(bin, "live"); await probe(bin, "live", "test");\n`);
-      await run(process.execPath, ["setup-cli-probe.mjs"]);
+      writeFileSync(join(consumer, "retired-cli-probe.mjs"), `await (${retiredCommandsProbe.toString()})(${JSON.stringify(join(consumer, "node_modules/.bin/commish-next"))}, ${JSON.stringify(manifest.version)});\n`);
+      await run(process.execPath, ["retired-cli-probe.mjs"]);
       verifyBytes();
     }
     if (provider) {
