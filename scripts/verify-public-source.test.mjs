@@ -7,6 +7,7 @@ import { createRequire } from "node:module";
 import { gzipSync } from "node:zlib";
 import test from "node:test";
 import { archiveFiles, failureDiagnostic, inspect, verify, verifyPackages } from "./verify-public-source.mjs";
+import { nodeVersion, pnpmVersion } from "./toolchain.mjs";
 
 function bootstrap() {
   const files = new Map();
@@ -34,6 +35,7 @@ function bootstrap() {
     "scripts/setup-command.test.mjs",
     "scripts/setup-authorization.test.mjs",
     "scripts/stable-release.mjs",
+    "scripts/toolchain.mjs",
     "scripts/stable-release.test.mjs",
     ".github/workflows/publish-packages.yml",
     "scripts/publication-workflow.test.mjs",
@@ -105,10 +107,11 @@ function put(files, name, value) {
 }
 function packageTree() {
   const files = bootstrap();
+  put(files, ".node-version", `${nodeVersion}\n`);
   put(files, "package.json", {
     name: "commish-public-packages",
     private: true,
-    packageManager: "pnpm@11.1.3",
+    packageManager: `pnpm@${pnpmVersion}`,
     engines: { node: ">=24 <25" },
     scripts: { build: "pnpm --filter @commish/sdk build" },
   });

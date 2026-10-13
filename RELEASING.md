@@ -4,14 +4,16 @@ This runbook is for package maintainers. Application developers install publishe
 packages from npm and follow the [SDK guide](packages/sdk/README.md) or
 [Next.js guide](packages/next/README.md); they do not qualify release artifacts.
 
-With Node 24 and pnpm 11.1.3:
+With the Node version in `.node-version` and the pnpm version in the root
+`package.json` `packageManager` field (the workflows read both from those files):
 
 ```sh
 pnpm install --frozen-lockfile --ignore-scripts --registry=https://registry.npmjs.org
 pnpm build
 ```
 
-The complete source pair targets stable version `0.3.0` on npm's `latest` tag.
+The complete source pair targets the stable version declared in both package
+manifests, which `scripts/stable-release.mjs` reads, on npm's `latest` tag.
 Package stability is independent of TEST/LIVE mode and workspace eligibility.
 Both packages include MIT LICENSE
 and setup documentation, and Next requires that exact SDK version. Release candidate
@@ -46,7 +48,7 @@ and CI receipt hashes match a separately accepted handoff. It checks every archi
 and member, and preflights both exact registry versions before planning either
 upload. Identical existing versions are skipped; different bytes or unavailable
 lookups stop the pair. Plans default to npm dry-run and execute no commands.
-A real publication plan additionally requires the public `v0.3.0` tag/workflow identity,
+A real publication plan additionally requires the public `v<version>` tag/workflow identity,
 separate exact-candidate approval and a hosted acceptance evidence hash. Protected
 environment configuration, GitHub run/artifact verification and execution remain
 responsibilities of the publishing workflow; a plan alone authorizes no registry write.
@@ -59,7 +61,7 @@ inside binds that exact run, source and manifest. It then writes the approval di
 the preflight library consumes. It needs only a read token and performs no publication.
 
 The protected `Publish approved packages` workflow requires an immutable release
-tag matching `scripts/stable-release.mjs` (currently `v0.3.0`), by manual dispatch.
+tag `v<version>` matching the manifest version `scripts/stable-release.mjs` reads, by manual dispatch.
 Prerelease versions and mismatched source, pair or tag identities are rejected.
 Its executor defaults to dry-run outside
 that workflow and never retries an upload automatically. Both exact registry
@@ -104,8 +106,9 @@ Before dispatch, the release owner must complete this handoff:
    version uploaded by the trusted publisher. A registry integrity receipt does not
    establish hosted/live acceptance or release readiness.
 
-For each subsequent stable release, update the reviewed release version, both
-package manifests, exact consumer fixtures and documentation together. Preserve
+For each subsequent stable release, update both package manifests (the SDK
+manifest declares the release version and the Next manifest must match it),
+exact consumer fixtures and documentation together. Preserve
 the separate candidate approval, hosted evidence and registry verification gates.
 
 ## Pages acceptance scope

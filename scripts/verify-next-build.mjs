@@ -1,5 +1,6 @@
 import { releaseVersion } from "./stable-release.mjs";
 import assert from "node:assert/strict";
+import { pnpmVersion } from "./toolchain.mjs";
 import { frameworkRegistryBinHash, verifyFrameworkPackage } from "./verify-framework-package.mjs";
 import { nextCommandScope } from "./next-command-scope.mjs";
 import { createHash } from "node:crypto";
@@ -158,7 +159,7 @@ export async function verifyNextBuild(sdk, next, context, execute) {
         JSON.stringify({
           private: true,
           type: "module",
-          packageManager: "pnpm@11.1.3",
+          packageManager: `pnpm@${pnpmVersion}`,
           dependencies,
         }),
       );
@@ -171,7 +172,7 @@ export async function verifyNextBuild(sdk, next, context, execute) {
     ])
       writeFileSync(join(consumer, `${name}.tgz`), artifact.archive);
     const install = async (options) => {
-      assert.equal((await run("pnpm", ["--version"])).trim(), "11.1.3", "framework pnpm version");
+      assert.equal((await run("pnpm", ["--version"])).trim(), pnpmVersion, "framework pnpm version");
       await run("pnpm", [
         "install",
         "--ignore-scripts",

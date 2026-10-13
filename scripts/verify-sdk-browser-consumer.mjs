@@ -2,6 +2,7 @@ import { verifySetupCli } from "./fixtures/setup-cli.mjs";
 import { verifyCliProbe } from "./fixtures/next-cli.mjs";
 import { releaseVersion } from "./stable-release.mjs";
 import assert from "node:assert/strict";
+import { pnpmVersion } from "./toolchain.mjs";
 import { execFileSync } from "node:child_process";
 import {
   mkdtempSync,
@@ -120,7 +121,7 @@ export function verifySdkBrowserConsumer(
       JSON.stringify({
         private: true,
         type: "module",
-        packageManager: "pnpm@11.1.3",
+        packageManager: `pnpm@${pnpmVersion}`,
         dependencies: { "@commish/sdk": "file:./sdk.tgz" },
       }),
     );
