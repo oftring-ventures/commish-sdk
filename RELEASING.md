@@ -89,7 +89,9 @@ Before dispatch, the release owner must complete this handoff:
 2. Record approved hosted TEST acceptance, then explicitly authorize these two
    archives. Configure the GitHub `npm-publication` environment with the required
    reviewer and the founder-approved single-owner manual approval model, plus a
-   deployment rule allowing only the approved release tag. Keep the tag immutable.
+   deployment rule allowing release tags (`v*`). Release tags are immutable through
+   the repository ruleset that protects `refs/tags/v*`; never move or delete a
+   published tag.
 3. Save independently approved values as environment variables in that GitHub
    environment (configuration variables, not secrets):
    `COMMISH_NPM_APPROVED_SOURCE`, `COMMISH_NPM_APPROVED_MANIFEST_SHA256`,
@@ -111,10 +113,14 @@ Before dispatch, the release owner must complete this handoff:
    integrity evidence but no GitHub OIDC provenance; provenance begins with the first
    version uploaded by the trusted publisher. A registry integrity receipt does not
    establish hosted/live acceptance or release readiness.
+ 6. Publish a GitHub Release for the tag from the CHANGELOG entry
+   (`gh release create v<version> --verify-tag --notes-file <notes>`). Remove the
+   stale `beta` dist-tag from both packages (`npm dist-tag rm <package> beta`)
+   once nothing depends on it; `latest` is the only supported tag.
 
 For each subsequent stable release, update both package manifests (the SDK
 manifest declares the release version and the Next manifest must match it),
-exact consumer fixtures and documentation together. Preserve
+exact consumer fixtures, the CHANGELOG entry and documentation together. Preserve
 the separate candidate approval, hosted evidence and registry verification gates.
 
 ## Pages acceptance scope
