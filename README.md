@@ -73,3 +73,4 @@ conditions without treating a successful install as a completed integration.
 - [Creator Pages](packages/next/guides/pages.md)
 - [Pages instructions for coding agents](packages/next/guides/agents.md)
 - [Maintainer build and release process](RELEASING.md)
+- [Changelog](CHANGELOG.md) and [security policy](SECURITY.md)
