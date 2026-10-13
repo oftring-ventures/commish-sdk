@@ -22,6 +22,8 @@
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
+      "edge-light": "./dist/index.js",
+      "workerd": "./dist/index.js",
       "browser": null,
       "default": "./dist/index.js"
     },

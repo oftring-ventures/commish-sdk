@@ -17,6 +17,11 @@ function fixture(run) {
       JSON.stringify({ "/api/artifact/route": "app/api/artifact/route.js" }),
     );
     put(".next/server/app/api/artifact/route.js", `const marker = '${serverMarker}';`);
+    put(
+      ".next/server/middleware-manifest.json",
+      JSON.stringify({ functions: { "/api/edge/route": { files: ["server/app/api/edge/route.js"] } } }),
+    );
+    put(".next/server/app/api/edge/route.js", `const edge = '${serverMarker}';`);
     put(".next/static/chunks/client.js", "export const provider = true;");
     return run(root, put);
   } finally {
@@ -31,13 +36,24 @@ test("build evidence requires the real server witness before client absence", ()
     assert.deepEqual(
       { ...result, sha256: undefined },
       {
-        serverFiles: 1,
+        serverFiles: 2,
         clientFiles: 1,
         witness: "server/app/api/artifact/route.js",
         sha256: undefined,
+        edgeWitness: "server/app/api/edge/route.js",
       },
     );
     assert.match(result.sha256, /^[a-f0-9]{64}$/);
+    put(".next/server/app/api/edge/route.js", "export const noMarker = true;");
+    assert.throws(() => inspectNextBuild(root), /edge marker witness missing/);
+    put(".next/server/middleware-manifest.json", JSON.stringify({ functions: {} }));
+    assert.throws(() => inspectNextBuild(root), /missing edge route/);
+    put(".next/server/middleware-manifest.json",
+      JSON.stringify({ functions: { "/api/edge/route": { files: ["../outside.js"] } } }));
+    assert.throws(() => inspectNextBuild(root), /escaped owned root|ENOENT/);
+    put(".next/server/middleware-manifest.json",
+      JSON.stringify({ functions: { "/api/edge/route": { files: ["server/app/api/edge/route.js"] } } }));
+    put(".next/server/app/api/edge/route.js", `const edge = '${serverMarker}';`);
     put(".next/server/app/api/artifact/route.js", "export const noMarker = true;");
     assert.throws(() => inspectNextBuild(root), /server marker witness missing/);
     put(".next/static/chunks/client.js", serverMarker);

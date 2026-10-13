@@ -14,10 +14,14 @@ const commish = new Commish({
 });
 ```
 
-The root export is server-only. Browser code imports `@commish/sdk/browser` and
-uses a publishable key. Verify raw webhook bodies with
+The root export is server-only. It needs only `fetch`, so it runs on Node 22 or
+later and on edge runtimes (Next.js Edge routes and middleware, Cloudflare
+Workers); bundlers never resolve it for browsers. Browser code imports
+`@commish/sdk/browser` and uses a publishable key. Verify raw webhook bodies with
 `verifyWebhook(body, signatureHeader, signingSecret)` from
-`@commish/sdk/webhooks`; its default timestamp tolerance is 300 seconds.
+`@commish/sdk/webhooks`; its default timestamp tolerance is 300 seconds. The
+webhook helpers use `node:crypto`, so they and the `@commish/next` server
+helpers run on the Node runtime only.
 
 Artifacts contain ESM JavaScript and declarations with no production dependencies
 or private Commish imports. Preserve write idempotency keys across retries.
