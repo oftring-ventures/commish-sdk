@@ -153,15 +153,17 @@ export function createCreatorPageHandlers(
       } finally {
         reader.releaseLock();
       }
-      let input;
+      let input: Record<string, unknown>;
       try {
-        input = JSON.parse(raw);
+        const parsed: unknown = JSON.parse(raw);
+        if (!parsed || typeof parsed !== "object" || Array.isArray(parsed))
+          return json(null, 400);
+        input = parsed as Record<string, unknown>;
       } catch {
         return json(null, 400);
       }
       if (
-        !input ||
-        !["identify", "start", "exposure", "click"].includes(input.action) ||
+        !["identify", "start", "exposure", "click"].includes(input.action as string) ||
         typeof input.handle !== "string" ||
         !/^[a-z0-9][a-z0-9_-]{2,39}$/.test(input.handle) ||
         typeof input.captureId !== "string" ||
@@ -214,6 +216,7 @@ export function createCreatorPageHandlers(
       }
       let capture: Record<string, unknown> | undefined,
         visit: Record<string, unknown> | undefined;
+      const clientIp = request.headers.get("x-vercel-forwarded-for");
       const captureWork = (async () => {
         if (consent.attribution)
           try {
@@ -236,13 +239,7 @@ export function createCreatorPageHandlers(
                     : configuration.publishableKey,
                 "idempotency-key": `page:${input.captureId}`,
                 // Only Vercel's canonical IP header is forwarded; ordinary X-Forwarded-For isn't trusted.
-                ...(request.headers.get("x-vercel-forwarded-for")
-                  ? {
-                      "x-commish-client-ip": request.headers.get(
-                        "x-vercel-forwarded-for",
-                      )!,
-                    }
-                  : {}),
+                ...(clientIp ? { "x-commish-client-ip": clientIp } : {}),
                 "user-agent": request.headers.get("user-agent") ?? "",
               },
             );
@@ -271,10 +268,13 @@ export function createCreatorPageHandlers(
         typeof capture?.expiresAt === "string"
           ? Date.parse(capture.expiresAt)
           : NaN;
-      const captured =
+      const token =
         typeof capture?.token === "string" &&
         /^atr_[A-Za-z0-9_-]{12,}$/.test(capture.token) &&
-        expires > Date.now();
+        expires > Date.now()
+          ? capture.token
+          : undefined;
+      const captured = token !== undefined;
       const visitToken =
         typeof visit?.visitToken === "string" && visit.visitToken.length <= 2048
           ? visit.visitToken
@@ -287,8 +287,8 @@ export function createCreatorPageHandlers(
         variation: visit?.variation === "alternate" ? "alternate" : "standard",
         visitToken,
       });
-      if (captured)
-        response.cookies.set(COMMISH_COOKIE, capture!.token as string, {
+      if (token)
+        response.cookies.set(COMMISH_COOKIE, token, {
           ...cookie,
           expires: new Date(expires),
         });

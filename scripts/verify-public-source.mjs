@@ -184,7 +184,7 @@ export async function verifyPackages(files, packages, run, checkout = process.cw
       for (const target of targets) {
         const entry = packed.get(`package/${target.slice(2)}`);
         assert(
-          entry && entry.data.equals(readFileSync(join(cwd, target))),
+          entry?.data.equals(readFileSync(join(cwd, target))),
           "declared target is missing or changed in archive",
         );
         assert.equal(

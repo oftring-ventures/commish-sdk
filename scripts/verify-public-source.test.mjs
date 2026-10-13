@@ -298,12 +298,12 @@ const reviewWorkflow = readFileSync(
 const admissionScript = reviewWorkflow
   .split("          script: |\n")[1]
   .split("\n")
-  .filter((line, index, lines) =>
+  .filter((_line, index, lines) =>
     lines.slice(0, index + 1).every((part) => part.startsWith("            ")),
   )
   .map((line) => line.slice(12))
   .join("\n");
-const runAdmission = new (Object.getPrototypeOf(async function () {}).constructor)(
+const runAdmission = new (Object.getPrototypeOf(async () => {}).constructor)(
   "github",
   "context",
   "core",

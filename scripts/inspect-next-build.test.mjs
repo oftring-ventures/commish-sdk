@@ -76,9 +76,9 @@ test("invalid route, empty output and linked output never receive build evidence
       },
       /framework path escaped owned root/,
     ],
-    [(root, put) => put(".next/server/app-paths-manifest.json", "{}"), /missing marker route/],
+    [(_root, put) => put(".next/server/app-paths-manifest.json", "{}"), /missing marker route/],
     [
-      (root, put) =>
+      (_root, put) =>
         put(".next/server/app-paths-manifest.json", '{"/api/artifact/route":"../../outside.js"}'),
       /missing marker route/,
     ],
