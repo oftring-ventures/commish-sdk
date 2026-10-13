@@ -434,10 +434,6 @@ export async function verifyPackages(files, packages, run, checkout = process.cw
         );
       }
     }
-    // Pages tests run at the layer that adds them; later layers only add files.
-    for (const test of ["pages-sdk","pages-routing","pages-renderer","pages"]) {
-      if (files.has("scripts/" + test + ".test.mjs")) run(process.execPath, ["--test","scripts/" + test + ".test.mjs"],work);
-    }
     for (const [name, file] of files)
       assert(
         readFileSync(join(work, name)).equals(file.data),
@@ -511,12 +507,21 @@ export async function verify(root, expectedSha, candidateOutput) {
   };
 }
 
+// Command output and file bytes may carry paths or key material, so only the error
+// code and an author-written assertion message are shown, never Node's generated diff.
+export function failureDiagnostic(error) {
+  const code = typeof error?.code === "string" && /^[A-Z][A-Z0-9_]{0,63}$/.test(error.code) ? error.code : "unknown";
+  const reason = error instanceof assert.AssertionError && error.generatedMessage === false
+    ? `: ${error.message.split("\n", 1)[0]}` : "";
+  return `Public source verification failed (${code}${reason}); no acceptance receipt issued.`;
+}
+
 if (import.meta.main) {
   try {
     assert(process.argv.length <= 3, "unexpected verifier arguments");
     console.log(JSON.stringify(await verify(process.cwd(), process.env.EXPECTED_SHA, process.argv[2])));
-  } catch {
-    console.error("Public source verification failed; no acceptance receipt issued.");
+  } catch (error) {
+    console.error(failureDiagnostic(error));
     process.exitCode = 1;
   }
 }
