@@ -113,7 +113,7 @@ Before dispatch, the release owner must complete this handoff:
    integrity evidence but no GitHub OIDC provenance; provenance begins with the first
    version uploaded by the trusted publisher. A registry integrity receipt does not
    establish hosted/live acceptance or release readiness.
- 6. Publish a GitHub Release for the tag from the CHANGELOG entry
+6. Publish a GitHub Release for the tag from the CHANGELOG entry
    (`gh release create v<version> --verify-tag --notes-file <notes>`). Remove the
    stale `beta` dist-tag from both packages (`npm dist-tag rm <package> beta`)
    once nothing depends on it; `latest` is the only supported tag.

@@ -5,6 +5,9 @@ with one version. The format follows [Keep a Changelog](https://keepachangelog.c
 
 ## Unreleased
 
+The removals and the wider `mode` type below are breaking, so these changes
+release as 0.4.0.
+
 ### Fixed
 
 - Public types report `mode: "test" | "live"` for customers, conversions,
@@ -15,7 +18,7 @@ with one version. The format follows [Keep a Changelog](https://keepachangelog.c
   crawler noise or a popular link exhaust its lookup budget into 404s.
 - `commish setup` and `commish auth login` keep waiting through proxy error
   pages, rate limits and transport blips during browser approval; Ctrl-C cancels
-  the request in flight; failure and interrupt receipts name the authorization
+  the request in flight and still revokes the pending setup session; failure and interrupt receipts name the authorization
   file; a directory without a git executable is accepted.
 
 ### Changed
@@ -41,10 +44,12 @@ with one version. The format follows [Keep a Changelog](https://keepachangelog.c
 
 - `commish-next setup` and `commish-next verify`. Use `commish setup` and
   `commish verify --json`; the old commands exit with `command_moved`.
-- Native Windows. Both CLIs exit with `unsupported_platform`; use WSL.
+- Native Windows. Both CLIs exit with `unsupported_platform` for every command
+  except `--version` and `--help`; use WSL.
 
 ## Earlier releases
 
 Releases before this changelog are described by their Git tags: `v0.3.0`
 (2026-10-12), `v0.2.3` (2026-10-06), `v0.2.2` and `v0.2.1` (2026-10-05),
-`v0.2.0` (2026-10-03) and `v0.1.0-beta.10`.
+and `v0.2.0` (2026-10-04). `0.1.0-beta.10` (2026-09-28) was published to npm
+without a Git tag.
