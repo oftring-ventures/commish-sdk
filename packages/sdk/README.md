@@ -262,15 +262,15 @@ const { data: delivery } =
   await workspace.webhookDeliveries.retrieve("evt_123456789012");
 ```
 
-The nine-field metadata receipt describes current workspace-owned test endpoint
-inventory, including disabled endpoint history. It contains no payload, endpoint
+The nine-field metadata receipt describes current workspace-owned endpoint
+inventory in the key's mode, including disabled endpoint history. It contains no payload, endpoint
 URL, error text or money and grants no replay/execution authority. Delivery IDs
 identify attempts; they are not guaranteed to be the original event ID on replay.
-Application provenance and sealed historical scope are not inferred. Live keys
-remain denied. Retrieve returns `{ data }` for the same metadata contract; missing
+Application provenance and sealed historical scope are not inferred. A key reads
+only deliveries in its own mode. Retrieve returns `{ data }` for the same metadata contract; missing
 or foreign delivery IDs return 404. Credentials are revalidated on every request.
 
-Retrieve a related test payout's diagnostic status:
+Retrieve a related payout's diagnostic status:
 
 ```ts
 const { data: payout } = await commish.payouts.retrieve("pay_123456789012");
@@ -282,9 +282,10 @@ expose consolidated totals, fees or provider/recipient details, and grants no
 execution or retry authority. A retained commission allocation must belong to
 the current key's workspace and optional application; recruitment-only payouts
 without such an allocation return 404. Failed payouts remain readable after a
-replacement changes the commission's current payout pointer. Live keys are denied.
+replacement changes the commission's current payout pointer. A key reads only
+payouts in its own mode.
 
-List the current key's test memberships, or iterate without hidden retries:
+List the current key's memberships, or iterate without hidden retries:
 
 ```ts
 const page = await commish.memberships.list({ limit: 50 });
@@ -421,7 +422,7 @@ import { verifyWebhook } from "@commish/sdk/webhooks";
 type Event = {
   id: string;
   type: string;
-  mode: "test";
+  mode: "test" | "live";
   createdAt: string;
   data: Record<string, unknown>;
 };
@@ -443,7 +444,7 @@ export function webhookHandler(accept: (event: Event) => Promise<void>) {
         !event ||
         typeof event.id !== "string" ||
         !/^evt_[A-Za-z0-9_-]{12,}$/.test(event.id) ||
-        event.mode !== "test" ||
+        (event.mode !== "test" && event.mode !== "live") ||
         typeof event.type !== "string" ||
         typeof event.createdAt !== "string" ||
         !event.data ||

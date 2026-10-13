@@ -38,7 +38,7 @@ async function read(commish: Commish) {
   }
   void deliveries;
   const payout: PublicPayout = (await commish.payouts.retrieve("pay_123456789012")).data;
-  const payoutMode: "test" = payout.mode;
+  const payoutMode: "test" | "live" = payout.mode;
   if (payout.status === "pending") {
     const pendingTime: null = payout.processedAt;
     void pendingTime;
@@ -54,7 +54,7 @@ async function read(commish: Commish) {
   const members = await commish.memberships.list({ limit: 1 });
   const next: string | null = members.next_cursor;
   for await (const member of commish.memberships.iterate()) {
-    const mode: "test" = member.mode;
+    const mode: "test" | "live" = member.mode;
     void mode;
   }
   void next;

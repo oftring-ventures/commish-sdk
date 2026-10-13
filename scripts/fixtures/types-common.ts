@@ -6,7 +6,7 @@ const payout: PublicPayout = {
   status: "pending",
   processedAt: null,
 };
-// @ts-expect-error Public diagnostic types do not grant live access.
+// Every public resource reports the authenticated key's mode, TEST or LIVE.
 const live: PublicPayout = { ...payout, mode: "live" };
 const membership: PublicMembership["status"] = "active";
 const delivery: PublicWebhookDelivery["status"] = "failed";
