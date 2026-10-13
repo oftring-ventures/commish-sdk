@@ -10,8 +10,9 @@
   },
   "type": "module",
   "engines": {
-    "node": ">=24 <25"
+    "node": ">=22"
   },
+  "sideEffects": false,
   "files": [
     "guides",
     "dist",
@@ -20,37 +21,38 @@
     "bin"
   ],
   "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "browser": null,
+      "default": "./dist/index.js"
+    },
     "./browser": {
       "types": "./dist/browser.d.ts",
       "default": "./dist/browser.js"
-    },
-    ".": {
-      "browser": null,
-      "types": "./dist/index.d.ts",
-      "default": "./dist/index.js"
     },
     "./react": {
       "types": "./dist/provider.d.ts",
       "default": "./dist/provider.js"
     },
-    "./pages/handlers": {
+    "./pages": {
+      "types": "./dist/pages.d.ts",
       "browser": null,
+      "default": "./dist/pages.js"
+    },
+    "./pages/handlers": {
       "types": "./dist/pages-handlers.d.ts",
+      "browser": null,
       "default": "./dist/pages-handlers.js"
     },
     "./pages/routing": {
-      "browser": null,
       "types": "./dist/pages-routing.d.ts",
+      "browser": null,
       "default": "./dist/pages-routing.js"
     },
-    "./pages": {
-      "browser": null,
-      "types": "./dist/pages.d.ts",
-      "default": "./dist/pages.js"
-    }
+    "./package.json": "./package.json"
   },
   "peerDependencies": {
-    "@commish/sdk": "0.3.0",
+    "@commish/sdk": "~0.3.0",
     "next": ">=16.3.8 <17",
     "react": ">=19.2.8 <20"
   },
