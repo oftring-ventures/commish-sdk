@@ -81,8 +81,11 @@ test("compiler context, exact project, resolution, mutation and failure boundari
     "late-lock",
     "command",
   ];
-  for (const { kind, webhook = false, failure } of [
+  for (const { kind, webhook = false, failure, typescript = "5.9.2" } of [
     ...typeFailures.map((failure) => ({ kind: "types", failure })),
+    // A reviewed TypeScript bump only changes the SDK manifest pin.
+    { kind: "types", failure: null, typescript: "5.9.3" },
+    { kind: "types", failure: "unpinned" },
     { kind: "index", failure: null },
     { kind: "index", webhook: true, failure: null },
     { kind: "index", failure: "fixture" },
@@ -106,10 +109,16 @@ test("compiler context, exact project, resolution, mutation and failure boundari
       mkdirSync(checkout);
       write(join(build, "pnpm-lock.yaml"), "locked");
       write(
+        join(build, "packages/sdk/package.json"),
+        JSON.stringify({
+          devDependencies: { typescript: failure === "unpinned" ? `^${typescript}` : typescript },
+        }),
+      );
+      write(
         join(compiler, "package.json"),
         JSON.stringify({
           name: "typescript",
-          version: failure === "version" ? "0" : "5.9.2",
+          version: failure === "version" ? "0" : typescript,
           bin: { tsc: "./bin/tsc" },
         }),
       );
@@ -147,7 +156,7 @@ test("compiler context, exact project, resolution, mutation and failure boundari
         assert.equal(options.maxBuffer, 1_048_576);
         if (failure === "command") throw new Error("controlled compiler failure");
         if (args.includes("--version"))
-          return failure === "actual-version" ? "Version 0" : "Version 5.9.2\n";
+          return failure === "actual-version" ? "Version 0" : `Version ${typescript}\n`;
         assert.deepEqual(JSON.parse(readFileSync(join(consumer, "tsconfig.json"))), {
           files: names,
           compilerOptions: {
@@ -200,7 +209,7 @@ test("compiler context, exact project, resolution, mutation and failure boundari
       if (failure === "fixture") assert.equal(calls.length, 1);
       if (failure === "client-command") assert.equal(calls.length, 2);
       if (failure === "fixture-resolution") assert.equal(calls.length, 3);
-      if (["context", "lock", "compiler-path", "version"].includes(failure))
+      if (["context", "lock", "compiler-path", "version", "unpinned"].includes(failure))
         assert.equal(calls.length, 0);
     } finally {
       rmSync(root, { recursive: true, force: true });

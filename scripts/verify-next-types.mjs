@@ -42,10 +42,15 @@ function verifyNextTypes(kind, consumer, sdk, next, context, execute = execFileS
       "Next type lock changed",
     );
   checkLock();
+  // The source gate requires exact development pins, so the compiler is the version
+  // the SDK manifest names, and a reviewed bump needs no edit here.
+  const pinned = JSON.parse(readFileSync(child(build, join(build, "packages/sdk/package.json"))))
+    .devDependencies?.typescript;
+  assert.match(String(pinned), /^[0-9]+\.[0-9]+\.[0-9]+$/, "TypeScript must be pinned exactly");
   const compiler = child(build, join(build, "packages/sdk/node_modules/typescript"));
   const manifest = JSON.parse(readFileSync(join(compiler, "package.json")));
   assert.equal(manifest.name, "typescript");
-  assert.equal(manifest.version, "5.9.2");
+  assert.equal(manifest.version, pinned);
   assert.equal(manifest.bin.tsc, "./bin/tsc");
   const executable = child(compiler, join(compiler, "bin/tsc"));
   for (const file of ["lib/tsc.js", "lib/_tsc.js"]) child(compiler, join(compiler, file));
@@ -91,7 +96,7 @@ function verifyNextTypes(kind, consumer, sdk, next, context, execute = execFileS
       timeout: 30_000,
       maxBuffer: 1_048_576,
     });
-  assert.equal(run(["--version"]).trim(), "Version 5.9.2", "wrong actual Next type compiler");
+  assert.equal(run(["--version"]).trim(), `Version ${pinned}`, "wrong actual Next type compiler");
   const fixtureName = kind === "provider" ? "types-next-provider.tsx" : "types-next-browser.ts";
   const fixture = readFileSync(child(build, join(build, "scripts/fixtures", fixtureName)));
   const fixturePath = join(consumer, fixtureName),
