@@ -21,11 +21,6 @@ import { peerAllows } from "./package-shape.mjs";
 export const nextBrowserScope = "next-browser-node-bridge";
 export const nextMetadataScope = "next-metadata-installed-node";
 export const nextProviderLayoutScope = "next-provider-types-layout";
-const pair = (name, server = false) => ({
-  ...(server ? { browser: null } : {}),
-  types: `./dist/${name}.d.ts`,
-  default: `./dist/${name}.js`,
-});
 function inside(root, path) {
   const actual = realpathSync(path),
     part = relative(root, actual);

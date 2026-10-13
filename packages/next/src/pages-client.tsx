@@ -120,6 +120,7 @@ export function CreatorPageView({
       document.removeEventListener("visibilitychange", visible);
     };
   }, [ready, start]);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: the exposure receipt must follow a repaint of the selected variation
   useEffect(() => {
     if (!visitToken) return;
     // After the selected layout commits and a paint, never on SSR or prefetch.
@@ -233,9 +234,10 @@ export function CreatorPageView({
               <h1>{page.content.headline}</h1>
               <p>{page.content.description}</p>
               <ul>
-                {page.content.benefits.map((benefit, index) => (
-                  <li key={index}>{benefit}</li>
-                ))}
+                {page.content.benefits.map((benefit, index) => {
+                  // biome-ignore lint/suspicious/noArrayIndexKey: static strings of one page revision, which may repeat
+                  return <li key={index}>{benefit}</li>;
+                })}
               </ul>
               <div
                 className="cp-offer"
@@ -261,9 +263,10 @@ export function CreatorPageView({
             </section>
           </div>
           <footer>
-            {page.content.disclosures.map((disclosure, index) => (
-              <p key={index}>{disclosure}</p>
-            ))}
+            {page.content.disclosures.map((disclosure, index) => {
+              // biome-ignore lint/suspicious/noArrayIndexKey: static strings of one page revision, which may repeat
+              return <p key={index}>{disclosure}</p>;
+            })}
           </footer>
         </>
       )}

@@ -17,6 +17,7 @@ function CommishCapture({
 }: CommishCaptureProps) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
+  // biome-ignore lint/correctness/useExhaustiveDependencies: capture re-runs on every navigation, which pathname and searchParams express
   useEffect(
     () => void captureReferral({ publishableKey, applicationId, capturePath }),
     [publishableKey, applicationId, capturePath, pathname, searchParams],

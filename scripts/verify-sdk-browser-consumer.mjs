@@ -46,7 +46,7 @@ async function browserProbe() {
     },
     history: {
       state,
-      replaceState(next, unused, url) {
+      replaceState(next, _unused, url) {
         assert.equal(next, state);
         window.location.href = String(url);
       },

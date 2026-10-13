@@ -28,8 +28,10 @@ function recoverPublication(target, fd, entry) {
   // this cleanup in its own finally block as well.
   const prefix = `.commish-setup-${basename(target)}.`, directory = opendirSync(dirname(target));
   try {
-    let item, scanned = 0;
-    while ((item = directory.readSync()) && ++scanned <= 4096) {
+    let scanned = 0;
+    for (;;) {
+      const item = directory.readSync();
+      if (!item || ++scanned > 4096) break;
       if (!item.name.startsWith(prefix) || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.tmp$/.test(item.name.slice(prefix.length))) continue;
       const temporary = join(dirname(target), item.name);
       try {

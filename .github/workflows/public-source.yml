@@ -38,8 +38,10 @@ jobs:
       # node_modules/ and dist/ are git-ignored; the verifier still requires a clean tree.
       - run: pnpm install --frozen-lockfile --ignore-scripts --registry=https://registry.npmjs.org
       - run: pnpm build
-      - name: Run every test file
-        run: node --test 'scripts/*.test.mjs'
+      - name: Lint
+        run: pnpm exec biome lint packages scripts
+      - name: Run every test file with coverage
+        run: node --test --experimental-test-coverage --test-coverage-include='packages/*/bin/**/*.mjs' --test-coverage-include='scripts/**/*.mjs' --test-coverage-exclude='scripts/**/*.test.mjs' --test-coverage-exclude='scripts/fixtures/**' 'scripts/*.test.mjs'
       - name: Prepare exact-source candidate
         run: node scripts/verify-public-source.mjs "$RUNNER_TEMP/commish-candidate"
       - name: Bind candidate to this CI run

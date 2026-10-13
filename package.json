@@ -6,6 +6,11 @@
     "node": ">=22"
   },
   "scripts": {
-    "build": "pnpm --filter @commish/sdk build && pnpm --filter @commish/next build"
+    "build": "pnpm --filter @commish/sdk build && pnpm --filter @commish/next build",
+    "lint": "biome lint packages scripts",
+    "test": "node --test 'scripts/*.test.mjs'"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.5.15"
   }
 }
