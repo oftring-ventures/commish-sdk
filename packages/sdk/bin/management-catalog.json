@@ -36,17 +36,11 @@
       },
       "mode": {
         "type": "string",
-        "enum": [
-          "test",
-          "live"
-        ]
+        "enum": ["test", "live"]
       },
       "kind": {
         "type": "string",
-        "enum": [
-          "session",
-          "automation"
-        ]
+        "enum": ["session", "automation"]
       },
       "scopes": {
         "minItems": 1,
@@ -184,11 +178,7 @@
           },
           "expectedCurrentStatus": {
             "type": "string",
-            "enum": [
-              "draft",
-              "active",
-              "paused"
-            ]
+            "enum": ["draft", "active", "paused"]
           },
           "programId": {
             "type": "string",
@@ -228,9 +218,7 @@
             "pattern": "^prg_[A-Za-z0-9_-]{12,}$"
           }
         },
-        "required": [
-          "programId"
-        ],
+        "required": ["programId"],
         "additionalProperties": false
       },
       "response": "application/json"
@@ -270,10 +258,7 @@
                         "maximum": 10000
                       }
                     },
-                    "required": [
-                      "type",
-                      "basisPoints"
-                    ],
+                    "required": ["type", "basisPoints"],
                     "additionalProperties": false
                   },
                   {
@@ -293,11 +278,7 @@
                         "const": "usd"
                       }
                     },
-                    "required": [
-                      "type",
-                      "amount",
-                      "currency"
-                    ],
+                    "required": ["type", "amount", "currency"],
                     "additionalProperties": false
                   }
                 ]
@@ -312,9 +293,7 @@
                         "const": "first_payment"
                       }
                     },
-                    "required": [
-                      "kind"
-                    ],
+                    "required": ["kind"],
                     "additionalProperties": false
                   },
                   {
@@ -330,10 +309,7 @@
                         "maximum": 120
                       }
                     },
-                    "required": [
-                      "kind",
-                      "months"
-                    ],
+                    "required": ["kind", "months"],
                     "additionalProperties": false
                   },
                   {
@@ -344,9 +320,7 @@
                         "const": "lifetime"
                       }
                     },
-                    "required": [
-                      "kind"
-                    ],
+                    "required": ["kind"],
                     "additionalProperties": false
                   }
                 ]
@@ -366,10 +340,7 @@
                         "const": "usd"
                       }
                     },
-                    "required": [
-                      "amount",
-                      "currency"
-                    ],
+                    "required": ["amount", "currency"],
                     "additionalProperties": false
                   },
                   {
@@ -413,11 +384,7 @@
             "additionalProperties": false
           }
         },
-        "required": [
-          "programId",
-          "operationKey",
-          "terms"
-        ],
+        "required": ["programId", "operationKey", "terms"],
         "additionalProperties": false
       },
       "response": "application/json"
@@ -494,13 +461,7 @@
             "maxLength": 255
           }
         },
-        "required": [
-          "applicationId",
-          "label",
-          "publishableKey",
-          "secretHash",
-          "idempotencyKey"
-        ],
+        "required": ["applicationId", "label", "publishableKey", "secretHash", "idempotencyKey"],
         "additionalProperties": false
       },
       "response": "application/json"
@@ -543,13 +504,7 @@
             "maxLength": 255
           }
         },
-        "required": [
-          "keyId",
-          "label",
-          "publishableKey",
-          "secretHash",
-          "idempotencyKey"
-        ],
+        "required": ["keyId", "label", "publishableKey", "secretHash", "idempotencyKey"],
         "additionalProperties": false
       },
       "response": "application/json"
@@ -567,9 +522,7 @@
             "pattern": "^key_[A-Za-z0-9_-]{12,}$"
           }
         },
-        "required": [
-          "keyId"
-        ],
+        "required": ["keyId"],
         "additionalProperties": false
       },
       "response": "application/json"
@@ -617,10 +570,7 @@
             "pattern": "^app_[A-Za-z0-9_-]{12,}$"
           }
         },
-        "required": [
-          "origin",
-          "applicationId"
-        ],
+        "required": ["origin", "applicationId"],
         "additionalProperties": false
       },
       "response": "application/json"
@@ -641,10 +591,7 @@
             "pattern": "^app_[A-Za-z0-9_-]{12,}$"
           }
         },
-        "required": [
-          "origin",
-          "applicationId"
-        ],
+        "required": ["origin", "applicationId"],
         "additionalProperties": false
       },
       "response": "application/json"
@@ -708,12 +655,7 @@
             "maxLength": 255
           }
         },
-        "required": [
-          "programId",
-          "email",
-          "expectedTermVersion",
-          "idempotencyKey"
-        ],
+        "required": ["programId", "email", "expectedTermVersion", "idempotencyKey"],
         "additionalProperties": false
       },
       "response": "application/json"
@@ -731,9 +673,7 @@
             "pattern": "^inv_[A-Za-z0-9_-]{12,}$"
           }
         },
-        "required": [
-          "invitationId"
-        ],
+        "required": ["invitationId"],
         "additionalProperties": false
       },
       "response": "application/json"
@@ -835,11 +775,7 @@
             "maxLength": 255
           }
         },
-        "required": [
-          "url",
-          "eventTypes",
-          "idempotencyKey"
-        ],
+        "required": ["url", "eventTypes", "idempotencyKey"],
         "additionalProperties": false
       },
       "response": "application/json"
@@ -863,10 +799,7 @@
             "maxLength": 255
           }
         },
-        "required": [
-          "endpointId",
-          "idempotencyKey"
-        ],
+        "required": ["endpointId", "idempotencyKey"],
         "additionalProperties": false
       },
       "response": "application/json"
@@ -885,9 +818,7 @@
             "pattern": "^whe_[A-Za-z0-9_-]{12,}$"
           }
         },
-        "required": [
-          "endpointId"
-        ],
+        "required": ["endpointId"],
         "additionalProperties": false
       },
       "response": "application/json"
@@ -910,10 +841,7 @@
             "maxLength": 255
           }
         },
-        "required": [
-          "deliveryId",
-          "idempotencyKey"
-        ],
+        "required": ["deliveryId", "idempotencyKey"],
         "additionalProperties": false
       },
       "response": "application/json"
@@ -937,10 +865,7 @@
             "maxLength": 255
           }
         },
-        "required": [
-          "endpointId",
-          "idempotencyKey"
-        ],
+        "required": ["endpointId", "idempotencyKey"],
         "additionalProperties": false
       },
       "response": "application/octet-stream"
@@ -958,9 +883,7 @@
             "pattern": "^prg_[A-Za-z0-9_-]{12,}$"
           }
         },
-        "required": [
-          "programId"
-        ],
+        "required": ["programId"],
         "additionalProperties": false
       },
       "response": "application/json"

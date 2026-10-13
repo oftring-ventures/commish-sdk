@@ -2,36 +2,56 @@ import assert from "node:assert/strict";
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { fileURLToPath } from "node:url";
 import test from "node:test";
-import { verifyNextBuild } from "./verify-next-build.mjs";
-import { cookieRequestProbe, nextBuildFixture, nextServerBuildFixture } from "./fixtures/next-build.mjs";
-import { providerProbe } from "./fixtures/next-provider.mjs";
+import { fileURLToPath } from "node:url";
+import {
+  cookieRequestProbe,
+  nextBuildFixture,
+  nextServerBuildFixture,
+} from "./fixtures/next-build.mjs";
 import { captureRequestProbe } from "./fixtures/next-capture.mjs";
 import { cliProbe, retiredCommandsProbe } from "./fixtures/next-cli.mjs";
+import { providerProbe } from "./fixtures/next-provider.mjs";
 import { serverMarker } from "./inspect-next-build.mjs";
+import { verifyNextBuild } from "./verify-next-build.mjs";
 
 test("initializer installs idempotently, refuses conflicts and unsafe paths, and the probe rejects mutation", async () => {
   await cliProbe(fileURLToPath(new URL("../packages/next/bin/init.mjs", import.meta.url)));
   let fixture;
-  await assert.rejects(() => cliProbe(null, (cwd) => {
-    fixture = cwd;
-    writeFileSync(join(cwd, "keep.txt"), "changed");
-    return { status: 1, signal: null, stdout: "", stderr: '{"status":"error"}' };
-  }), /initializer changed consumer files/);
+  await assert.rejects(
+    () =>
+      cliProbe(null, (cwd) => {
+        fixture = cwd;
+        writeFileSync(join(cwd, "keep.txt"), "changed");
+        return { status: 1, signal: null, stdout: "", stderr: '{"status":"error"}' };
+      }),
+    /initializer changed consumer files/,
+  );
   assert(!existsSync(fixture));
-  await assert.rejects(() => cliProbe(null, () => ({ status: 0, signal: null, stdout: "", stderr: "" })));
+  await assert.rejects(() =>
+    cliProbe(null, () => ({ status: 0, signal: null, stdout: "", stderr: "" })),
+  );
 });
 
 test("retired credential commands point at the commish CLI; help and version exit cleanly", async () => {
-  const { version } = JSON.parse(readFileSync(new URL("../packages/next/package.json", import.meta.url), "utf8"));
-  await retiredCommandsProbe(fileURLToPath(new URL("../packages/next/bin/init.mjs", import.meta.url)), version);
+  const { version } = JSON.parse(
+    readFileSync(new URL("../packages/next/package.json", import.meta.url), "utf8"),
+  );
+  await retiredCommandsProbe(
+    fileURLToPath(new URL("../packages/next/bin/init.mjs", import.meta.url)),
+    version,
+  );
 });
 
 test("only declared framework capabilities select a build and invalid inputs fail before commands", async () => {
   const packed = (exports, peerDependencies) => ({
     archive: Buffer.from("test-only"),
-    packed: new Map([["package/package.json", { data: Buffer.from(JSON.stringify({ exports, peerDependencies })) }]]),
+    packed: new Map([
+      [
+        "package/package.json",
+        { data: Buffer.from(JSON.stringify({ exports, peerDependencies })) },
+      ],
+    ]),
   });
   let calls = 0;
   const execute = () => {
@@ -61,7 +81,8 @@ test("only declared framework capabilities select a build and invalid inputs fai
     packed({ ".": { ...rootExport, browser: "./dist/index.js" } }, peers),
     packed({ ".": rootExport }, { ...peers, next: ">=16" }),
     packed({ ".": rootExport }, { next: peers.next }),
-  ]) await assert.rejects(() => verifyNextBuild(sdk, invalid, null, execute), /unsupported server/);
+  ])
+    await assert.rejects(() => verifyNextBuild(sdk, invalid, null, execute), /unsupported server/);
   const root = mkdtempSync(join(tmpdir(), "commish-next-selection-test-"));
   try {
     writeFileSync(join(root, "pnpm-lock.yaml"), "unapproved source lock");
@@ -88,9 +109,16 @@ test("only declared framework capabilities select a build and invalid inputs fai
         ),
       /framework source lock changed/,
     );
-    await assert.rejects(() => verifyNextBuild(sdk, packed({ ".": rootExport }, peers),
-      { build: root, checkout: root, lock: Buffer.from("unapproved source lock") }, execute),
-    /unsupported framework source lock/);
+    await assert.rejects(
+      () =>
+        verifyNextBuild(
+          sdk,
+          packed({ ".": rootExport }, peers),
+          { build: root, checkout: root, lock: Buffer.from("unapproved source lock") },
+          execute,
+        ),
+      /unsupported framework source lock/,
+    );
   } finally {
     rmSync(root, { recursive: true, force: true });
     assert(!existsSync(root));
@@ -104,7 +132,9 @@ test("only declared framework capabilities select a build and invalid inputs fai
   );
   assert(nextBuildFixture["app/api/edge/route.ts"].includes("export const runtime = 'edge'"));
   assert(nextBuildFixture["app/api/edge/route.ts"].includes(serverMarker));
-  assert(nextServerBuildFixture["app/api/edge/route.ts"] === nextBuildFixture["app/api/edge/route.ts"]);
+  assert(
+    nextServerBuildFixture["app/api/edge/route.ts"] === nextBuildFixture["app/api/edge/route.ts"],
+  );
   assert(!nextBuildFixture["app/layout.tsx"].includes('"use client"'));
   assert(nextBuildFixture["app/layout.tsx"].includes("@commish/next/react"));
   assert(!nextServerBuildFixture["app/layout.tsx"].includes("@commish/next/react"));
@@ -122,27 +152,45 @@ test("only declared framework capabilities select a build and invalid inputs fai
 
 test("cookie request probe rejects wrong behavior and closes its loopback server", async () => {
   for (const failure of [null, "metadata", "status"]) {
-    let closed = false, port;
+    let closed = false,
+      port;
     const createApp = () => ({
       async prepare() {},
-      async close() { closed = true; },
+      async close() {
+        closed = true;
+      },
       getRequestHandler: () => (request, response) => {
         port = request.socket.localPort;
         const value = request.headers.cookie?.split("=")[1] ?? null;
         response.statusCode = failure === "status" ? 500 : 200;
-        response.end(JSON.stringify({ attribution: value, unchanged: value === null,
-          metadata: { keep: "checkout", ...(value ? { commish_attribution: value } : {}),
-            ...(failure === "metadata" ? { unexpected: true } : {}) },
-          subscription: { keep: "subscription", ...(value ? {
-            commish_attribution: value, commish_customer_id: "consumer_123",
-          } : {}) },
-        }));
+        response.end(
+          JSON.stringify({
+            attribution: value,
+            unchanged: value === null,
+            metadata: {
+              keep: "checkout",
+              ...(value ? { commish_attribution: value } : {}),
+              ...(failure === "metadata" ? { unexpected: true } : {}),
+            },
+            subscription: {
+              keep: "subscription",
+              ...(value
+                ? {
+                    commish_attribution: value,
+                    commish_customer_id: "consumer_123",
+                  }
+                : {}),
+            },
+          }),
+        );
       },
     });
     if (failure) await assert.rejects(() => cookieRequestProbe(createApp));
     else await cookieRequestProbe(createApp);
     assert(closed && port, "request probe must execute and close its app");
-    await assert.rejects(() => fetch(`http://127.0.0.1:${port}`, { signal: AbortSignal.timeout(1_000) }));
+    await assert.rejects(() =>
+      fetch(`http://127.0.0.1:${port}`, { signal: AbortSignal.timeout(1_000) }),
+    );
   }
 });
 
@@ -150,24 +198,33 @@ test("capture upstream closes and restores environment after app or probe failur
   const original = process.env.COMMISH_API_URL;
   for (const failure of ["startup", "request"]) {
     let url;
-    await assert.rejects(() => captureRequestProbe(async (probe) => {
-      url = process.env.COMMISH_API_URL;
-      if (failure === "startup") throw new Error("controlled startup failure");
-      await probe(new URL(url).origin);
-    }));
+    await assert.rejects(() =>
+      captureRequestProbe(async (probe) => {
+        url = process.env.COMMISH_API_URL;
+        if (failure === "startup") throw new Error("controlled startup failure");
+        await probe(new URL(url).origin);
+      }),
+    );
     assert.equal(process.env.COMMISH_API_URL, original);
     await assert.rejects(() => fetch(url, { signal: AbortSignal.timeout(1_000) }));
   }
 });
 
 test("provider wiring probe rejects a wrong export and clears controlled hook state", async () => {
-  await assert.rejects(() => providerProbe(async () => {
-    assert.equal(typeof (await import("react/jsx-runtime")).jsx, "function");
-    return { wrong: () => null };
-  }), /CommishProvider/);
+  await assert.rejects(
+    () =>
+      providerProbe(async () => {
+        assert.equal(typeof (await import("react/jsx-runtime")).jsx, "function");
+        return { wrong: () => null };
+      }),
+    /CommishProvider/,
+  );
   assert(!Object.hasOwn(globalThis, Symbol.for("commish.provider.probe")));
   try {
-    assert(!import.meta.resolve("react/jsx-runtime").startsWith("data:"), "controlled JSX hook leaked");
+    assert(
+      !import.meta.resolve("react/jsx-runtime").startsWith("data:"),
+      "controlled JSX hook leaked",
+    );
   } catch (error) {
     assert.equal(error.code, "ERR_MODULE_NOT_FOUND");
   }

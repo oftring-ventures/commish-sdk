@@ -1,4 +1,4 @@
-import { captureReferral, type CommishBrowserOptions } from "@commish/next/browser";
+import { type CommishBrowserOptions, captureReferral } from "@commish/next/browser";
 import type { CommishBrowserOptions as SdkOptions } from "@commish/sdk/browser";
 
 const options: CommishBrowserOptions = {

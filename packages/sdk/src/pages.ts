@@ -44,9 +44,7 @@ export function pageHandle(value: string): string {
 }
 
 /** Validate the render boundary even when a merchant supplies a custom transport. */
-export function assertCreatorPage(
-  value: unknown,
-): asserts value is CreatorPage {
+export function assertCreatorPage(value: unknown): asserts value is CreatorPage {
   const object = (v: unknown): v is Record<string, unknown> =>
     !!v && typeof v === "object" && !Array.isArray(v);
   const keys = (v: Record<string, unknown>, allowed: string[]) =>
@@ -86,9 +84,7 @@ export function assertCreatorPage(
     new URL(value.origin).origin !== value.origin ||
     typeof value.rootAliasEnabled !== "boolean" ||
     typeof value.canonicalPath !== "string" ||
-    !/^\/[a-z][a-z0-9-]{0,29}\/[a-z0-9][a-z0-9_-]{2,39}$/.test(
-      value.canonicalPath,
-    )
+    !/^\/[a-z][a-z0-9-]{0,29}\/[a-z0-9][a-z0-9_-]{2,39}$/.test(value.canonicalPath)
   )
     return invalid();
   if (value.status === "ended") {
@@ -163,9 +159,7 @@ export function assertCreatorPage(
     c.disclosures.length > 5 ||
     !c.disclosures.every((v) => text(v, 500)) ||
     !text(value.revision, 36) ||
-    !/^[a-f\d]{8}-[a-f\d]{4}-[1-8][a-f\d]{3}-[89ab][a-f\d]{3}-[a-f\d]{12}$/i.test(
-      value.revision,
-    ) ||
+    !/^[a-f\d]{8}-[a-f\d]{4}-[1-8][a-f\d]{3}-[89ab][a-f\d]{3}-[a-f\d]{12}$/i.test(value.revision) ||
     !object(value.creator) ||
     !keys(value.creator, ["handle"]) ||
     typeof value.creator.handle !== "string" ||
@@ -174,10 +168,9 @@ export function assertCreatorPage(
     typeof value.experimentEnabled !== "boolean" ||
     typeof value.rootAliasEnabled !== "boolean" ||
     typeof value.preferredPath !== "string" ||
-    ![
-      value.canonicalPath,
-      "/" + value.canonicalPath.split("/").at(-1),
-    ].includes(value.preferredPath)
+    ![value.canonicalPath, "/" + value.canonicalPath.split("/").at(-1)].includes(
+      value.preferredPath,
+    )
   )
     invalid();
 }

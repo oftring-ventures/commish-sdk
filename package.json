@@ -7,8 +7,9 @@
   },
   "scripts": {
     "build": "pnpm --filter @commish/sdk build && pnpm --filter @commish/next build",
-    "lint": "biome lint packages scripts",
-    "test": "node --test 'scripts/*.test.mjs'"
+    "lint": "biome ci packages scripts biome.json package.json",
+    "test": "node --test 'scripts/*.test.mjs'",
+    "format": "biome check --write packages scripts biome.json package.json"
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.15"

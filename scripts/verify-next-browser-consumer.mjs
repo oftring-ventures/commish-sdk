@@ -1,11 +1,9 @@
-import { releaseVersion } from "./stable-release.mjs";
 import assert from "node:assert/strict";
-import { pnpmVersion } from "./toolchain.mjs";
 import { execFileSync } from "node:child_process";
 import {
   mkdtempSync,
-  readFileSync,
   readdirSync,
+  readFileSync,
   realpathSync,
   rmSync,
   statSync,
@@ -13,10 +11,11 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { isAbsolute, join, relative, sep } from "node:path";
-
-import { verifyNextBrowserTypes, verifyNextProviderTypes } from "./verify-next-types.mjs";
-import { readProviderTypeInputs, providerTypesLock } from "./provider-types-lock.mjs";
 import { peerAllows } from "./package-shape.mjs";
+import { providerTypesLock, readProviderTypeInputs } from "./provider-types-lock.mjs";
+import { releaseVersion } from "./stable-release.mjs";
+import { pnpmVersion } from "./toolchain.mjs";
+import { verifyNextBrowserTypes, verifyNextProviderTypes } from "./verify-next-types.mjs";
 
 export const nextBrowserScope = "next-browser-node-bridge";
 export const nextMetadataScope = "next-metadata-installed-node";
@@ -58,16 +57,29 @@ async function probe() {
 export async function metadataProbe(cookieHelpers = false, capture = false) {
   const { default: assert } = await import("node:assert/strict");
   const root = await import("@commish/next");
-  assert.deepEqual(Object.keys(root), [
-    ...(capture ? ["COMMISH_COOKIE"] : []), "applyCommishStripeMetadata",
-    ...(capture ? ["createAttributionHandler"] : []),
-    ...(cookieHelpers ? ["getCommishAttribution", "withCommishStripeMetadata"] : []),
-  ], "Next root export names");
+  assert.deepEqual(
+    Object.keys(root),
+    [
+      ...(capture ? ["COMMISH_COOKIE"] : []),
+      "applyCommishStripeMetadata",
+      ...(capture ? ["createAttributionHandler"] : []),
+      ...(cookieHelpers ? ["getCommishAttribution", "withCommishStripeMetadata"] : []),
+    ],
+    "Next root export names",
+  );
   if (capture) {
     assert.equal(root.COMMISH_COOKIE, "commish_attribution");
-    await assert.rejects(() => root.createAttributionHandler({ apiUrl: "http://127.0.0.1:1" })(
-      new Request("http://consumer.test", { method: "POST", body: "{}",
-        headers: { "x-commish-capture-id": "a".repeat(32) } })), /request scope/);
+    await assert.rejects(
+      () =>
+        root.createAttributionHandler({ apiUrl: "http://127.0.0.1:1" })(
+          new Request("http://consumer.test", {
+            method: "POST",
+            body: "{}",
+            headers: { "x-commish-capture-id": "a".repeat(32) },
+          }),
+        ),
+      /request scope/,
+    );
   }
   if (cookieHelpers) {
     await assert.rejects(() => root.getCommishAttribution(), /request scope/);
@@ -126,8 +138,13 @@ function verifyNextConsumer(provider, sdk, next, context, execute = execFileSync
     for (const field of ["dependencies", "optionalDependencies"])
       assert.deepEqual(manifest[field] ?? {}, {}, "unexpected paired runtime dependency");
     const browser = manifest.exports["./browser"];
-    assert(browser && !Object.hasOwn(browser, "browser") && browser.types === "./dist/browser.d.ts" &&
-      browser.default === "./dist/browser.js", "unsupported browser entry");
+    assert(
+      browser &&
+        !Object.hasOwn(browser, "browser") &&
+        browser.types === "./dist/browser.d.ts" &&
+        browser.default === "./dist/browser.js",
+      "unsupported browser entry",
+    );
   }
   assert.deepEqual(manifests[0].peerDependencies ?? {}, {});
   // The source gate validated the full export shape; the paired consumer re-checks the
@@ -139,21 +156,31 @@ function verifyNextConsumer(provider, sdk, next, context, execute = execFileSync
       assert.equal(nextExports[entry], "./package.json", "unsupported Next export tuple");
       continue;
     }
-    assert(["./browser", ".", "./react", "./pages", "./pages/handlers", "./pages/routing"].includes(entry),
-      "unsupported Next export tuple");
-    if (["./browser", "./react"].includes(entry)) assert(!Object.hasOwn(nextExports[entry], "browser"), "unsupported Next export tuple");
+    assert(
+      ["./browser", ".", "./react", "./pages", "./pages/handlers", "./pages/routing"].includes(
+        entry,
+      ),
+      "unsupported Next export tuple",
+    );
+    if (["./browser", "./react"].includes(entry))
+      assert(!Object.hasOwn(nextExports[entry], "browser"), "unsupported Next export tuple");
     else assert.equal(nextExports[entry].browser, null, "unsupported Next export tuple");
   }
   const peers = manifests[1].peerDependencies ?? {};
   const range = /^>=\d+\.\d+\.\d+ <\d+$/;
   assert(peerAllows(peers["@commish/sdk"], manifests[0].version), "unexpected Next peers");
   for (const name of Object.keys(peers))
-    assert(name === "@commish/sdk" || (["next", "react"].includes(name) && range.test(peers[name])), "unexpected Next peers");
+    assert(
+      name === "@commish/sdk" || (["next", "react"].includes(name) && range.test(peers[name])),
+      "unexpected Next peers",
+    );
   if (Object.hasOwn(nextExports, "./react"))
     assert(Object.hasOwn(peers, "next"), "provider framework peer missing");
   for (const [index, { packed }] of [sdk, next].entries())
     for (const target of [
-      ...Object.values(manifests[index].exports).flatMap((value) => (typeof value === "string" ? [value] : Object.values(value))),
+      ...Object.values(manifests[index].exports).flatMap((value) =>
+        typeof value === "string" ? [value] : Object.values(value),
+      ),
       ...Object.values(manifests[index].bin ?? {}),
     ].filter((value) => typeof value === "string"))
       assert(packed.has(`package/${target.slice(2)}`), "missing promised paired artifact");
@@ -276,7 +303,9 @@ function verifyNextConsumer(provider, sdk, next, context, execute = execFileSync
     checkBytes();
     writeFileSync(join(consumer, "probe.mjs"), `await (${probe.toString()})();\n`);
     run(process.execPath, ["--conditions=browser", "probe.mjs"]);
-    const metadata = !provider && Object.hasOwn(manifests[1].exports, ".") &&
+    const metadata =
+      !provider &&
+      Object.hasOwn(manifests[1].exports, ".") &&
       !Object.hasOwn(manifests[1].peerDependencies, "next");
     if (metadata) {
       writeFileSync(join(consumer, "metadata.mjs"), `await (${metadataProbe.toString()})();\n`);

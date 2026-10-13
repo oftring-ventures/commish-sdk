@@ -1,6 +1,7 @@
-import test from "node:test";
 import assert from "node:assert/strict";
-import { Commish, assertCreatorPage } from "../packages/sdk/dist/index.js";
+import test from "node:test";
+import { assertCreatorPage, Commish } from "../packages/sdk/dist/index.js";
+
 const page = {
   protocol: "commish-pages-v1",
   pageId: "cpg_123456789012",
@@ -50,8 +51,7 @@ test("server resolution is scoped, uncached, and abortable", async () => {
   assert.equal(call.init.signal, signal);
   assert.match(call.url, /\/pages\/prg_123456789012\/maya$/);
   await assert.rejects(
-    () =>
-      sdk.pages.resolve({ programId: page.programId, handle: "../checkout" }),
+    () => sdk.pages.resolve({ programId: page.programId, handle: "../checkout" }),
     /Invalid/,
   );
 });

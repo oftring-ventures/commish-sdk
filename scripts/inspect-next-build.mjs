@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { readFileSync, readdirSync, realpathSync } from "node:fs";
+import { readdirSync, readFileSync, realpathSync } from "node:fs";
 import { isAbsolute, join, relative, sep } from "node:path";
 
 export const serverMarker = "cm_test_sk_next_build_marker_000001";

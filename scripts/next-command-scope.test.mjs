@@ -1,14 +1,14 @@
 import assert from "node:assert/strict";
 import childProcess from "node:child_process";
 import { EventEmitter } from "node:events";
-import { PassThrough } from "node:stream";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { syncBuiltinESMExports } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { fileURLToPath } from "node:url";
-import { setTimeout as delay } from "node:timers/promises";
+import { PassThrough } from "node:stream";
 import test from "node:test";
+import { setTimeout as delay } from "node:timers/promises";
+import { fileURLToPath } from "node:url";
 import { nextCommandScope } from "./next-command-scope.mjs";
 
 const members = (pid) =>

@@ -1,14 +1,10 @@
-import { releaseVersion } from "./stable-release.mjs";
 import assert from "node:assert/strict";
-import { pnpmVersion } from "./toolchain.mjs";
-import { frameworkRegistryBinHash, verifyFrameworkPackage } from "./verify-framework-package.mjs";
-import { nextCommandScope } from "./next-command-scope.mjs";
 import { createHash } from "node:crypto";
 import {
-  mkdtempSync,
   mkdirSync,
-  readFileSync,
+  mkdtempSync,
   readdirSync,
+  readFileSync,
   realpathSync,
   rmSync,
   statSync,
@@ -17,18 +13,26 @@ import {
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join, relative, sep } from "node:path";
-import { frameworkLocks } from "./next-framework-lock.mjs";
-import { peerAllows } from "./package-shape.mjs";
-import { nextBuildFixture, nextCookieBuildFixture, nextServerBuildFixture } from "./fixtures/next-build.mjs";
-import { providerProbe } from "./fixtures/next-provider.mjs";
-import { cliProbe, retiredCommandsProbe } from "./fixtures/next-cli.mjs";
-import { nextCaptureBuildFixture } from "./fixtures/next-capture.mjs";
-import { metadataProbe, nextMetadataScope } from "./verify-next-browser-consumer.mjs";
 import {
-  inspectNextBuild,
+  nextBuildFixture,
+  nextCookieBuildFixture,
+  nextServerBuildFixture,
+} from "./fixtures/next-build.mjs";
+import { nextCaptureBuildFixture } from "./fixtures/next-capture.mjs";
+import { cliProbe, retiredCommandsProbe } from "./fixtures/next-cli.mjs";
+import { providerProbe } from "./fixtures/next-provider.mjs";
+import {
   nextBuildChild as child,
   nextBuildFiles as files,
+  inspectNextBuild,
 } from "./inspect-next-build.mjs";
+import { nextCommandScope } from "./next-command-scope.mjs";
+import { frameworkLocks } from "./next-framework-lock.mjs";
+import { peerAllows } from "./package-shape.mjs";
+import { releaseVersion } from "./stable-release.mjs";
+import { pnpmVersion } from "./toolchain.mjs";
+import { frameworkRegistryBinHash, verifyFrameworkPackage } from "./verify-framework-package.mjs";
+import { metadataProbe, nextMetadataScope } from "./verify-next-browser-consumer.mjs";
 
 export const nextProviderWiringScope = "next-provider-installed-hook-wiring";
 export const nextCliScope = "next-cli-installed-setup";
@@ -97,30 +101,43 @@ function registrySnapshot(consumer, locks, pairRoots = []) {
 export async function verifyNextBuild(sdk, next, context, execute) {
   const manifest = JSON.parse(next.packed.get("package/package.json").data);
   const provider = Object.hasOwn(manifest.exports, "./react");
-  const server = Object.hasOwn(manifest.exports, ".") &&
-    Object.hasOwn(manifest.peerDependencies ?? {}, "next");
+  const server =
+    Object.hasOwn(manifest.exports, ".") && Object.hasOwn(manifest.peerDependencies ?? {}, "next");
   if (!provider && !server) return [];
-  if (provider) assert.deepEqual(manifest.exports["./react"], {
-    types: "./dist/provider.d.ts",
-    default: "./dist/provider.js",
-  });
+  if (provider)
+    assert.deepEqual(manifest.exports["./react"], {
+      types: "./dist/provider.d.ts",
+      default: "./dist/provider.js",
+    });
   if (server) {
     const root = manifest.exports["."];
-    assert(root && root.browser === null && root.default === "./dist/index.js" &&
-      root.types === "./dist/index.d.ts", "unsupported server root");
+    assert(
+      root &&
+        root.browser === null &&
+        root.default === "./dist/index.js" &&
+        root.types === "./dist/index.d.ts",
+      "unsupported server root",
+    );
     const peers = manifest.peerDependencies;
     const range = /^>=\d+\.\d+\.\d+ <\d+$/;
-    assert(Object.keys(peers).sort().join() === "@commish/sdk,next,react" &&
-      peerAllows(peers["@commish/sdk"], releaseVersion) && range.test(peers.next) && range.test(peers.react),
-      "unsupported server peers");
+    assert(
+      Object.keys(peers).sort().join() === "@commish/sdk,next,react" &&
+        peerAllows(peers["@commish/sdk"], releaseVersion) &&
+        range.test(peers.next) &&
+        range.test(peers.react),
+      "unsupported server peers",
+    );
   }
   const cookieHelpers = next.packed.has("package/dist/metadata.js");
   assert(!cookieHelpers || server, "cookie helpers require the framework server root");
   const capture = next.packed.has("package/dist/capture.js");
   const pages = Object.hasOwn(manifest.exports, "./pages");
   assert(!capture || cookieHelpers, "capture requires cookie helpers");
-  const fixture = { ...(provider ? nextBuildFixture : nextServerBuildFixture),
-    ...(cookieHelpers ? nextCookieBuildFixture : {}), ...(capture ? nextCaptureBuildFixture : {}) };
+  const fixture = {
+    ...(provider ? nextBuildFixture : nextServerBuildFixture),
+    ...(cookieHelpers ? nextCookieBuildFixture : {}),
+    ...(capture ? nextCaptureBuildFixture : {}),
+  };
   const sdkRoot = JSON.parse(sdk.packed.get("package/package.json").data).exports["."];
   if (sdkRoot?.default !== "./dist/index.js") return [];
   const sources = [context.build, context.checkout].map((path) => realpathSync(path));
@@ -140,7 +157,12 @@ export async function verifyNextBuild(sdk, next, context, execute) {
           isAbsolute(part) || part === ".." || part.startsWith(`..${sep}`),
           "framework consumer overlaps source",
         );
-    const env = { ...process.env, NEXT_TELEMETRY_DISABLED: "1", NODE_DISABLE_COMPILE_CACHE: "1", NODE_ENV: "production" };
+    const env = {
+      ...process.env,
+      NEXT_TELEMETRY_DISABLED: "1",
+      NODE_DISABLE_COMPILE_CACHE: "1",
+      NODE_ENV: "production",
+    };
     for (const name of ["NODE_OPTIONS", "NODE_PATH", "NODE_COMPILE_CACHE"]) delete env[name];
     const run = (command, args, timeout = 120_000) =>
       execute(command, args, {
@@ -170,7 +192,11 @@ export async function verifyNextBuild(sdk, next, context, execute) {
     ])
       writeFileSync(join(consumer, `${name}.tgz`), artifact.archive);
     const install = async (options) => {
-      assert.equal((await run("pnpm", ["--version"])).trim(), pnpmVersion, "framework pnpm version");
+      assert.equal(
+        (await run("pnpm", ["--version"])).trim(),
+        pnpmVersion,
+        "framework pnpm version",
+      );
       await run("pnpm", [
         "install",
         "--ignore-scripts",
@@ -209,7 +235,14 @@ export async function verifyNextBuild(sdk, next, context, execute) {
           readFileSync(join(consumer, `${index ? "next" : "sdk"}.tgz`)).equals(artifact.archive),
           "framework archive changed",
         );
-        verifyFrameworkPackage(consumer, pairRoots[index], artifact, registry, sdk, locks.dependencies.next);
+        verifyFrameworkPackage(
+          consumer,
+          pairRoots[index],
+          artifact,
+          registry,
+          sdk,
+          locks.dependencies.next,
+        );
       }
       assert.deepEqual(
         registrySnapshot(consumer, locks, pairRoots),
@@ -219,21 +252,39 @@ export async function verifyNextBuild(sdk, next, context, execute) {
     };
     verifyBytes();
     if (manifest.bin) {
-      writeFileSync(join(consumer, "cli-probe.mjs"), `await (${cliProbe.toString()})(${JSON.stringify(join(consumer, "node_modules/.bin/commish-next"))});\n`);
+      writeFileSync(
+        join(consumer, "cli-probe.mjs"),
+        `await (${cliProbe.toString()})(${JSON.stringify(join(consumer, "node_modules/.bin/commish-next"))});\n`,
+      );
       await run(process.execPath, ["cli-probe.mjs"]);
-      writeFileSync(join(consumer, "retired-cli-probe.mjs"), `await (${retiredCommandsProbe.toString()})(${JSON.stringify(join(consumer, "node_modules/.bin/commish-next"))}, ${JSON.stringify(manifest.version)});\n`);
+      writeFileSync(
+        join(consumer, "retired-cli-probe.mjs"),
+        `await (${retiredCommandsProbe.toString()})(${JSON.stringify(join(consumer, "node_modules/.bin/commish-next"))}, ${JSON.stringify(manifest.version)});\n`,
+      );
       await run(process.execPath, ["retired-cli-probe.mjs"]);
       verifyBytes();
     }
     if (provider) {
-      assert(next.packed.get("package/dist/provider.js").data.toString().trimStart().startsWith('"use client";'),
-        "provider client directive missing");
-      writeFileSync(join(consumer, "provider-probe.mjs"), `await (${providerProbe.toString()})();\n`);
+      assert(
+        next.packed
+          .get("package/dist/provider.js")
+          .data.toString()
+          .trimStart()
+          .startsWith('"use client";'),
+        "provider client directive missing",
+      );
+      writeFileSync(
+        join(consumer, "provider-probe.mjs"),
+        `await (${providerProbe.toString()})();\n`,
+      );
       await run(process.execPath, ["provider-probe.mjs"]);
       verifyBytes();
     }
     if (server) {
-      writeFileSync(join(consumer, "metadata.mjs"), `await (${metadataProbe.toString()})(${cookieHelpers}, ${capture});\n`);
+      writeFileSync(
+        join(consumer, "metadata.mjs"),
+        `await (${metadataProbe.toString()})(${cookieHelpers}, ${capture});\n`,
+      );
       await run(process.execPath, ["metadata.mjs"]);
       verifyBytes();
     }
@@ -323,8 +374,14 @@ export default function Layout({ children }: { children: ReactNode }) {
       readFileSync(join(sources[0], "pnpm-lock.yaml")).equals(context.lock),
       "framework source lock changed",
     );
-    return [provider ? nextBuildScope : nextServerBuildScope, ...(server ? [nextMetadataScope] : []),
-      ...(cookieHelpers ? [nextCookieScope] : []), ...(capture ? [nextCaptureScope] : []), ...(provider ? [nextProviderWiringScope] : []), ...(manifest.bin ? [nextCliScope] : [])];
+    return [
+      provider ? nextBuildScope : nextServerBuildScope,
+      ...(server ? [nextMetadataScope] : []),
+      ...(cookieHelpers ? [nextCookieScope] : []),
+      ...(capture ? [nextCaptureScope] : []),
+      ...(provider ? [nextProviderWiringScope] : []),
+      ...(manifest.bin ? [nextCliScope] : []),
+    ];
   } catch (error) {
     failure = error;
     throw error;

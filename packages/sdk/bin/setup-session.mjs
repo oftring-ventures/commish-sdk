@@ -1,125 +1,282 @@
-import { createSetupResources } from "./setup-resources.mjs";
-import { validateSetupIntent, sameSetupIntent } from "./setup-intent.mjs";
 import { createHash, randomBytes } from "node:crypto";
+import { sameSetupIntent, validateSetupIntent } from "./setup-intent.mjs";
+import { createSetupResources } from "./setup-resources.mjs";
 
-const operations = new Set(["workspace.read", "application.write", "destination.write",
-  "credential.write", "program.write", "terms.write", "webhook.write", "stripe.connect", "readiness.read"]);
-const codes = new Set(["invalid_request", "authorization_required", "access_denied", "mfa_required",
-  "recent_auth_required", "live_access_required", "setup_expired", "setup_conflict", "setup_not_found", "rate_limited", "service_unavailable", "challenge_mismatch", "origin_not_public", "verification_unavailable"]);
-const fail = (code) => { throw new Error(code); };
+const operations = new Set([
+  "workspace.read",
+  "application.write",
+  "destination.write",
+  "credential.write",
+  "program.write",
+  "terms.write",
+  "webhook.write",
+  "stripe.connect",
+  "readiness.read",
+]);
+const codes = new Set([
+  "invalid_request",
+  "authorization_required",
+  "access_denied",
+  "mfa_required",
+  "recent_auth_required",
+  "live_access_required",
+  "setup_expired",
+  "setup_conflict",
+  "setup_not_found",
+  "rate_limited",
+  "service_unavailable",
+  "challenge_mismatch",
+  "origin_not_public",
+  "verification_unavailable",
+]);
+const fail = (code) => {
+  throw new Error(code);
+};
 const record = (value) => value && typeof value === "object" && !Array.isArray(value);
-const keys = (value, names) => record(value) && Object.keys(value).sort().join() === [...names].sort().join();
-const sameWorkspace = (actual, expected) => expected === undefined ? actual == null :
-  keys(actual, Object.keys(expected)) && Object.entries(expected).every(([name, value]) => actual[name] === value);
-const sameOperations = (value, requested) => Array.isArray(value) &&
-  value.length === requested.length && value.every((item) => operations.has(item)) &&
+const keys = (value, names) =>
+  record(value) && Object.keys(value).sort().join() === [...names].sort().join();
+const sameWorkspace = (actual, expected) =>
+  expected === undefined
+    ? actual == null
+    : keys(actual, Object.keys(expected)) &&
+      Object.entries(expected).every(([name, value]) => actual[name] === value);
+const sameOperations = (value, requested) =>
+  Array.isArray(value) &&
+  value.length === requested.length &&
+  value.every((item) => operations.has(item)) &&
   [...value].sort().every((item, index) => item === [...requested].sort()[index]);
 
 export function validateSetupWorkspace(value) {
-  if (value !== undefined && !(keys(value, ["kind", "id"]) && value.kind === "existing" &&
-      /^wrk_[A-Za-z0-9_-]{12,}$/.test(value.id) || keys(value, ["kind", "name", "slug"]) &&
-      value.kind === "new" && typeof value.name === "string" && value.name.trim() === value.name &&
-      value.name.length > 0 && value.name.length <= 100 && typeof value.slug === "string" &&
-      /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(value.slug) && value.slug.length >= 3 && value.slug.length <= 48))
+  if (
+    value !== undefined &&
+    !(
+      (keys(value, ["kind", "id"]) &&
+        value.kind === "existing" &&
+        /^wrk_[A-Za-z0-9_-]{12,}$/.test(value.id)) ||
+      (keys(value, ["kind", "name", "slug"]) &&
+        value.kind === "new" &&
+        typeof value.name === "string" &&
+        value.name.trim() === value.name &&
+        value.name.length > 0 &&
+        value.name.length <= 100 &&
+        typeof value.slug === "string" &&
+        /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(value.slug) &&
+        value.slug.length >= 3 &&
+        value.slug.length <= 48)
+    )
+  )
     fail("invalid_request");
 }
 
 // The bearer stays inside this closure: callers can persist receipts, never authority.
-export function createSetupSession(input, { appUrl = "https://app.commish.sh", fetcher = fetch, now = Date.now, signal } = {}) {
+export function createSetupSession(
+  input,
+  { appUrl = "https://app.commish.sh", fetcher = fetch, now = Date.now, signal } = {},
+) {
   let origin;
-  try { origin = new URL(appUrl); } catch { fail("invalid_app_url"); }
-  if (origin.username || origin.password || origin.search || origin.hash || origin.pathname !== "/" ||
-      !(origin.protocol === "https:" || origin.protocol === "http:" &&
-        ["127.0.0.1", "[::1]", "localhost"].includes(origin.hostname))) fail("invalid_app_url");
-  if (!record(input) || Object.keys(input).some((key) => !["mode", "operations", "workspaceRequest", "setupIntent"].includes(key)))
+  try {
+    origin = new URL(appUrl);
+  } catch {
+    fail("invalid_app_url");
+  }
+  if (
+    origin.username ||
+    origin.password ||
+    origin.search ||
+    origin.hash ||
+    origin.pathname !== "/" ||
+    !(
+      origin.protocol === "https:" ||
+      (origin.protocol === "http:" && ["127.0.0.1", "[::1]", "localhost"].includes(origin.hostname))
+    )
+  )
+    fail("invalid_app_url");
+  if (
+    !record(input) ||
+    Object.keys(input).some(
+      (key) => !["mode", "operations", "workspaceRequest", "setupIntent"].includes(key),
+    )
+  )
     fail("invalid_request");
-  const mode = input.mode ?? "test", requested = input.operations;
-  if (!["test", "live"].includes(mode) || !Array.isArray(requested) || !requested.length ||
-      new Set(requested).size !== requested.length || requested.some((op) => !operations.has(op))) fail("invalid_request");
+  const mode = input.mode ?? "test",
+    requested = input.operations;
+  if (
+    !["test", "live"].includes(mode) ||
+    !Array.isArray(requested) ||
+    !requested.length ||
+    new Set(requested).size !== requested.length ||
+    requested.some((op) => !operations.has(op))
+  )
+    fail("invalid_request");
   const workspace = input.workspaceRequest;
   validateSetupWorkspace(workspace);
   if (input.setupIntent !== undefined) validateSetupIntent(input.setupIntent);
-  const expected = structuredClone({ mode, operations: requested, ...(workspace ? { workspaceRequest: workspace } : {}),
-    ...(input.setupIntent ? { setupIntent: input.setupIntent } : {}) });
+  const expected = structuredClone({
+    mode,
+    operations: requested,
+    ...(workspace ? { workspaceRequest: workspace } : {}),
+    ...(input.setupIntent ? { setupIntent: input.setupIntent } : {}),
+  });
   const verifier = randomBytes(32).toString("base64url");
   const hash = createHash("sha256").update(verifier).digest("hex");
   const pairingCode = `${hash.slice(0, 4)}-${hash.slice(4, 8)}`.toUpperCase();
-  const beginPath = expected.setupIntent ? "/api/cli/setup-sessions/reviewed" : "/api/cli/setup-sessions";
+  const beginPath = expected.setupIntent
+    ? "/api/cli/setup-sessions/reviewed"
+    : "/api/cli/setup-sessions";
   let boundWorkspace;
   const date = (value) => typeof value === "string" && Number.isFinite(Date.parse(value));
   async function request(method, path = "/api/cli/setup-sessions", body, secretEndpointId) {
     const begin = method === "POST" && path === beginPath;
-    const secret = method === "POST" && path === "/api/cli/setup/webhooks/secret" &&
-      typeof secretEndpointId === "string" && /^whe_[A-Za-z0-9_-]{12,}$/.test(secretEndpointId);
+    const secret =
+      method === "POST" &&
+      path === "/api/cli/setup/webhooks/secret" &&
+      typeof secretEndpointId === "string" &&
+      /^whe_[A-Za-z0-9_-]{12,}$/.test(secretEndpointId);
     if (secretEndpointId !== undefined && !secret) fail("invalid_request");
     let response;
     try {
       response = await fetcher(`${origin.origin}${path}`, {
-        method, headers: { ...(begin ? {} : { authorization: `Bearer ${verifier}` }),
-          ...(begin || body ? { "content-type": "application/json" } : {}) },
-        ...(begin || body ? { body: JSON.stringify(begin ? { ...expected, challengeHash: hash } : body) } : {}),
-        redirect: "error", cache: "no-store",
-        signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(15_000)]) : AbortSignal.timeout(15_000),
+        method,
+        headers: {
+          ...(begin ? {} : { authorization: `Bearer ${verifier}` }),
+          ...(begin || body ? { "content-type": "application/json" } : {}),
+        },
+        ...(begin || body
+          ? { body: JSON.stringify(begin ? { ...expected, challengeHash: hash } : body) }
+          : {}),
+        redirect: "error",
+        cache: "no-store",
+        signal: signal
+          ? AbortSignal.any([signal, AbortSignal.timeout(15_000)])
+          : AbortSignal.timeout(15_000),
       });
-    } catch { fail("service_unavailable"); }
+    } catch {
+      fail("service_unavailable");
+    }
     // An error page from a proxy or the platform is a transport failure, never a
     // malformed approval: it maps to the retryable transport code so polling continues.
     const transport = response.status === 429 ? "rate_limited" : "service_unavailable";
     const malformed = () => fail(response.ok ? "invalid_response" : transport);
-    const chunks = []; let size = 0;
+    const chunks = [];
+    let size = 0;
     try {
       if (!response.body) fail("invalid_response");
       for await (const chunk of response.body) {
         size += chunk.byteLength;
-        const configuration = method === "POST" && (["/api/cli/setup/programs", "/api/cli/setup/terms"].includes(path) || begin && expected.setupIntent);
-        if (size > (secret && response.ok ? 512 : begin && expected.setupIntent && response.ok ? 266_240 : configuration && response.ok ? 1_048_576 : 65_536)) fail("invalid_response");
+        const configuration =
+          method === "POST" &&
+          (["/api/cli/setup/programs", "/api/cli/setup/terms"].includes(path) ||
+            (begin && expected.setupIntent));
+        if (
+          size >
+          (secret && response.ok
+            ? 512
+            : begin && expected.setupIntent && response.ok
+              ? 266_240
+              : configuration && response.ok
+                ? 1_048_576
+                : 65_536)
+        )
+          fail("invalid_response");
         chunks.push(chunk);
       }
-    } catch { malformed(); }
+    } catch {
+      malformed();
+    }
     let decoded;
-    try { decoded = new TextDecoder("utf-8", { fatal: true }).decode(Buffer.concat(chunks)); }
-    catch { malformed(); }
+    try {
+      decoded = new TextDecoder("utf-8", { fatal: true }).decode(Buffer.concat(chunks));
+    } catch {
+      malformed();
+    }
     if (secret && response.ok) {
-      if (!boundWorkspace || response.headers.get("content-type") !== "application/octet-stream" ||
-          response.headers.get("x-commish-setup-request-id") !== hash || response.headers.get("x-commish-workspace-id") !== boundWorkspace ||
-          response.headers.get("x-commish-mode") !== mode || response.headers.get("x-commish-webhook-id") !== secretEndpointId ||
-          !/^whsec_[A-Za-z0-9_-]{32,}$/.test(decoded)) fail("invalid_response");
+      if (
+        !boundWorkspace ||
+        response.headers.get("content-type") !== "application/octet-stream" ||
+        response.headers.get("x-commish-setup-request-id") !== hash ||
+        response.headers.get("x-commish-workspace-id") !== boundWorkspace ||
+        response.headers.get("x-commish-mode") !== mode ||
+        response.headers.get("x-commish-webhook-id") !== secretEndpointId ||
+        !/^whsec_[A-Za-z0-9_-]{32,}$/.test(decoded)
+      )
+        fail("invalid_response");
       return decoded;
     }
     let payload;
-    try { payload = JSON.parse(decoded); } catch { malformed(); }
+    try {
+      payload = JSON.parse(decoded);
+    } catch {
+      malformed();
+    }
     if (!response.ok) fail(codes.has(payload?.error?.code) ? payload.error.code : transport);
     const value = payload?.data;
-    if (!record(value) || value.protocol !== "commish-cli-setup-v2" || value.requestId !== hash) fail("invalid_response");
+    if (!record(value) || value.protocol !== "commish-cli-setup-v2" || value.requestId !== hash)
+      fail("invalid_response");
     return value;
   }
   return {
-    ...createSetupResources(request, () => ({ workspaceId: boundWorkspace, mode, operations: expected.operations })),
+    ...createSetupResources(request, () => ({
+      workspaceId: boundWorkspace,
+      mode,
+      operations: expected.operations,
+    })),
     async begin() {
       const result = await request("POST", beginPath);
-      if (result.mode !== mode || !sameOperations(result.operations, expected.operations) || result.pairingCode !== pairingCode ||
-          !["pending", "authorized", "denied"].includes(result.decision) || !date(result.requestExpiresAt) ||
-          Date.parse(result.requestExpiresAt) <= now() || Date.parse(result.requestExpiresAt) > now() + 3_660_000 ||
-          !sameWorkspace(result.workspaceRequest, expected.workspaceRequest) ||
-          expected.setupIntent && !sameSetupIntent(result.setupIntent, expected.setupIntent)) fail("invalid_response");
-      return { protocol: result.protocol, requestId: hash, pairingCode, approvalUrl: `${origin.origin}/cli/authorize/${hash}`,
-        mode, operations: [...expected.operations], requestExpiresAt: result.requestExpiresAt };
+      if (
+        result.mode !== mode ||
+        !sameOperations(result.operations, expected.operations) ||
+        result.pairingCode !== pairingCode ||
+        !["pending", "authorized", "denied"].includes(result.decision) ||
+        !date(result.requestExpiresAt) ||
+        Date.parse(result.requestExpiresAt) <= now() ||
+        Date.parse(result.requestExpiresAt) > now() + 3_660_000 ||
+        !sameWorkspace(result.workspaceRequest, expected.workspaceRequest) ||
+        (expected.setupIntent && !sameSetupIntent(result.setupIntent, expected.setupIntent))
+      )
+        fail("invalid_response");
+      return {
+        protocol: result.protocol,
+        requestId: hash,
+        pairingCode,
+        approvalUrl: `${origin.origin}/cli/authorize/${hash}`,
+        mode,
+        operations: [...expected.operations],
+        requestExpiresAt: result.requestExpiresAt,
+      };
     },
     async poll() {
       const result = await request("GET");
       if (result.status === "pending" || result.status === "denied") {
         if (!date(result.requestExpiresAt)) fail("invalid_response");
-        return { status: result.status, requestId: hash, requestExpiresAt: result.requestExpiresAt };
+        return {
+          status: result.status,
+          requestId: hash,
+          requestExpiresAt: result.requestExpiresAt,
+        };
       }
       if (result.status === "revoked") return { status: "revoked", requestId: hash };
-      if (result.status !== "authorized" || result.mode !== mode || !sameOperations(result.operations, expected.operations) ||
-          !/^wrk_[A-Za-z0-9_-]{12,}$/.test(result.workspaceId) || !date(result.expiresAt) ||
-          Date.parse(result.expiresAt) <= now() || Date.parse(result.expiresAt) > now() + 630_000 ||
-          expected.workspaceRequest?.kind === "existing" && result.workspaceId !== expected.workspaceRequest.id ||
-          boundWorkspace && result.workspaceId !== boundWorkspace) fail("invalid_response");
+      if (
+        result.status !== "authorized" ||
+        result.mode !== mode ||
+        !sameOperations(result.operations, expected.operations) ||
+        !/^wrk_[A-Za-z0-9_-]{12,}$/.test(result.workspaceId) ||
+        !date(result.expiresAt) ||
+        Date.parse(result.expiresAt) <= now() ||
+        Date.parse(result.expiresAt) > now() + 630_000 ||
+        (expected.workspaceRequest?.kind === "existing" &&
+          result.workspaceId !== expected.workspaceRequest.id) ||
+        (boundWorkspace && result.workspaceId !== boundWorkspace)
+      )
+        fail("invalid_response");
       boundWorkspace = result.workspaceId;
-      return { status: "authorized", requestId: hash, workspaceId: boundWorkspace, mode,
-        operations: [...expected.operations], expiresAt: result.expiresAt };
+      return {
+        status: "authorized",
+        requestId: hash,
+        workspaceId: boundWorkspace,
+        mode,
+        operations: [...expected.operations],
+        expiresAt: result.expiresAt,
+      };
     },
     async revoke() {
       const result = await request("DELETE");

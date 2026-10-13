@@ -1,13 +1,19 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { gzipSync } from "node:zlib";
-import { createRequire } from "node:module";
 import test from "node:test";
-import { archiveFiles, failureDiagnostic, inspect, verify, verifyPackages } from "./verify-public-source.mjs";
+import { gzipSync } from "node:zlib";
 import { releaseVersion } from "./stable-release.mjs";
+import {
+  archiveFiles,
+  failureDiagnostic,
+  inspect,
+  verify,
+  verifyPackages,
+} from "./verify-public-source.mjs";
 
 const root = new URL("../", import.meta.url);
 // The tracked tree with its index modes: the same inventory `verify` reads from HEAD.
@@ -15,7 +21,8 @@ function repositoryTree() {
   const files = new Map();
   const listing = execFileSync("git", ["ls-files", "-z", "--stage"], { cwd: root }).toString();
   for (const entry of listing.split("\0").filter(Boolean)) {
-    const [metadata, name] = entry.split("\t"), [mode] = metadata.split(" ");
+    const [metadata, name] = entry.split("\t"),
+      [mode] = metadata.split(" ");
     files.set(name, { mode, data: readFileSync(new URL(name, root)) });
   }
   return files;
@@ -23,7 +30,9 @@ function repositoryTree() {
 function put(files, name, value) {
   files.set(name, {
     mode: "100644",
-    data: Buffer.from(typeof value === "object" && !Buffer.isBuffer(value) ? JSON.stringify(value) : value),
+    data: Buffer.from(
+      typeof value === "object" && !Buffer.isBuffer(value) ? JSON.stringify(value) : value,
+    ),
   });
 }
 const patch = (files, name, change) => {
@@ -58,14 +67,20 @@ function tar(entries) {
 const stubConsumers = (log) => ({
   sdk: (archive, packed, run, context) => {
     log.push("sdk-consumer");
-    assert(archive.length > 0 && packed.has("package/dist/index.js") && packed.has("package/bin/init.mjs"));
+    assert(
+      archive.length > 0 &&
+        packed.has("package/dist/index.js") &&
+        packed.has("package/bin/init.mjs"),
+    );
     assert.equal(typeof run, "function");
     assert(context.lock.length > 0 && existsSync(context.build));
     return { scopes: ["sdk-scope"] };
   },
   nextBrowser: (sdk, next) => {
     log.push("next-browser");
-    assert(sdk.packed.has("package/dist/webhooks.js") && next.packed.has("package/dist/provider.js"));
+    assert(
+      sdk.packed.has("package/dist/webhooks.js") && next.packed.has("package/dist/provider.js"),
+    );
     return ["next-browser-scope"];
   },
   nextProvider: () => {
@@ -86,7 +101,12 @@ function stubRun(packages, calls, failure) {
     work ??= cwd;
     if (args[0] === failure) throw new Error("controlled command failure");
     if (args[0] === "install")
-      assert.deepEqual(args, ["install", "--frozen-lockfile", "--ignore-scripts", "--registry=https://registry.npmjs.org"]);
+      assert.deepEqual(args, [
+        "install",
+        "--frozen-lockfile",
+        "--ignore-scripts",
+        "--registry=https://registry.npmjs.org",
+      ]);
     const pkg = packages.find(({ dir }) => cwd === join(work, dir));
     if (args[0] === "build") {
       mkdirSync(join(cwd, "dist"), { recursive: true });
@@ -99,8 +119,12 @@ function stubRun(packages, calls, failure) {
       const entries = [["package/package.json", JSON.stringify(manifest)]];
       for (const target of pkg.targets)
         if (!(failure === "missing-export" && target.endsWith(".d.ts")))
-          entries.push([`package/${target.slice(2)}`, readFileSync(join(cwd, target)), "0",
-            target.startsWith("./bin/") ? "0000755" : "0000644"]);
+          entries.push([
+            `package/${target.slice(2)}`,
+            readFileSync(join(cwd, target)),
+            "0",
+            target.startsWith("./bin/") ? "0000755" : "0000644",
+          ]);
       writeFileSync(join(args[2], "fixture.tgz"), tar(entries));
       if (failure === "mutated-lock") writeFileSync(join(work, "pnpm-lock.yaml"), "changed");
     }
@@ -110,71 +134,418 @@ function stubRun(packages, calls, failure) {
 
 test("the committed pair is admitted and archive targets follow the exports", () => {
   const packages = inspect(repositoryTree());
-  assert.deepEqual(packages.map(({ dir, manifest }) => [dir, manifest.name, manifest.version]), [
-    ["packages/sdk", "@commish/sdk", releaseVersion],
-    ["packages/next", "@commish/next", releaseVersion],
+  assert.deepEqual(
+    packages.map(({ dir, manifest }) => [dir, manifest.name, manifest.version]),
+    [
+      ["packages/sdk", "@commish/sdk", releaseVersion],
+      ["packages/next", "@commish/next", releaseVersion],
+    ],
+  );
+  assert.deepEqual([...packages[0].targets].sort(), [
+    "./bin/init.mjs",
+    "./dist/browser.d.ts",
+    "./dist/browser.js",
+    "./dist/index.d.ts",
+    "./dist/index.js",
+    "./dist/webhooks.d.ts",
+    "./dist/webhooks.js",
   ]);
-  assert.deepEqual([...packages[0].targets].sort(), ["./bin/init.mjs", "./dist/browser.d.ts", "./dist/browser.js",
-    "./dist/index.d.ts", "./dist/index.js", "./dist/webhooks.d.ts", "./dist/webhooks.js"]);
-  assert.deepEqual([...packages[1].targets].sort(), ["./bin/init.mjs", ...["browser", "index", "pages", "pages-handlers",
-    "pages-routing", "provider"].flatMap((stem) => [`./dist/${stem}.d.ts`, `./dist/${stem}.js`])].sort());
+  assert.deepEqual(
+    [...packages[1].targets].sort(),
+    [
+      "./bin/init.mjs",
+      ...["browser", "index", "pages", "pages-handlers", "pages-routing", "provider"].flatMap(
+        (stem) => [`./dist/${stem}.d.ts`, `./dist/${stem}.js`],
+      ),
+    ].sort(),
+  );
 });
 
 test("source shape fails closed on modes, orphans, toolchain drift, lockfile origins and manifest contracts", () => {
-  const sdk = "packages/sdk/package.json", next = "packages/next/package.json", lock = "pnpm-lock.yaml";
+  const sdk = "packages/sdk/package.json",
+    next = "packages/next/package.json",
+    lock = "pnpm-lock.yaml";
   const lockText = (files) => files.get(lock).data.toString();
   for (const [label, change, expected] of [
-    ["symlinked license", (f) => { f.get("LICENSE").mode = "120000"; }, /invalid source mode/],
-    ["executable module", (f) => { f.get("packages/sdk/bin/cli-http.mjs").mode = "100755"; }, /invalid source mode/],
-    ["plain entry point", (f) => { f.get("packages/sdk/bin/init.mjs").mode = "100644"; }, /invalid source mode/],
+    [
+      "symlinked license",
+      (f) => {
+        f.get("LICENSE").mode = "120000";
+      },
+      /invalid source mode/,
+    ],
+    [
+      "executable module",
+      (f) => {
+        f.get("packages/sdk/bin/cli-http.mjs").mode = "100755";
+      },
+      /invalid source mode/,
+    ],
+    [
+      "plain entry point",
+      (f) => {
+        f.get("packages/sdk/bin/init.mjs").mode = "100644";
+      },
+      /invalid source mode/,
+    ],
     ["orphan package", (f) => put(f, "packages/other/index.ts", ""), /orphan package source/],
     ["dot segment", (f) => put(f, "packages/sdk/../x", ""), /unsafe source path/],
     ["changed license", (f) => put(f, "LICENSE", "different"), /MIT license differs/],
-    ["changed package license", (f) => put(f, "packages/next/LICENSE", "different"), /MIT license differs/],
+    [
+      "changed package license",
+      (f) => put(f, "packages/next/LICENSE", "different"),
+      /MIT license differs/,
+    ],
     ["toolchain drift", (f) => put(f, ".node-version", "1.2.3\n"), /node-version differs/],
-    ["missing workflow", (f) => f.delete(".github/workflows/publish-packages.yml"), /missing required file/],
-    ["missing gate test", (f) => f.delete("scripts/publication-workflow.test.mjs"), /missing required file/],
-    ["root lifecycle script", (f) => patch(f, "package.json", (m) => { m.scripts.postinstall = "x"; }), /lifecycle/],
-    ["root package manager", (f) => patch(f, "package.json", (m) => { m.packageManager = "pnpm@11"; }), /packageManager/],
-    ["root runtime dependency", (f) => patch(f, "package.json", (m) => { m.dependencies = { left: "1.0.0" }; }), /runtime dependencies/],
-    ["root ranged dev dependency", (f) => patch(f, "package.json", (m) => { m.devDependencies = { lint: "^1.0.0" }; }), /exact version/],
-    ["extra workspace package", (f) => put(f, "pnpm-workspace.yaml", "packages:\n  - packages/sdk\n  - packages/next\n  - apps/*\nengineStrict: true\n"), /workspace packages/],
-    ["workspace without engines", (f) => put(f, "pnpm-workspace.yaml", "packages:\n  - packages/sdk\n  - packages/next\n"), /enforce engines/],
+    [
+      "missing workflow",
+      (f) => f.delete(".github/workflows/publish-packages.yml"),
+      /missing required file/,
+    ],
+    [
+      "missing gate test",
+      (f) => f.delete("scripts/publication-workflow.test.mjs"),
+      /missing required file/,
+    ],
+    [
+      "root lifecycle script",
+      (f) =>
+        patch(f, "package.json", (m) => {
+          m.scripts.postinstall = "x";
+        }),
+      /lifecycle/,
+    ],
+    [
+      "root package manager",
+      (f) =>
+        patch(f, "package.json", (m) => {
+          m.packageManager = "pnpm@11";
+        }),
+      /packageManager/,
+    ],
+    [
+      "root runtime dependency",
+      (f) =>
+        patch(f, "package.json", (m) => {
+          m.dependencies = { left: "1.0.0" };
+        }),
+      /runtime dependencies/,
+    ],
+    [
+      "root ranged dev dependency",
+      (f) =>
+        patch(f, "package.json", (m) => {
+          m.devDependencies = { lint: "^1.0.0" };
+        }),
+      /exact version/,
+    ],
+    [
+      "extra workspace package",
+      (f) =>
+        put(
+          f,
+          "pnpm-workspace.yaml",
+          "packages:\n  - packages/sdk\n  - packages/next\n  - apps/*\nengineStrict: true\n",
+        ),
+      /workspace packages/,
+    ],
+    [
+      "workspace without engines",
+      (f) => put(f, "pnpm-workspace.yaml", "packages:\n  - packages/sdk\n  - packages/next\n"),
+      /enforce engines/,
+    ],
     ["lockfile version", (f) => put(f, lock, "lockfileVersion: '6.0'\n"), /lockfile version/],
-    ["lockfile tarball", (f) => put(f, lock, `${lockText(f)}\n  left@1.0.0:\n    resolution: {tarball: https://example.invalid/left.tgz}\n`), /registry only/],
-    ["lockfile git", (f) => put(f, lock, `${lockText(f)}\n  left@1.0.0:\n    resolution: {type: git, repo: 'git@example.invalid:repo.git', commit: abc}\n`), /registry only/],
-    ["lockfile directory", (f) => put(f, lock, `${lockText(f)}\n  left@1.0.0:\n    resolution: {type: directory, directory: '../../outside'}\n`), /registry only/],
-    ["lockfile without integrity", (f) => put(f, lock, `${lockText(f)}\n  left@1.0.0:\n    resolution: {commit: abc}\n`), /without integrity/],
-    ["lockfile foreign link", (f) => put(f, lock, lockText(f).replace("link:../sdk", "link:../../outside")), /lockfile link/],
-    ["lockfile extra importer", (f) => put(f, lock, lockText(f).replace("\n  packages/next:\n", "\n  apps/web:\n    dependencies: {}\n\n  packages/next:\n")), /importers/],
-    ["install script", (f) => patch(f, sdk, (m) => { m.scripts.install = "do-something"; }), /lifecycle/],
-    ["runtime dependency", (f) => patch(f, sdk, (m) => { m.dependencies = { unexpected: "1.0.0" }; }), /production dependency/],
-    ["ranged dev dependency", (f) => patch(f, sdk, (m) => { m.devDependencies.typescript = "latest"; }), /exact version/],
-    ["missing dev dependency", (f) => patch(f, sdk, (m) => { delete m.devDependencies.typescript; }), /missing development dependency/],
-    ["export without source", (f) => patch(f, next, (m) => { m.exports["./webhooks"] = { types: "./dist/webhooks.d.ts", default: "./dist/webhooks.js" }; }), /unknown export/],
-    ["source without export", (f) => patch(f, sdk, (m) => { delete m.exports["./webhooks"]; }), /has no export/],
-    ["untyped entry", (f) => patch(f, sdk, (m) => { m.exports["./browser"] = { default: "./dist/browser.js" }; }), /types condition/],
-    ["types not first", (f) => patch(f, sdk, (m) => { m.exports["./browser"] = { default: "./dist/browser.js", types: "./dist/browser.d.ts" }; }), /types condition/],
-    ["server entry in browsers", (f) => patch(f, sdk, (m) => { const { browser: _unused, ...rest } = m.exports["."]; void _unused; m.exports["."] = rest; }), /must not resolve in browsers/],
-    ["browser entry excluded", (f) => patch(f, sdk, (m) => { m.exports["./browser"] = { types: "./dist/browser.d.ts", browser: null, default: "./dist/browser.js" }; }), /is a browser entry/],
-    ["unknown condition", (f) => patch(f, sdk, (m) => { m.exports["."].import = "./dist/index.js"; }), /unknown export condition/],
-    ["edge runtime on webhooks", (f) => patch(f, sdk, (m) => { m.exports["./webhooks"]["edge-light"] = "./dist/webhooks.js"; }), /supported only by the SDK client/],
-    ["edge runtime behind browser", (f) => patch(f, sdk, (m) => { m.exports["."] = { types: "./dist/index.d.ts", browser: null, "edge-light": "./dist/index.js", default: "./dist/index.js" }; }), /must precede the browser condition/],
-    ["edge runtime to another build", (f) => patch(f, sdk, (m) => { m.exports["."]["edge-light"] = "./dist/browser.js"; }), /resolve the default build/],
-    ["outside target", (f) => patch(f, sdk, (m) => { m.exports["./browser"].default = "../../outside.js"; }), /default target/],
-    ["manifest export", (f) => patch(f, sdk, (m) => { m.exports["./package.json"] = "./dist/index.js"; }), /package.json export/],
-    ["other bin", (f) => patch(f, sdk, (m) => { m.bin = { other: "./bin/other" }; }), /entry point/],
-    ["shipping source", (f) => patch(f, sdk, (m) => { m.files.push("src"); }), /files list/],
-    ["side effects", (f) => patch(f, sdk, (m) => { m.sideEffects = true; }), /side-effect free/],
-    ["engines", (f) => patch(f, sdk, (m) => { m.engines = { node: "24" }; }), /engines/],
-    ["private release", (f) => patch(f, next, (m) => { m.private = true; }), /private/],
-    ["version drift", (f) => patch(f, next, (m) => { m.version = "0.0.1"; }), /release version/],
-    ["sdk peer mismatch", (f) => patch(f, next, (m) => { m.peerDependencies["@commish/sdk"] = "0.0.1"; }), /allow the released SDK/],
-    ["sdk peer caret", (f) => patch(f, next, (m) => { m.peerDependencies["@commish/sdk"] = `^${releaseVersion}`; }), /allow the released SDK/],
-    ["react peer missing", (f) => patch(f, next, (m) => { delete m.peerDependencies.react; }), /Next peers/],
-    ["next peer unbounded", (f) => patch(f, next, (m) => { m.peerDependencies.next = ">=16"; }), /next peer range/],
-    ["sdk with peers", (f) => patch(f, sdk, (m) => { m.peerDependencies = { react: ">=19.0.0 <20" }; }), /no peers/],
-    ["shebang", (f) => { put(f, "packages/sdk/bin/init.mjs", "console.log(1)\n"); f.get("packages/sdk/bin/init.mjs").mode = "100755"; }, /shebang/],
+    [
+      "lockfile tarball",
+      (f) =>
+        put(
+          f,
+          lock,
+          `${lockText(f)}\n  left@1.0.0:\n    resolution: {tarball: https://example.invalid/left.tgz}\n`,
+        ),
+      /registry only/,
+    ],
+    [
+      "lockfile git",
+      (f) =>
+        put(
+          f,
+          lock,
+          `${lockText(f)}\n  left@1.0.0:\n    resolution: {type: git, repo: 'git@example.invalid:repo.git', commit: abc}\n`,
+        ),
+      /registry only/,
+    ],
+    [
+      "lockfile directory",
+      (f) =>
+        put(
+          f,
+          lock,
+          `${lockText(f)}\n  left@1.0.0:\n    resolution: {type: directory, directory: '../../outside'}\n`,
+        ),
+      /registry only/,
+    ],
+    [
+      "lockfile without integrity",
+      (f) => put(f, lock, `${lockText(f)}\n  left@1.0.0:\n    resolution: {commit: abc}\n`),
+      /without integrity/,
+    ],
+    [
+      "lockfile foreign link",
+      (f) => put(f, lock, lockText(f).replace("link:../sdk", "link:../../outside")),
+      /lockfile link/,
+    ],
+    [
+      "lockfile extra importer",
+      (f) =>
+        put(
+          f,
+          lock,
+          lockText(f).replace(
+            "\n  packages/next:\n",
+            "\n  apps/web:\n    dependencies: {}\n\n  packages/next:\n",
+          ),
+        ),
+      /importers/,
+    ],
+    [
+      "install script",
+      (f) =>
+        patch(f, sdk, (m) => {
+          m.scripts.install = "do-something";
+        }),
+      /lifecycle/,
+    ],
+    [
+      "runtime dependency",
+      (f) =>
+        patch(f, sdk, (m) => {
+          m.dependencies = { unexpected: "1.0.0" };
+        }),
+      /production dependency/,
+    ],
+    [
+      "ranged dev dependency",
+      (f) =>
+        patch(f, sdk, (m) => {
+          m.devDependencies.typescript = "latest";
+        }),
+      /exact version/,
+    ],
+    [
+      "missing dev dependency",
+      (f) =>
+        patch(f, sdk, (m) => {
+          delete m.devDependencies.typescript;
+        }),
+      /missing development dependency/,
+    ],
+    [
+      "export without source",
+      (f) =>
+        patch(f, next, (m) => {
+          m.exports["./webhooks"] = {
+            types: "./dist/webhooks.d.ts",
+            default: "./dist/webhooks.js",
+          };
+        }),
+      /unknown export/,
+    ],
+    [
+      "source without export",
+      (f) =>
+        patch(f, sdk, (m) => {
+          delete m.exports["./webhooks"];
+        }),
+      /has no export/,
+    ],
+    [
+      "untyped entry",
+      (f) =>
+        patch(f, sdk, (m) => {
+          m.exports["./browser"] = { default: "./dist/browser.js" };
+        }),
+      /types condition/,
+    ],
+    [
+      "types not first",
+      (f) =>
+        patch(f, sdk, (m) => {
+          m.exports["./browser"] = { default: "./dist/browser.js", types: "./dist/browser.d.ts" };
+        }),
+      /types condition/,
+    ],
+    [
+      "server entry in browsers",
+      (f) =>
+        patch(f, sdk, (m) => {
+          const { browser: _unused, ...rest } = m.exports["."];
+          void _unused;
+          m.exports["."] = rest;
+        }),
+      /must not resolve in browsers/,
+    ],
+    [
+      "browser entry excluded",
+      (f) =>
+        patch(f, sdk, (m) => {
+          m.exports["./browser"] = {
+            types: "./dist/browser.d.ts",
+            browser: null,
+            default: "./dist/browser.js",
+          };
+        }),
+      /is a browser entry/,
+    ],
+    [
+      "unknown condition",
+      (f) =>
+        patch(f, sdk, (m) => {
+          m.exports["."].import = "./dist/index.js";
+        }),
+      /unknown export condition/,
+    ],
+    [
+      "edge runtime on webhooks",
+      (f) =>
+        patch(f, sdk, (m) => {
+          m.exports["./webhooks"]["edge-light"] = "./dist/webhooks.js";
+        }),
+      /supported only by the SDK client/,
+    ],
+    [
+      "edge runtime behind browser",
+      (f) =>
+        patch(f, sdk, (m) => {
+          m.exports["."] = {
+            types: "./dist/index.d.ts",
+            browser: null,
+            "edge-light": "./dist/index.js",
+            default: "./dist/index.js",
+          };
+        }),
+      /must precede the browser condition/,
+    ],
+    [
+      "edge runtime to another build",
+      (f) =>
+        patch(f, sdk, (m) => {
+          m.exports["."]["edge-light"] = "./dist/browser.js";
+        }),
+      /resolve the default build/,
+    ],
+    [
+      "outside target",
+      (f) =>
+        patch(f, sdk, (m) => {
+          m.exports["./browser"].default = "../../outside.js";
+        }),
+      /default target/,
+    ],
+    [
+      "manifest export",
+      (f) =>
+        patch(f, sdk, (m) => {
+          m.exports["./package.json"] = "./dist/index.js";
+        }),
+      /package.json export/,
+    ],
+    [
+      "other bin",
+      (f) =>
+        patch(f, sdk, (m) => {
+          m.bin = { other: "./bin/other" };
+        }),
+      /entry point/,
+    ],
+    [
+      "shipping source",
+      (f) =>
+        patch(f, sdk, (m) => {
+          m.files.push("src");
+        }),
+      /files list/,
+    ],
+    [
+      "side effects",
+      (f) =>
+        patch(f, sdk, (m) => {
+          m.sideEffects = true;
+        }),
+      /side-effect free/,
+    ],
+    [
+      "engines",
+      (f) =>
+        patch(f, sdk, (m) => {
+          m.engines = { node: "24" };
+        }),
+      /engines/,
+    ],
+    [
+      "private release",
+      (f) =>
+        patch(f, next, (m) => {
+          m.private = true;
+        }),
+      /private/,
+    ],
+    [
+      "version drift",
+      (f) =>
+        patch(f, next, (m) => {
+          m.version = "0.0.1";
+        }),
+      /release version/,
+    ],
+    [
+      "sdk peer mismatch",
+      (f) =>
+        patch(f, next, (m) => {
+          m.peerDependencies["@commish/sdk"] = "0.0.1";
+        }),
+      /allow the released SDK/,
+    ],
+    [
+      "sdk peer caret",
+      (f) =>
+        patch(f, next, (m) => {
+          m.peerDependencies["@commish/sdk"] = `^${releaseVersion}`;
+        }),
+      /allow the released SDK/,
+    ],
+    [
+      "react peer missing",
+      (f) =>
+        patch(f, next, (m) => {
+          delete m.peerDependencies.react;
+        }),
+      /Next peers/,
+    ],
+    [
+      "next peer unbounded",
+      (f) =>
+        patch(f, next, (m) => {
+          m.peerDependencies.next = ">=16";
+        }),
+      /next peer range/,
+    ],
+    [
+      "sdk with peers",
+      (f) =>
+        patch(f, sdk, (m) => {
+          m.peerDependencies = { react: ">=19.0.0 <20" };
+        }),
+      /no peers/,
+    ],
+    [
+      "shebang",
+      (f) => {
+        put(f, "packages/sdk/bin/init.mjs", "console.log(1)\n");
+        f.get("packages/sdk/bin/init.mjs").mode = "100755";
+      },
+      /shebang/,
+    ],
   ]) {
     const files = repositoryTree();
     change(files);
@@ -208,21 +579,60 @@ test("archive inspection rejects traversal, duplicate paths, links, truncated bo
     [["package/.npmrc", ""]],
   ])
     assert.throws(() => archiveFiles(tar(entries)));
-  for (const name of ["package/bin/new-command.mjs", "package/bin/api-catalog.json", "package/guides/pages.md", "package/dist/pages-client.js"])
+  for (const name of [
+    "package/bin/new-command.mjs",
+    "package/bin/api-catalog.json",
+    "package/guides/pages.md",
+    "package/dist/pages-client.js",
+  ])
     assert.equal(archiveFiles(tar([[name, "x"]])).size, 1);
   assert.throws(() => archiveFiles(gzipSync(Buffer.alloc(512))));
 });
 
 test("package commands run frozen install, ordered build/typecheck/pack per package and consumers, then clean up", async () => {
-  for (const failure of [null, "install", "build", "typecheck", "pack", "missing-export", "mutated-lock"]) {
-    const files = repositoryTree(), packages = inspect(files), calls = [], log = [];
+  for (const failure of [
+    null,
+    "install",
+    "build",
+    "typecheck",
+    "pack",
+    "missing-export",
+    "mutated-lock",
+  ]) {
+    const files = repositoryTree(),
+      packages = inspect(files),
+      calls = [],
+      log = [];
     const { run, work } = stubRun(packages, calls, failure);
-    if (failure) await assert.rejects(() => verifyPackages(files, packages, run, undefined, undefined, stubConsumers(log)));
+    if (failure)
+      await assert.rejects(() =>
+        verifyPackages(files, packages, run, undefined, undefined, stubConsumers(log)),
+      );
     else {
-      const evidence = await verifyPackages(files, packages, run, undefined, undefined, stubConsumers(log));
-      assert.deepEqual(calls, ["install", "build", "typecheck", "pack", "build", "typecheck", "pack"]);
+      const evidence = await verifyPackages(
+        files,
+        packages,
+        run,
+        undefined,
+        undefined,
+        stubConsumers(log),
+      );
+      assert.deepEqual(calls, [
+        "install",
+        "build",
+        "typecheck",
+        "pack",
+        "build",
+        "typecheck",
+        "pack",
+      ]);
       assert.deepEqual(log, ["sdk-consumer", "next-browser", "next-provider", "next-build"]);
-      assert.deepEqual(evidence.scopes, ["sdk-scope", "next-browser-scope", "next-provider-scope", "next-build-scope"]);
+      assert.deepEqual(evidence.scopes, [
+        "sdk-scope",
+        "next-browser-scope",
+        "next-provider-scope",
+        "next-build-scope",
+      ]);
     }
     assert(work() && !existsSync(work()), "owned working tree must be removed");
   }
@@ -247,16 +657,32 @@ test("verification binds its receipt to the actual immutable checkout and reject
       writeFileSync(join(checkout, name), data, { mode: Number.parseInt(mode, 8) & 0o777 });
     }
     git("add", ".");
-    git("-c", "user.name=Public verifier test", "-c", "user.email=fixture@example.invalid",
-      "-c", "commit.gpgSign=false", "commit", "-m", "fixture");
+    git(
+      "-c",
+      "user.name=Public verifier test",
+      "-c",
+      "user.email=fixture@example.invalid",
+      "-c",
+      "commit.gpgSign=false",
+      "commit",
+      "-m",
+      "fixture",
+    );
     const head = git("rev-parse", "HEAD");
-    const packages = inspect(files), calls = [], log = [];
+    const packages = inspect(files),
+      calls = [],
+      log = [];
     const options = { run: stubRun(packages, calls, null).run, consumers: stubConsumers(log) };
     assert.deepEqual(await verify(checkout, head, undefined, options), {
       sha: head,
       scope: "frozen-install-build-typecheck-pack-exports",
       packages: ["@commish/sdk", "@commish/next"],
-      consumerScopes: ["sdk-scope", "next-browser-scope", "next-provider-scope", "next-build-scope"],
+      consumerScopes: [
+        "sdk-scope",
+        "next-browser-scope",
+        "next-provider-scope",
+        "next-build-scope",
+      ],
       consumerChecks: false,
       publication: false,
     });
@@ -481,15 +907,31 @@ test("skipped model jobs cannot impersonate the required gate and group bridging
 
 test("the failure diagnostic names the assertion without printing generated diffs", () => {
   let authored;
-  try { assert.equal(1, 2, "unsupported lockfile"); } catch (error) { authored = error; }
-  assert.equal(failureDiagnostic(authored),
-    "Public source verification failed (ERR_ASSERTION: unsupported lockfile); no acceptance receipt issued.");
+  try {
+    assert.equal(1, 2, "unsupported lockfile");
+  } catch (error) {
+    authored = error;
+  }
+  assert.equal(
+    failureDiagnostic(authored),
+    "Public source verification failed (ERR_ASSERTION: unsupported lockfile); no acceptance receipt issued.",
+  );
   let generated;
-  try { assert.equal("secret-bearing actual", "expected"); } catch (error) { generated = error; }
-  assert.equal(failureDiagnostic(generated),
-    "Public source verification failed (ERR_ASSERTION); no acceptance receipt issued.");
-  assert.equal(failureDiagnostic(new Error("ENOENT: /private/path")),
-    "Public source verification failed (unknown); no acceptance receipt issued.");
-  assert.equal(failureDiagnostic(undefined),
-    "Public source verification failed (unknown); no acceptance receipt issued.");
+  try {
+    assert.equal("secret-bearing actual", "expected");
+  } catch (error) {
+    generated = error;
+  }
+  assert.equal(
+    failureDiagnostic(generated),
+    "Public source verification failed (ERR_ASSERTION); no acceptance receipt issued.",
+  );
+  assert.equal(
+    failureDiagnostic(new Error("ENOENT: /private/path")),
+    "Public source verification failed (unknown); no acceptance receipt issued.",
+  );
+  assert.equal(
+    failureDiagnostic(undefined),
+    "Public source verification failed (unknown); no acceptance receipt issued.",
+  );
 });

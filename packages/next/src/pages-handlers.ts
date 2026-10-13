@@ -21,13 +21,9 @@ export async function withCommishPageMeasurement<
     ? (await cookies()).get(COMMISH_PAGE_VISIT_COOKIE)?.value
     : undefined;
   const reference =
-    token?.startsWith("cpv_") && uuid.test(token.slice(4))
-      ? { commish_page_visit: token }
-      : {};
-  const {
-    commish_page_visit: _subscriptionUntrusted,
-    ...subscriptionMetadata
-  } = params.subscription_data?.metadata ?? {};
+    token?.startsWith("cpv_") && uuid.test(token.slice(4)) ? { commish_page_visit: token } : {};
+  const { commish_page_visit: _subscriptionUntrusted, ...subscriptionMetadata } =
+    params.subscription_data?.metadata ?? {};
   void _subscriptionUntrusted;
   return {
     ...params,
@@ -106,9 +102,7 @@ export async function withdrawCreatorPageMeasurement(
   return { recorded: false };
 }
 
-export function createCreatorPageHandlers(
-  configuration: CreatorPageHandlerOptions,
-) {
+export function createCreatorPageHandlers(configuration: CreatorPageHandlerOptions) {
   return {
     POST: async (request: Request): Promise<Response> => {
       const { NextResponse } = await import("next/server.js");
@@ -156,8 +150,7 @@ export function createCreatorPageHandlers(
       let input: Record<string, unknown>;
       try {
         const parsed: unknown = JSON.parse(raw);
-        if (!parsed || typeof parsed !== "object" || Array.isArray(parsed))
-          return json(null, 400);
+        if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return json(null, 400);
         input = parsed as Record<string, unknown>;
       } catch {
         return json(null, 400);
@@ -214,8 +207,7 @@ export function createCreatorPageHandlers(
           return json({ recorded: false }, 503);
         }
       }
-      let capture: Record<string, unknown> | undefined,
-        visit: Record<string, unknown> | undefined;
+      let capture: Record<string, unknown> | undefined, visit: Record<string, unknown> | undefined;
       const clientIp = request.headers.get("x-vercel-forwarded-for");
       const captureWork = (async () => {
         if (consent.attribution)
@@ -264,10 +256,7 @@ export function createCreatorPageHandlers(
           }
       })();
       await Promise.all([captureWork, visitWork]);
-      const expires =
-        typeof capture?.expiresAt === "string"
-          ? Date.parse(capture.expiresAt)
-          : NaN;
+      const expires = typeof capture?.expiresAt === "string" ? Date.parse(capture.expiresAt) : NaN;
       const token =
         typeof capture?.token === "string" &&
         /^atr_[A-Za-z0-9_-]{12,}$/.test(capture.token) &&

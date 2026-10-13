@@ -66,7 +66,8 @@ export default function Layout({ children }: { children: ReactNode }) {
   return <html><body>{children}</body></html>;
 }
 `,
-  "app/page.tsx": "export default function Page() { return <p>Installed public server helper</p>; }\n",
+  "app/page.tsx":
+    "export default function Page() { return <p>Installed public server helper</p>; }\n",
   "app/api/artifact/route.ts": `import { Commish } from '@commish/sdk';
 import { applyCommishStripeMetadata } from '@commish/next';
 export const dynamic = 'force-dynamic';
@@ -100,28 +101,41 @@ export async function cookieRequestProbe(createApp, probe) {
       server.listen(0, "127.0.0.1", resolve);
     });
     const url = `http://127.0.0.1:${server.address().port}/api/cookies`;
-    await Promise.all([null, "atr_consumer_first", "atr_consumer_second", null].map(async (value) => {
-      const response = await fetch(url, {
-        headers: value === null ? {} : { cookie: `commish_attribution=${value}` },
-        signal: AbortSignal.timeout(10_000),
-      });
-      assert.equal(response.status, 200);
-      assert.deepEqual(await response.json(), {
-        attribution: value,
-        unchanged: value === null,
-        metadata: { keep: "checkout", ...(value ? { commish_attribution: value } : {}) },
-        subscription: { keep: "subscription", ...(value ? {
-          commish_attribution: value, commish_customer_id: "consumer_123",
-        } : {}) },
-      }, "installed cookie context and metadata wrapper");
-    }));
+    await Promise.all(
+      [null, "atr_consumer_first", "atr_consumer_second", null].map(async (value) => {
+        const response = await fetch(url, {
+          headers: value === null ? {} : { cookie: `commish_attribution=${value}` },
+          signal: AbortSignal.timeout(10_000),
+        });
+        assert.equal(response.status, 200);
+        assert.deepEqual(
+          await response.json(),
+          {
+            attribution: value,
+            unchanged: value === null,
+            metadata: { keep: "checkout", ...(value ? { commish_attribution: value } : {}) },
+            subscription: {
+              keep: "subscription",
+              ...(value
+                ? {
+                    commish_attribution: value,
+                    commish_customer_id: "consumer_123",
+                  }
+                : {}),
+            },
+          },
+          "installed cookie context and metadata wrapper",
+        );
+      }),
+    );
     if (probe) await probe(new URL(url).origin);
   } finally {
     try {
-      if (server?.listening) await new Promise((resolve, reject) => {
-        server.close((error) => error ? reject(error) : resolve());
-        server.closeAllConnections();
-      });
+      if (server?.listening)
+        await new Promise((resolve, reject) => {
+          server.close((error) => (error ? reject(error) : resolve()));
+          server.closeAllConnections();
+        });
     } finally {
       await app.close();
     }

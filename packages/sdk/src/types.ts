@@ -126,8 +126,7 @@ export type PublicPayout =
       status: "processing" | "paid" | "failed" | "canceled";
       processedAt: string;
     };
-export type WebhookDeliveryStatus =
-  "pending" | "processing" | "delivered" | "failed";
+export type WebhookDeliveryStatus = "pending" | "processing" | "delivered" | "failed";
 export type PublicWebhookDelivery = {
   id: string;
   endpointId: string;

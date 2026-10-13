@@ -3,20 +3,14 @@
 // Manual acceptance tool: CI covers installation through verify-next-build;
 // run this before releasing a Pages candidate.
 import assert from "node:assert/strict";
-import { spawnSync, spawn } from "node:child_process";
-import {
-  mkdtempSync,
-  mkdirSync,
-  readFileSync,
-  readdirSync,
-  writeFileSync,
-  rmSync,
-} from "node:fs";
-import { tmpdir } from "node:os";
-import { join, dirname } from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
-import { createServer } from "node:http";
+import { spawn, spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { createServer } from "node:http";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
+
 const repository = fileURLToPath(new URL("../", import.meta.url));
 const consumer = mkdtempSync(join(tmpdir(), "commish-pages-artifact-"));
 const marker = "cm_test_sk_pages_artifact_sentinel_123456";
@@ -36,11 +30,7 @@ const run = (cmd, args, cwd = consumer) => {
     env: { ...process.env, NEXT_TELEMETRY_DISABLED: "1" },
     maxBuffer: 4 * 1024 * 1024,
   });
-  assert.equal(
-    result.status,
-    0,
-    `${cmd} failed: ${result.stderr}\n${result.stdout}`,
-  );
+  assert.equal(result.status, 0, `${cmd} failed: ${result.stderr}\n${result.stdout}`);
   return result.stdout;
 };
 async function cleanup() {
@@ -106,10 +96,7 @@ try {
     "app/layout.tsx",
     'export default function Layout({children}:{children:React.ReactNode}){return <html lang="en"><body>{children}</body></html>;}',
   );
-  write(
-    "app/page.tsx",
-    "export default function Home(){return <h1>Merchant home</h1>;}",
-  );
+  write("app/page.tsx", "export default function Home(){return <h1>Merchant home</h1>;}");
   write(
     "app/creator01/page.tsx",
     "export default function Owned(){return <h1>Merchant-owned route</h1>;}",
@@ -119,10 +106,7 @@ try {
   run("pnpm", ["exec", "commish-next", "pages", "--apply", "--root-aliases"]);
   const installed = join(consumer, "node_modules/@commish/next");
   for (const guide of ["pages", "agents"])
-    assert.match(
-      readFileSync(join(installed, `guides/${guide}.md`), "utf8"),
-      /Pages/,
-    );
+    assert.match(readFileSync(join(installed, `guides/${guide}.md`), "utf8"), /Pages/);
   write(
     "app/api/commish/pages/route.ts",
     `import {createCreatorPageHandlers} from '@commish/next/pages/handlers';
@@ -137,9 +121,12 @@ import {cookies} from 'next/headers'; export async function GET(){return Respons
  await withCommishStripeMetadata({mode:'subscription',metadata:{merchant:'retained'},subscription_data:{metadata:{keep:'subscription'}}}),
  (await cookies()).get('fixture_consent')?.value==='yes'));}`,
   );
-  write("app/api/measurement-withdraw/route.ts", `import {withdrawCreatorPageMeasurement} from '@commish/next/pages/handlers';
+  write(
+    "app/api/measurement-withdraw/route.ts",
+    `import {withdrawCreatorPageMeasurement} from '@commish/next/pages/handlers';
 import {cookies} from 'next/headers';import {pagesOptions} from '../../commish-pages';
-export async function POST(){(await cookies()).set('fixture_consent','no',{path:'/'});return Response.json(await withdrawCreatorPageMeasurement(pagesOptions));}`);
+export async function POST(){(await cookies()).set('fixture_consent','no',{path:'/'});return Response.json(await withdrawCreatorPageMeasurement(pagesOptions));}`,
+  );
   write(
     "public/product.svg",
     '<svg xmlns="http://www.w3.org/2000/svg" width="600" height="600"><rect width="600" height="600" fill="#deebe5"/><rect x="90" y="190" width="420" height="220" rx="28" fill="#476d61"/><text x="300" y="310" text-anchor="middle" fill="white" font-size="28">Approved product image</text></svg>',
@@ -186,16 +173,20 @@ export async function POST(){(await cookies()).set('fixture_consent','no',{path:
   const visitId = `cpv_${randomUUID()}`,
     revision = randomUUID();
   let origin;
-  const measuredVisitors = [], revokedVisitors = [];
+  const measuredVisitors = [],
+    revokedVisitors = [];
   upstream = createServer(async (req, res) => {
     if (req.headers.authorization !== `Bearer ${marker}`) {
       res.writeHead(401).end();
       return;
     }
-    if(req.url==="/api/v1/pages/measurement/withdraw"){
-      let raw="";for await(const chunk of req)raw+=chunk;
+    if (req.url === "/api/v1/pages/measurement/withdraw") {
+      let raw = "";
+      for await (const chunk of req) raw += chunk;
       revokedVisitors.push(JSON.parse(raw).visitorId);
-      res.setHeader("content-type","application/json");res.end(JSON.stringify({data:{recorded:true}}));return;
+      res.setHeader("content-type", "application/json");
+      res.end(JSON.stringify({ data: { recorded: true } }));
+      return;
     }
     const match =
       /^\/api\/v1\/pages\/prg_123456789012\/(creator\d{2})(?:\/(capture|visits|events))?$/.exec(
@@ -234,7 +225,7 @@ export async function POST(){(await cookies()).set('fixture_consent','no',{path:
         expiresAt: new Date(Date.now() + 86400000).toISOString(),
       };
     } else if (match[2] === "visits") {
-      if(input.measurementAllowed) measuredVisitors.push(input.visitorId);
+      if (input.measurementAllowed) measuredVisitors.push(input.visitorId);
       data = {
         variation: input.measurementAllowed ? "alternate" : "standard",
         ...(input.measurementAllowed ? { visitToken: visitId } : {}),
@@ -270,9 +261,7 @@ export async function POST(){(await cookies()).set('fixture_consent','no',{path:
             description: "See the store for current pricing and eligibility.",
           },
           cta: { label: "Explore the collection", url: `${origin}/shop` },
-          disclosures: [
-            "Ad. This creator may earn a commission from qualifying purchases.",
-          ],
+          disclosures: ["Ad. This creator may earn a commission from qualifying purchases."],
         },
       };
     res.setHeader("content-type", "application/json");
@@ -301,10 +290,7 @@ process.on('SIGTERM',()=>{server.closeAllConnections();server.close();Promise.re
   let logs = "";
   child.stderr.on("data", (chunk) => (logs += chunk));
   origin = await new Promise((resolve, reject) => {
-    const timer = setTimeout(
-      () => reject(new Error("Consumer startup timed out")),
-      30000,
-    );
+    const timer = setTimeout(() => reject(new Error("Consumer startup timed out")), 30000);
     child.once("exit", () => {
       clearTimeout(timer);
       reject(new Error("Consumer exited: " + logs));
@@ -367,9 +353,7 @@ process.on('SIGTERM',()=>{server.closeAllConnections();server.close();Promise.re
   assert.equal((await get("/c/creator02")).status, 404);
   withdrawn = false;
   if (process.env.COMMISH_PAGES_PLAYWRIGHT) {
-    const browsers = await import(
-      pathToFileURL(process.env.COMMISH_PAGES_PLAYWRIGHT)
-    );
+    const browsers = await import(pathToFileURL(process.env.COMMISH_PAGES_PLAYWRIGHT));
     const browserName = process.env.COMMISH_PAGES_BROWSER ?? "chromium";
     assert(["chromium", "firefox", "webkit"].includes(browserName));
     browser = await browsers[browserName].launch({ headless: true });
@@ -379,16 +363,11 @@ process.on('SIGTERM',()=>{server.closeAllConnections();server.close();Promise.re
     });
     const page = await context.newPage();
     await page.goto(`${origin}/c/creator02`);
-    await page
-      .getByRole("heading", { name: "Make room for better rest" })
-      .waitFor();
+    await page.getByRole("heading", { name: "Make room for better rest" }).waitFor();
     await page.waitForTimeout(500);
     assert.equal(exposures, 0);
     assert.equal(captures, 0);
-    assert.equal(
-      await page.locator("main").getAttribute("data-variation"),
-      "standard",
-    );
+    assert.equal(await page.locator("main").getAttribute("data-variation"), "standard");
     await context.addCookies([
       { name: "fixture_consent", value: "yes", url: origin, secure: true },
     ]);
@@ -411,9 +390,7 @@ process.on('SIGTERM',()=>{server.closeAllConnections();server.close();Promise.re
     await page.waitForTimeout(100);
     assert(exposures > 0);
     assert(
-      await page.evaluate(
-        () => document.documentElement.scrollWidth <= innerWidth,
-      ),
+      await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth),
       "mobile page overflows",
     );
     if (process.env.COMMISH_PAGES_SCREENSHOT)
@@ -424,15 +401,9 @@ process.on('SIGTERM',()=>{server.closeAllConnections();server.close();Promise.re
     await page.getByRole("link", { name: "Explore the collection" }).click();
     await page.waitForURL("**/shop");
     const checkout = JSON.parse(await page.locator("body").innerText());
-    assert.equal(
-      checkout.metadata.commish_attribution,
-      "atr_pages_artifact1234",
-    );
+    assert.equal(checkout.metadata.commish_attribution, "atr_pages_artifact1234");
     assert.equal(checkout.metadata.commish_page_visit, visitId);
-    assert.equal(
-      checkout.subscription_data.metadata.commish_page_visit,
-      visitId,
-    );
+    assert.equal(checkout.subscription_data.metadata.commish_page_visit, visitId);
     assert.equal(checkout.metadata.merchant, "retained");
     // Click while capture is still pending: shopping must wait for the bounded
     // attempt, but must remain usable when that attempt fails.
@@ -462,48 +433,90 @@ process.on('SIGTERM',()=>{server.closeAllConnections();server.close();Promise.re
     }
     // Recover a completed background failure at shopping time, with the same
     // capture identity even when measurement had already succeeded.
-    captureDelay = 0;captureFailure = true;
+    captureDelay = 0;
+    captureFailure = true;
     await context.clearCookies();
-    await context.addCookies([{name:"fixture_consent",value:"yes",url:origin,secure:true}]);
-    const failedStart = page.waitForResponse(response =>
-      response.url().endsWith("/api/commish/pages") && response.request().postDataJSON()?.action === "start");
+    await context.addCookies([
+      { name: "fixture_consent", value: "yes", url: origin, secure: true },
+    ]);
+    const failedStart = page.waitForResponse(
+      (response) =>
+        response.url().endsWith("/api/commish/pages") &&
+        response.request().postDataJSON()?.action === "start",
+    );
     await page.goto(`${origin}/c/creator02`);
-    const failedResponse = await failedStart, failedReceipt = await failedResponse.json();
-    assert.equal(failedReceipt.data.captured,false);
-    assert.equal(failedReceipt.data.retryable,true);
-    assert.equal(failedReceipt.data.visitToken,visitId);
+    const failedResponse = await failedStart,
+      failedReceipt = await failedResponse.json();
+    assert.equal(failedReceipt.data.captured, false);
+    assert.equal(failedReceipt.data.retryable, true);
+    assert.equal(failedReceipt.data.visitToken, visitId);
     captureFailure = false;
-    const retryRequest = page.waitForRequest(request =>
-      request.url().endsWith("/api/commish/pages") && request.postDataJSON()?.action === "start");
-    await page.getByRole("link", {name:"Explore the collection"}).click();
-    assert.equal((await retryRequest).postDataJSON().captureId,
-      failedResponse.request().postDataJSON().captureId);
+    const retryRequest = page.waitForRequest(
+      (request) =>
+        request.url().endsWith("/api/commish/pages") && request.postDataJSON()?.action === "start",
+    );
+    await page.getByRole("link", { name: "Explore the collection" }).click();
+    assert.equal(
+      (await retryRequest).postDataJSON().captureId,
+      failedResponse.request().postDataJSON().captureId,
+    );
     await page.waitForURL("**/shop");
     const recoveredCheckout = JSON.parse(await page.locator("body").innerText());
-    assert.equal(recoveredCheckout.metadata.commish_attribution,"atr_pages_artifact1234");
-    assert.equal(recoveredCheckout.metadata.commish_page_visit,visitId);
-    captureDelay = 0;captureFailure = false;
+    assert.equal(recoveredCheckout.metadata.commish_attribution, "atr_pages_artifact1234");
+    assert.equal(recoveredCheckout.metadata.commish_page_visit, visitId);
+    captureDelay = 0;
+    captureFailure = false;
     await context.clearCookies();
-    await context.addCookies([{name:"fixture_consent",value:"yes",url:origin,secure:true}]);
-    measuredVisitors.length=0;
-    const tabs=await Promise.all([context.newPage(),context.newPage()]);
-    await Promise.all(tabs.map(async tab=>{
-      const started=tab.waitForResponse(r=>r.url().endsWith("/api/commish/pages")&&r.request().postDataJSON()?.action==="start");
-      await tab.goto(`${origin}/c/creator02`);await started;
-    }));
-    assert.equal(measuredVisitors.length,2);assert.equal(new Set(measuredVisitors).size,1);
-    assert.deepEqual(await (await context.request.post(origin+"/api/measurement-withdraw")).json(),{recorded:true});
-    assert.deepEqual(revokedVisitors,[measuredVisitors[0]]);
-    await Promise.all(tabs.map(tab=>tab.close()));
-    const unsupported=await browser.newContext({ignoreHTTPSErrors:true});
-    await unsupported.addInitScript(()=>Object.defineProperty(navigator,"locks",{value:undefined}));
-    await unsupported.addCookies([{name:"fixture_consent",value:"yes",url:origin,secure:true},{name:"commish_page_visitor",value:randomUUID(),url:origin,secure:true,httpOnly:true}]);
-    const unmeasured=await unsupported.newPage(), count=measuredVisitors.length, capturedBefore=captures;
+    await context.addCookies([
+      { name: "fixture_consent", value: "yes", url: origin, secure: true },
+    ]);
+    measuredVisitors.length = 0;
+    const tabs = await Promise.all([context.newPage(), context.newPage()]);
+    await Promise.all(
+      tabs.map(async (tab) => {
+        const started = tab.waitForResponse(
+          (r) =>
+            r.url().endsWith("/api/commish/pages") &&
+            r.request().postDataJSON()?.action === "start",
+        );
+        await tab.goto(`${origin}/c/creator02`);
+        await started;
+      }),
+    );
+    assert.equal(measuredVisitors.length, 2);
+    assert.equal(new Set(measuredVisitors).size, 1);
+    assert.deepEqual(
+      await (await context.request.post(origin + "/api/measurement-withdraw")).json(),
+      { recorded: true },
+    );
+    assert.deepEqual(revokedVisitors, [measuredVisitors[0]]);
+    await Promise.all(tabs.map((tab) => tab.close()));
+    const unsupported = await browser.newContext({ ignoreHTTPSErrors: true });
+    await unsupported.addInitScript(() =>
+      Object.defineProperty(navigator, "locks", { value: undefined }),
+    );
+    await unsupported.addCookies([
+      { name: "fixture_consent", value: "yes", url: origin, secure: true },
+      {
+        name: "commish_page_visitor",
+        value: randomUUID(),
+        url: origin,
+        secure: true,
+        httpOnly: true,
+      },
+    ]);
+    const unmeasured = await unsupported.newPage(),
+      count = measuredVisitors.length,
+      capturedBefore = captures;
     await unmeasured.goto(`${origin}/c/creator02`);
-    await unmeasured.getByRole("link",{name:"Explore the collection"}).click();
+    await unmeasured.getByRole("link", { name: "Explore the collection" }).click();
     await unmeasured.waitForURL("**/shop");
-    assert.equal(measuredVisitors.length,count);assert(captures>capturedBefore);
-    assert.equal(JSON.parse(await unmeasured.locator("body").innerText()).metadata.commish_page_visit,undefined);
+    assert.equal(measuredVisitors.length, count);
+    assert(captures > capturedBefore);
+    assert.equal(
+      JSON.parse(await unmeasured.locator("body").innerText()).metadata.commish_page_visit,
+      undefined,
+    );
     await unsupported.close();
     console.log(
       `${browserName} passed: consent denied/allowed, concurrent-tab identity and withdrawal, unsupported-browser fail-closed measurement, visible-only exposure, mobile layout, capture cookie before shopping, fast clicks, bounded capture failure, subscription measurement.`,

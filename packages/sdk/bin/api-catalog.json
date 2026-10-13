@@ -50,12 +50,7 @@
         {
           "schema": {
             "type": "string",
-            "enum": [
-              "pending",
-              "processing",
-              "delivered",
-              "failed"
-            ]
+            "enum": ["pending", "processing", "delivered", "failed"]
           },
           "required": false,
           "name": "status",
@@ -210,9 +205,7 @@
           },
           "currency": {
             "type": "string",
-            "enum": [
-              "usd"
-            ]
+            "enum": ["usd"]
           },
           "attributionToken": {
             "type": "string",
@@ -236,14 +229,7 @@
             "default": {}
           }
         },
-        "required": [
-          "externalId",
-          "programId",
-          "customerId",
-          "amount",
-          "currency",
-          "occurredAt"
-        ]
+        "required": ["externalId", "programId", "customerId", "amount", "currency", "occurredAt"]
       },
       "paginated": false,
       "workspaceKeyOnly": false
@@ -529,9 +515,7 @@
                 "pattern": "^ch_[A-Za-z0-9_]+$"
               }
             },
-            "required": [
-              "accountId"
-            ],
+            "required": ["accountId"],
             "additionalProperties": false
           }
         },
@@ -578,9 +562,7 @@
           },
           "currency": {
             "type": "string",
-            "enum": [
-              "usd"
-            ]
+            "enum": ["usd"]
           },
           "occurredAt": {
             "type": "string",
@@ -591,13 +573,7 @@
             "maxLength": 500
           }
         },
-        "required": [
-          "externalId",
-          "conversionId",
-          "amount",
-          "currency",
-          "occurredAt"
-        ]
+        "required": ["externalId", "conversionId", "amount", "currency", "occurredAt"]
       },
       "paginated": false,
       "workspaceKeyOnly": false
@@ -641,9 +617,7 @@
                 "properties": {
                   "type": {
                     "type": "string",
-                    "enum": [
-                      "percentage"
-                    ]
+                    "enum": ["percentage"]
                   },
                   "basisPoints": {
                     "type": "integer",
@@ -651,10 +625,7 @@
                     "maximum": 10000
                   }
                 },
-                "required": [
-                  "type",
-                  "basisPoints"
-                ],
+                "required": ["type", "basisPoints"],
                 "additionalProperties": false
               },
               {
@@ -662,9 +633,7 @@
                 "properties": {
                   "type": {
                     "type": "string",
-                    "enum": [
-                      "fixed"
-                    ]
+                    "enum": ["fixed"]
                   },
                   "amount": {
                     "type": "integer",
@@ -672,16 +641,10 @@
                   },
                   "currency": {
                     "type": "string",
-                    "enum": [
-                      "usd"
-                    ]
+                    "enum": ["usd"]
                   }
                 },
-                "required": [
-                  "type",
-                  "amount",
-                  "currency"
-                ],
+                "required": ["type", "amount", "currency"],
                 "additionalProperties": false
               }
             ]
@@ -691,9 +654,7 @@
             "maxLength": 2000
           }
         },
-        "required": [
-          "email"
-        ]
+        "required": ["email"]
       },
       "paginated": false,
       "workspaceKeyOnly": false

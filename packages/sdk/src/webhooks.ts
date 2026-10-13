@@ -8,9 +8,7 @@ export function signWebhook(
   if (!secret.trim()) throw new Error("Webhook signing secret is required");
   if (!Number.isSafeInteger(timestamp) || timestamp < 0)
     throw new Error("Webhook timestamp must be a nonnegative integer");
-  const signature = createHmac("sha256", secret)
-    .update(`${timestamp}.${payload}`)
-    .digest("hex");
+  const signature = createHmac("sha256", secret).update(`${timestamp}.${payload}`).digest("hex");
   return `t=${timestamp},v1=${signature}`;
 }
 
@@ -45,11 +43,6 @@ export function verifyWebhook(
     !/^[a-f\d]{64}$/i.test(values.v1)
   )
     return false;
-  const expected = createHmac("sha256", secret)
-    .update(`${timestamp}.${payload}`)
-    .digest("hex");
-  return timingSafeEqual(
-    Buffer.from(values.v1, "hex"),
-    Buffer.from(expected, "hex"),
-  );
+  const expected = createHmac("sha256", secret).update(`${timestamp}.${payload}`).digest("hex");
+  return timingSafeEqual(Buffer.from(values.v1, "hex"), Buffer.from(expected, "hex"));
 }

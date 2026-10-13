@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import {
-  mkdtempSync,
   mkdirSync,
+  mkdtempSync,
   readFileSync,
   realpathSync,
   rmSync,
@@ -11,7 +11,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { verifySdkHttp, httpConsumerScope } from "./verify-sdk-http.mjs";
+import { httpConsumerScope, verifySdkHttp } from "./verify-sdk-http.mjs";
 
 function packed(root, webhook, implementation = "export {};") {
   const pair = (name, server = false) => ({

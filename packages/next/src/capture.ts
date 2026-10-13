@@ -36,14 +36,12 @@ export function createAttributionHandler(options: {
     try {
       const parsed: unknown = JSON.parse(body);
       if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-        const { previousAttributionId: _untrusted, ...capture } =
-          parsed as Record<string, unknown>;
+        const { previousAttributionId: _untrusted, ...capture } = parsed as Record<string, unknown>;
         void _untrusted;
         idempotencyBody = JSON.stringify(capture);
         forwardedBody = JSON.stringify({
           ...capture,
-          ...(previousAttributionId &&
-          /^atr_[A-Za-z0-9_-]{12,}$/.test(previousAttributionId)
+          ...(previousAttributionId && /^atr_[A-Za-z0-9_-]{12,}$/.test(previousAttributionId)
             ? { previousAttributionId }
             : {}),
         });
@@ -63,11 +61,8 @@ export function createAttributionHandler(options: {
         headers: {
           "content-type": "application/json",
           "idempotency-key": idempotencyKey,
-          "x-commish-publishable-key":
-            request.headers.get("x-commish-publishable-key") ?? "",
-          ...(options.secretKey
-            ? { authorization: `Bearer ${options.secretKey}` }
-            : {}),
+          "x-commish-publishable-key": request.headers.get("x-commish-publishable-key") ?? "",
+          ...(options.secretKey ? { authorization: `Bearer ${options.secretKey}` } : {}),
           ...(clientIp ? { "x-commish-client-ip": clientIp } : {}),
           ...(userAgent ? { "user-agent": userAgent } : {}),
           ...(country ? { "x-vercel-ip-country": country } : {}),
@@ -112,12 +107,14 @@ export function createAttributionHandler(options: {
         : undefined;
     const token = capturePayload?.data?.token;
     const expiresAt = capturePayload?.data?.expiresAt;
-    const expiresAtMs =
-      typeof expiresAt === "string" ? Date.parse(expiresAt) : Number.NaN;
+    const expiresAtMs = typeof expiresAt === "string" ? Date.parse(expiresAt) : Number.NaN;
     const maxAge = Math.floor((expiresAtMs - Date.now()) / 1000);
     if (
-      typeof token !== "string" || !token || typeof expiresAt !== "string" ||
-      !Number.isFinite(expiresAtMs) || maxAge <= 0
+      typeof token !== "string" ||
+      !token ||
+      typeof expiresAt !== "string" ||
+      !Number.isFinite(expiresAtMs) ||
+      maxAge <= 0
     )
       return NextResponse.json(
         {

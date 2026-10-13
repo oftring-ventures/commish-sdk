@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { readFileSync, readdirSync, realpathSync, statSync } from "node:fs";
+import { readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { isAbsolute, join, relative, sep } from "node:path";
 import { readFrameworkSource, yamlKey, yamlValue } from "./next-framework-lock.mjs";
 
@@ -15,7 +15,10 @@ export function providerTypeVersions(sourceLock) {
   const reactTypes = lock.dependencies["@types/react"];
   assert(reactTypes, "provider type dependency absent from source lock");
   const csstype = lock.snapshots.match(
-    new RegExp(`^  '@types/react@${escapePattern(reactTypes)}':\\n    dependencies:\\n      csstype: (\\S+)$`, "m"),
+    new RegExp(
+      `^  '@types/react@${escapePattern(reactTypes)}':\\n    dependencies:\\n      csstype: (\\S+)$`,
+      "m",
+    ),
   )?.[1];
   assert(csstype, "provider type dependency absent from source lock");
   return { "@types/react": reactTypes, csstype };
@@ -26,7 +29,10 @@ export function providerTypesLock(sdk, next, sourceLock) {
   const { "@types/react": reactTypes, csstype } = providerTypeVersions(sourceLock);
   const integrity = (id) => {
     const match = lock.packages.match(
-      new RegExp(`^  ${escapePattern(id)}:\\n    resolution: \\{integrity: (sha512-[A-Za-z0-9+/=]+)\\}$`, "m"),
+      new RegExp(
+        `^  ${escapePattern(id)}:\\n    resolution: \\{integrity: (sha512-[A-Za-z0-9+/=]+)\\}$`,
+        "m",
+      ),
     );
     assert(match, "provider type integrity absent from source lock");
     return match[1];
@@ -99,7 +105,10 @@ packages:
     version: ${manifests[1].version}
     ${engines}
 ${manifests[1].bin ? "    hasBin: true\n" : ""}    peerDependencies:
-${Object.keys(peers).sort().map((name) => `      ${yamlKey(name)}: ${yamlValue(peers[name])}`).join("\n")}
+${Object.keys(peers)
+  .sort()
+  .map((name) => `      ${yamlKey(name)}: ${yamlValue(peers[name])}`)
+  .join("\n")}
 
   '${sdkId}':
     resolution: {integrity: ${sri(sdk.archive)}, tarball: file:sdk.tgz}
@@ -138,7 +147,11 @@ export function readProviderTypeInputs(consumer, dependencies) {
     const root = ownedChild(consumer, join(consumer, "node_modules", name));
     const manifest = JSON.parse(readFileSync(join(root, "package.json")));
     assert.equal(manifest.name, name);
-    assert.equal(manifest.version, dependencies[name], "provider type version differs from the source lock");
+    assert.equal(
+      manifest.version,
+      dependencies[name],
+      "provider type version differs from the source lock",
+    );
     for (const file of name === "csstype" ? ["index.d.ts"] : ["index.d.ts", "jsx-runtime.d.ts"])
       ownedChild(root, join(root, file));
     return root;

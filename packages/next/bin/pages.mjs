@@ -1,13 +1,6 @@
-import {
-  lstatSync,
-  readFileSync,
-  readdirSync,
-  mkdirSync,
-  writeFileSync,
-} from "node:fs";
-import { dirname, join } from "node:path";
+import { lstatSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
-import { resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { parseArgs } from "node:util";
 
 const stat = (path) => {
@@ -31,8 +24,7 @@ function filesAt(root) {
   const result = [];
   for (const item of readdirSync(root, { withFileTypes: true })) {
     const path = `${root}/${item.name}`;
-    if (item.isSymbolicLink())
-      throw new Error("symlink_requires_manual_integration");
+    if (item.isSymbolicLink()) throw new Error("symlink_requires_manual_integration");
     if (item.isDirectory()) result.push(...filesAt(path));
     else result.push(path);
   }
@@ -56,8 +48,11 @@ function options(args) {
       },
     });
   } catch (error) {
-    const option = /--prefix/.test(error?.message) ? "invalid_page_prefix"
-      : /--creator/.test(error?.message) ? "invalid_creator" : "unknown_pages_option";
+    const option = /--prefix/.test(error?.message)
+      ? "invalid_page_prefix"
+      : /--creator/.test(error?.message)
+        ? "invalid_creator"
+        : "unknown_pages_option";
     throw new Error(option);
   }
   const names = parsed.tokens.filter((token) => token.kind === "option").map((token) => token.name);
@@ -76,17 +71,12 @@ function options(args) {
     (parsed.values.apply && parsed.values["dry-run"])
   )
     throw new Error("invalid_pages_command");
-  if (!/^\/[a-z][a-z0-9-]{0,29}$/.test(value.prefix))
-    throw new Error("invalid_page_prefix");
+  if (!/^\/[a-z][a-z0-9-]{0,29}$/.test(value.prefix)) throw new Error("invalid_page_prefix");
   if (["/api", "/_next", "/admin", "/auth", "/login"].includes(value.prefix))
     throw new Error("reserved_page_prefix");
-  if (
-    value.creator !== null &&
-    !/^[a-z0-9][a-z0-9_-]{2,39}$/.test(value.creator)
-  )
+  if (value.creator !== null && !/^[a-z0-9][a-z0-9_-]{2,39}$/.test(value.creator))
     throw new Error("invalid_creator");
-  if (value.command === "doctor" && value.apply)
-    throw new Error("doctor_is_read_only");
+  if (value.command === "doctor" && value.apply) throw new Error("doctor_is_read_only");
   return value;
 }
 function plan(value, diagnostic = false) {
@@ -99,15 +89,12 @@ function plan(value, diagnostic = false) {
   const legacy = ["pages", "src/pages"]
     .filter((dir) => {
       const item = stat(dir);
-      if (item?.isSymbolicLink())
-        throw new Error("symlink_requires_manual_integration");
+      if (item?.isSymbolicLink()) throw new Error("symlink_requires_manual_integration");
       if (item?.isDirectory()) safe(dir);
       return item?.isDirectory();
     })
     .flatMap((dir) =>
-      filesAt(dir).map((path) =>
-        path.slice(dir.length + 1).replace(/(\/index)?\.[^./]+$/, ""),
-      ),
+      filesAt(dir).map((path) => path.slice(dir.length + 1).replace(/(\/index)?\.[^./]+$/, "")),
     );
   const typed = !!(stat("tsconfig.json") || stat(`${app}/layout.tsx`));
   const ts = typed ? "ts" : "js",
@@ -117,9 +104,7 @@ function plan(value, diagnostic = false) {
       .slice(app.length + 1)
       .split("/")
       .filter((part) => !/^\(.+\)$/.test(part));
-    return (
-      parts[0]?.startsWith("[") && /^(page|route)\.[jt]sx?$/.test(parts.at(-1))
-    );
+    return parts[0]?.startsWith("[") && /^(page|route)\.[jt]sx?$/.test(parts.at(-1));
   });
   const configFiles = [
     "next.config.ts",
@@ -147,12 +132,10 @@ function plan(value, diagnostic = false) {
   }
   const proposed = Object.entries(files).map(([path, content]) => {
     safe(path);
-    const alternate = ["js", "jsx", "ts", "tsx", "mjs", "cjs"].some(
-      (extension) => {
-        const candidate = path.replace(/\.[^.]+$/, `.${extension}`);
-        return candidate !== path && !!stat(candidate);
-      },
-    );
+    const alternate = ["js", "jsx", "ts", "tsx", "mjs", "cjs"].some((extension) => {
+      const candidate = path.replace(/\.[^.]+$/, `.${extension}`);
+      return candidate !== path && !!stat(candidate);
+    });
     const present = stat(path);
     return {
       path,
@@ -200,15 +183,12 @@ function plan(value, diagnostic = false) {
       /\/(page|route)\.[jt]sx?$/.test(path) &&
       Object.keys(files).some(
         (target) =>
-          /\/(page|route)\.[jt]sx?$/.test(target) &&
-          overlaps(routeParts(path), routeParts(target)),
+          /\/(page|route)\.[jt]sx?$/.test(target) && overlaps(routeParts(path), routeParts(target)),
       ),
   );
   const legacyConflicts = legacy.filter(
     (route) =>
-      route === segment ||
-      route.startsWith(`${segment}/`) ||
-      route.startsWith("api/commish/"),
+      route === segment || route.startsWith(`${segment}/`) || route.startsWith("api/commish/"),
   );
   const manualIntegration = ambiguousRoutes.length
     ? "dynamic_route_ownership_requires_manual_integration"
@@ -251,9 +231,7 @@ function plan(value, diagnostic = false) {
   };
 }
 function endpoint(environment) {
-  const url = new URL(
-    environment.COMMISH_API_URL ?? "https://app.commish.sh/api/v1",
-  );
+  const url = new URL(environment.COMMISH_API_URL ?? "https://app.commish.sh/api/v1");
   // The same shape every other Commish command accepts: the /api/v1 base, HTTPS
   // except on loopback, and no credentials, query or fragment.
   if (
@@ -264,8 +242,7 @@ function endpoint(environment) {
     url.pathname.replace(/\/$/, "") !== "/api/v1" ||
     !(
       url.protocol === "https:" ||
-      (url.protocol === "http:" &&
-        ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname))
+      (url.protocol === "http:" && ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname))
     )
   )
     throw new Error("unsafe_api_url");
@@ -273,8 +250,7 @@ function endpoint(environment) {
   if (!/^cm_(test|live)_sk_[A-Za-z0-9_-]{12,}$/.test(key ?? ""))
     throw new Error("application_secret_key_required");
   const program = environment.COMMISH_PAGES_PROGRAM_ID;
-  if (!/^prg_[A-Za-z0-9_-]{12,}$/.test(program ?? ""))
-    throw new Error("program_id_required");
+  if (!/^prg_[A-Za-z0-9_-]{12,}$/.test(program ?? "")) throw new Error("program_id_required");
   return { base: url.href.replace(/\/$/, ""), key, program };
 }
 function installedPackages() {
@@ -283,31 +259,18 @@ function installedPackages() {
     const sdkPath = require.resolve("@commish/sdk"),
       pagesPath = require.resolve("@commish/next/pages");
     for (const entry of ["handlers", "routing"])
-      if (
-        dirname(require.resolve(`@commish/next/pages/${entry}`)) !==
-        dirname(pagesPath)
-      )
+      if (dirname(require.resolve(`@commish/next/pages/${entry}`)) !== dirname(pagesPath))
         throw new Error("inconsistent_pages_exports");
-    const sdk = JSON.parse(
-      readFileSync(join(dirname(sdkPath), "../package.json"), "utf8"),
-    );
-    const adapter = JSON.parse(
-      readFileSync(join(dirname(pagesPath), "../package.json"), "utf8"),
-    );
-    const next = JSON.parse(
-      readFileSync(require.resolve("next/package.json"), "utf8"),
-    );
-    const react = JSON.parse(
-      readFileSync(require.resolve("react/package.json"), "utf8"),
-    );
+    const sdk = JSON.parse(readFileSync(join(dirname(sdkPath), "../package.json"), "utf8"));
+    const adapter = JSON.parse(readFileSync(join(dirname(pagesPath), "../package.json"), "utf8"));
+    const next = JSON.parse(readFileSync(require.resolve("next/package.json"), "utf8"));
+    const react = JSON.parse(readFileSync(require.resolve("react/package.json"), "utf8"));
     const supported = (version, range) => {
       const actual = /^(\d+)\.(\d+)\.(\d+)$/.exec(version);
       const bounds = /^>=(\d+)\.(\d+)\.(\d+) <(\d+)$/.exec(range ?? "");
-      if (!actual || !bounds || Number(actual[1]) >= Number(bounds[4]))
-        return false;
+      if (!actual || !bounds || Number(actual[1]) >= Number(bounds[4])) return false;
       for (let i = 1; i <= 3; i++) {
-        if (Number(actual[i]) !== Number(bounds[i]))
-          return Number(actual[i]) > Number(bounds[i]);
+        if (Number(actual[i]) !== Number(bounds[i])) return Number(actual[i]) > Number(bounds[i]);
       }
       return true;
     };
@@ -367,15 +330,12 @@ export async function runPages(args) {
         integrationVerified: false,
       };
     const { base, key, program } = endpoint(process.env);
-    const response = await fetch(
-      `${base}/pages/${program}/${value.creator}/verify-alias`,
-      {
-        method: "POST",
-        redirect: "error",
-        headers: { authorization: `Bearer ${key}` },
-        signal: AbortSignal.timeout(12000),
-      },
-    );
+    const response = await fetch(`${base}/pages/${program}/${value.creator}/verify-alias`, {
+      method: "POST",
+      redirect: "error",
+      headers: { authorization: `Bearer ${key}` },
+      signal: AbortSignal.timeout(12000),
+    });
     if (!response.ok) throw new Error("alias_verification_unavailable");
     return {
       status: (await response.json()).data?.verified
@@ -386,8 +346,7 @@ export async function runPages(args) {
   }
   const setup = plan(value, value.command === "doctor");
   const conflicts = setup.proposed.filter((file) => file.status === "conflict");
-  if (value.apply && conflicts.length)
-    throw new Error("existing_files_require_manual_integration");
+  if (value.apply && conflicts.length) throw new Error("existing_files_require_manual_integration");
   if (value.apply)
     for (const file of setup.proposed)
       if (file.status === "create") {
@@ -402,15 +361,12 @@ export async function runPages(args) {
   if (value.command === "doctor" && value.creator) {
     try {
       const { base, key, program } = endpoint(process.env);
-      const response = await fetch(
-        `${base}/pages/${program}/${value.creator}`,
-        {
-          redirect: "error",
-          cache: "no-store",
-          headers: { authorization: `Bearer ${key}` },
-          signal: AbortSignal.timeout(4000),
-        },
-      );
+      const response = await fetch(`${base}/pages/${program}/${value.creator}`, {
+        redirect: "error",
+        cache: "no-store",
+        headers: { authorization: `Bearer ${key}` },
+        signal: AbortSignal.timeout(4000),
+      });
       resolution = response.ok
         ? "api_resolved_not_browser_verified"
         : response.status === 404
@@ -443,9 +399,7 @@ export async function runPages(args) {
           } else {
             configuration = "matches_resolved_page";
             try {
-              const canonical = await probe(
-                new URL(data.canonicalPath, origin),
-              );
+              const canonical = await probe(new URL(data.canonicalPath, origin));
               canonicalRoute =
                 canonical.response.status === 200 &&
                 canonical.body.includes(`data-commish-page="${data.pageId}"`)
@@ -461,16 +415,14 @@ export async function runPages(args) {
                   alias.response.status === 307 &&
                   alias.response.headers.get("location") ===
                     new URL(data.canonicalPath, origin).href &&
-                  alias.response.headers.get("x-commish-page-id") ===
-                    data.pageId
+                  alias.response.headers.get("x-commish-page-id") === data.pageId
                     ? "correct_temporary_redirect_not_promoted"
                     : "conflict_or_unavailable";
               } catch {
                 aliasRoute = "conflict_or_unavailable";
               }
             } else aliasRoute = "disabled";
-            const publicKey =
-              process.env.NEXT_PUBLIC_COMMISH_PUBLISHABLE_KEY ?? "";
+            const publicKey = process.env.NEXT_PUBLIC_COMMISH_PUBLISHABLE_KEY ?? "";
             attributionReadiness =
               data.status !== "ready"
                 ? "ended_no_new_attribution"
@@ -485,12 +437,7 @@ export async function runPages(args) {
     }
   }
   return {
-    status:
-      value.command === "doctor"
-        ? "diagnostic"
-        : value.apply
-          ? "files_installed"
-          : "plan",
+    status: value.command === "doctor" ? "diagnostic" : value.apply ? "files_installed" : "plan",
     app: setup.app,
     files: setup.proposed,
     packageCompatibility: setup.compatibility,

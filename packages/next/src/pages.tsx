@@ -2,26 +2,23 @@ import { CommishError, type CreatorPage } from "@commish/sdk";
 import { notFound, unstable_rethrow } from "next/navigation.js";
 import { CreatorPageView } from "./pages-client.js";
 import {
-  resolveCreatorPage,
   type CreatorPageOptions,
   type PageOptionsSource,
-} from "./pages-routing.js";
-export {
   resolveCreatorPage,
-  createCreatorAliasHandler,
-  creatorPageFallbackRewrite,
+} from "./pages-routing.js";
+
+export {
   type CreatorAliasHandlerOptions,
   type CreatorPageOptions,
+  createCreatorAliasHandler,
+  creatorPageFallbackRewrite,
   type PageOptionsSource,
+  resolveCreatorPage,
 } from "./pages-routing.js";
 
 /** One dynamic route covers current and future participating creators. */
 export function createCreatorPage(source: PageOptionsSource) {
-  return async function Page({
-    params,
-  }: {
-    params: Promise<{ creator: string }>;
-  }) {
+  return async function Page({ params }: { params: Promise<{ creator: string }> }) {
     let options: CreatorPageOptions;
     let page: CreatorPage;
     try {
