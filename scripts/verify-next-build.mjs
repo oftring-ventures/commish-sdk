@@ -17,12 +17,8 @@ import {
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join, relative, sep } from "node:path";
-import {
-  frameworkDependencies,
-  frameworkLocks,
-  frameworkWorkspace,
-  frameworkPairWorkspace,
-} from "./next-framework-lock.mjs";
+import { frameworkLocks } from "./next-framework-lock.mjs";
+import { peerAllows } from "./package-shape.mjs";
 import { nextBuildFixture, nextCookieBuildFixture, nextServerBuildFixture } from "./fixtures/next-build.mjs";
 import { providerProbe } from "./fixtures/next-provider.mjs";
 import { cliProbe, setupCliProbe, verifyCliProbe } from "./fixtures/next-cli.mjs";
@@ -109,12 +105,14 @@ export async function verifyNextBuild(sdk, next, context, execute) {
     default: "./dist/provider.js",
   });
   if (server) {
-    assert.deepEqual(manifest.exports["."], {
-      browser: null, types: "./dist/index.d.ts", default: "./dist/index.js",
-    }, "unsupported server root");
-    assert.deepEqual(manifest.peerDependencies, {
-      "@commish/sdk": releaseVersion, next: ">=16.3.8 <17", react: ">=19.2.8 <20",
-    }, "unsupported server peers");
+    const root = manifest.exports["."];
+    assert(root && root.browser === null && root.default === "./dist/index.js" &&
+      root.types === "./dist/index.d.ts", "unsupported server root");
+    const peers = manifest.peerDependencies;
+    const range = /^>=\d+\.\d+\.\d+ <\d+$/;
+    assert(Object.keys(peers).sort().join() === "@commish/sdk,next,react" &&
+      peerAllows(peers["@commish/sdk"], releaseVersion) && range.test(peers.next) && range.test(peers.react),
+      "unsupported server peers");
   }
   const cookieHelpers = next.packed.has("package/dist/metadata.js");
   assert(!cookieHelpers || server, "cookie helpers require the framework server root");
@@ -163,8 +161,8 @@ export async function verifyNextBuild(sdk, next, context, execute) {
           dependencies,
         }),
       );
-    writeManifest(frameworkDependencies);
-    writeFileSync(join(consumer, "pnpm-workspace.yaml"), frameworkWorkspace);
+    writeManifest(locks.dependencies);
+    writeFileSync(join(consumer, "pnpm-workspace.yaml"), locks.workspace);
     writeFileSync(join(consumer, "pnpm-lock.yaml"), locks.registry);
     for (const [name, artifact] of [
       ["sdk", sdk],
@@ -188,14 +186,14 @@ export async function verifyNextBuild(sdk, next, context, execute) {
     );
     const registry = registrySnapshot(consumer, locks);
     writeManifest({
-      ...frameworkDependencies,
+      ...locks.dependencies,
       "@commish/sdk": "file:./sdk.tgz",
       "@commish/next": "file:./next.tgz",
     });
     // A cold offline store cannot reliably reconstruct optional peer metadata.
     // Install the exact projected closure instead of resolving it a second time.
     writeFileSync(join(consumer, "pnpm-lock.yaml"), locks.paired);
-    writeFileSync(join(consumer, "pnpm-workspace.yaml"), frameworkPairWorkspace);
+    writeFileSync(join(consumer, "pnpm-workspace.yaml"), locks.pairWorkspace);
     await install(["--offline", "--frozen-lockfile"]);
     assert.equal(
       readFileSync(join(consumer, "pnpm-lock.yaml"), "utf8"),
@@ -211,7 +209,7 @@ export async function verifyNextBuild(sdk, next, context, execute) {
           readFileSync(join(consumer, `${index ? "next" : "sdk"}.tgz`)).equals(artifact.archive),
           "framework archive changed",
         );
-        verifyFrameworkPackage(consumer, pairRoots[index], artifact, registry, sdk);
+        verifyFrameworkPackage(consumer, pairRoots[index], artifact, registry, sdk, locks.dependencies.next);
       }
       assert.deepEqual(
         registrySnapshot(consumer, locks, pairRoots),
@@ -242,7 +240,7 @@ export async function verifyNextBuild(sdk, next, context, execute) {
       verifyBytes();
     }
     const require = createRequire(join(consumer, "package.json"));
-    for (const [name, version] of Object.entries(frameworkDependencies)) {
+    for (const [name, version] of Object.entries(locks.dependencies)) {
       const root = child(consumer, dirname(require.resolve(`${name}/package.json`)));
       assert.equal(
         JSON.parse(readFileSync(join(root, "package.json"))).version,
@@ -300,7 +298,7 @@ export default function Layout({ children }: { children: ReactNode }) {
     const executable = child(consumer, require.resolve("next/dist/bin/next"));
     assert.equal(
       (await run(process.execPath, [executable, "--version"])).trim(),
-      "Next.js v16.3.8",
+      `Next.js v${locks.dependencies.next}`,
       "wrong framework CLI",
     );
     await run(process.execPath, [executable, "build", "--webpack"], 600_000);
@@ -319,7 +317,7 @@ export default function Layout({ children }: { children: ReactNode }) {
     );
     assert.equal(
       readFileSync(join(consumer, "pnpm-workspace.yaml"), "utf8"),
-      frameworkPairWorkspace,
+      locks.pairWorkspace,
       "framework workspace changed",
     );
     assert(

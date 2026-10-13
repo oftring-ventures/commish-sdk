@@ -103,7 +103,7 @@ function fixture(sdk, cli, run, sdkCli = false) {
       symlinkSync(source, join(consumer, "node_modules/@commish/sdk"));
       bins.push(shim("commish", source, modules, "bin/init.mjs"));
     }
-    const verify = () => verifyFrameworkPackage(consumer, root, { packed }, registry, sdkArtifact);
+    const verify = () => verifyFrameworkPackage(consumer, root, { packed }, registry, sdkArtifact, "16.3.8");
     run({ consumer, root, next, bins, verify, write });
   } finally {
     rmSync(consumer, { recursive: true, force: true });
