@@ -3,9 +3,9 @@ import { createHash } from "node:crypto";
 import test from "node:test";
 import { createSetupSession } from "../packages/sdk/bin/setup-session.mjs";
 
-function fixture(input = { operations: ["workspace.read"] }) {
+function fixture(input = { operations: ["workspace.read"] }, extra = {}) {
   const calls = [], now = Date.now(); let hash, alter = (value) => value, error;
-  const session = createSetupSession(input, { now: () => now, fetcher: async (url, options) => {
+  const session = createSetupSession(input, { ...extra, now: () => now, fetcher: async (url, options) => {
     calls.push({ url, ...options });
     if (error) throw new Error(error);
     const body = options.body && JSON.parse(options.body);
@@ -84,10 +84,32 @@ test("bounds response bodies and accepts only known server error codes", async (
     [new Response("{broken"), "invalid_response"],
     [Response.json({ error: { code: "rate_limited", message: "private detail" } }, { status: 429 }), "rate_limited"],
     [Response.json({ error: { code: "private detail" } }, { status: 500 }), "service_unavailable"],
+    // Proxy error pages are transport failures that keep the approval wait alive.
+    [new Response("<html>Bad gateway</html>", { status: 502 }), "service_unavailable"],
+    [new Response("<html>Too many requests</html>", { status: 429 }), "rate_limited"],
+    [new Response("x".repeat(70_000), { status: 503 }), "service_unavailable"],
+    [new Response(Buffer.from([0xff, 0xfe]), { status: 504 }), "service_unavailable"],
   ]) {
     const session = createSetupSession({ operations: ["workspace.read"] }, { fetcher: async () => response });
     await assert.rejects(session.begin(), { message });
   }
+});
+test("an interrupted run aborts the request in flight", async () => {
+  const controller = new AbortController(); let seen;
+  const session = createSetupSession({ operations: ["workspace.read"] }, { signal: controller.signal,
+    fetcher: async (_url, options) => { seen = options.signal; controller.abort(); throw new Error("aborted"); } });
+  await assert.rejects(session.begin(), { message: "service_unavailable" });
+  assert.equal(seen.aborted, true);
+  await assert.rejects(session.begin(), { message: "service_unavailable" });
+});
+test("revoking after an interrupt still reaches the server", async () => {
+  const controller = new AbortController();
+  const { session, calls } = fixture(undefined, { signal: controller.signal });
+  await session.begin();
+  controller.abort();
+  assert.equal((await session.revoke()).status, "revoked");
+  assert.equal(calls.at(-1).method, "DELETE");
+  assert.equal(calls.at(-1).signal.aborted, false);
 });
 
 async function webhookDownloadFixture(alter = response => response) {

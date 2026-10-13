@@ -25,7 +25,7 @@ export function validateSetupWorkspace(value) {
 }
 
 // The bearer stays inside this closure: callers can persist receipts, never authority.
-export function createSetupSession(input, { appUrl = "https://app.commish.sh", fetcher = fetch, now = Date.now } = {}) {
+export function createSetupSession(input, { appUrl = "https://app.commish.sh", fetcher = fetch, now = Date.now, signal } = {}) {
   let origin;
   try { origin = new URL(appUrl); } catch { fail("invalid_app_url"); }
   if (origin.username || origin.password || origin.search || origin.hash || origin.pathname !== "/" ||
@@ -58,9 +58,15 @@ export function createSetupSession(input, { appUrl = "https://app.commish.sh", f
         method, headers: { ...(begin ? {} : { authorization: `Bearer ${verifier}` }),
           ...(begin || body ? { "content-type": "application/json" } : {}) },
         ...(begin || body ? { body: JSON.stringify(begin ? { ...expected, challengeHash: hash } : body) } : {}),
-        redirect: "error", cache: "no-store", signal: AbortSignal.timeout(15_000),
+        redirect: "error", cache: "no-store",
+        // Revoking is the cleanup an interrupted run performs, so only its own timeout bounds it.
+        signal: signal && method !== "DELETE" ? AbortSignal.any([signal, AbortSignal.timeout(15_000)]) : AbortSignal.timeout(15_000),
       });
     } catch { fail("service_unavailable"); }
+    // An error page from a proxy or the platform is a transport failure, never a
+    // malformed approval: it maps to the retryable transport code so polling continues.
+    const transport = response.status === 429 ? "rate_limited" : "service_unavailable";
+    const malformed = () => fail(response.ok ? "invalid_response" : transport);
     const chunks = []; let size = 0;
     try {
       if (!response.body) fail("invalid_response");
@@ -70,10 +76,10 @@ export function createSetupSession(input, { appUrl = "https://app.commish.sh", f
         if (size > (secret && response.ok ? 512 : begin && expected.setupIntent && response.ok ? 266_240 : configuration && response.ok ? 1_048_576 : 65_536)) fail("invalid_response");
         chunks.push(chunk);
       }
-    } catch { fail("invalid_response"); }
+    } catch { malformed(); }
     let decoded;
     try { decoded = new TextDecoder("utf-8", { fatal: true }).decode(Buffer.concat(chunks)); }
-    catch { fail("invalid_response"); }
+    catch { malformed(); }
     if (secret && response.ok) {
       if (!boundWorkspace || response.headers.get("content-type") !== "application/octet-stream" ||
           response.headers.get("x-commish-setup-request-id") !== hash || response.headers.get("x-commish-workspace-id") !== boundWorkspace ||
@@ -82,8 +88,8 @@ export function createSetupSession(input, { appUrl = "https://app.commish.sh", f
       return decoded;
     }
     let payload;
-    try { payload = JSON.parse(decoded); } catch { fail("invalid_response"); }
-    if (!response.ok) fail(codes.has(payload?.error?.code) ? payload.error.code : "service_unavailable");
+    try { payload = JSON.parse(decoded); } catch { malformed(); }
+    if (!response.ok) fail(codes.has(payload?.error?.code) ? payload.error.code : transport);
     const value = payload?.data;
     if (!record(value) || value.protocol !== "commish-cli-setup-v2" || value.requestId !== hash) fail("invalid_response");
     return value;

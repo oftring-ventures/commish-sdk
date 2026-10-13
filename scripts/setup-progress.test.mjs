@@ -52,3 +52,12 @@ test("rejects corrupt journal entries and preserves customized ignore files", t 
   assert.throws(() => openSetupProgress(root, config), { message: "setup_file_conflict" });
   assert.equal(readFileSync(join(root, ".commish/.gitignore"), "utf8"), "custom\n");
 });
+
+test("a directory without any git executable is treated as plain and still ignores its state", t => {
+  const root = fixture(t), path = process.env.PATH;
+  process.env.PATH = mkdtempSync(join(tmpdir(), "commish-no-git-"));
+  t.after(() => { process.env.PATH = path; });
+  const state = openSetupProgress(root, config);
+  assert.equal(readFileSync(join(root, ".commish/.gitignore"), "utf8"), "*\n");
+  assert.equal(state.directory, ".commish/setup/test");
+});

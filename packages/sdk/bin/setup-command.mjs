@@ -47,7 +47,8 @@ export async function runSetupCommand(args, { root = process.cwd(), execute = ru
   const controller = new AbortController(), stop = () => controller.abort();
   const json = args.includes("--json");
   const finish = result => out(json ? JSON.stringify(result) : resultText(result));
-  signals.on("SIGINT", stop); signals.on("SIGTERM", stop);
+  // once: a second signal is no longer intercepted and ends the process immediately.
+  signals.once("SIGINT", stop); signals.once("SIGTERM", stop);
   try {
     const parsed = parseSetupArguments(root, args);
     if (parsed.kind === "help") { finish({ status: "help", flags: parsed.flags, integrationVerified: false }); return 0; }

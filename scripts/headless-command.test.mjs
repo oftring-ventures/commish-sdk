@@ -125,3 +125,36 @@ test("TEST helpers forbid LIVE and remote receivers; webhook signatures match th
   } });
   assert.equal(result.synthetic, true); assert.equal(result.integrationVerified, false); assert(!JSON.stringify(result).includes(secret));
 });
+
+test("login keeps waiting through gateway errors and names its authorization file on failure", async t => {
+  const root = directory(t), notices = []; let input, calls = 0;
+  const answers = [() => new Response("<html>Bad gateway</html>", { status: 502 }),
+    () => Response.json({ error: { code: "rate_limited" } }, { status: 429, headers: { "retry-after": "1" } }),
+    () => respond(grantFor(input, "authorized"))];
+  const fetcher = async (_url, init) => {
+    if (init.method === "POST") { input = JSON.parse(init.body); return respond(grantFor(input, "pending")); }
+    return answers[calls++]();
+  };
+  const result = await executeAuth(["login", "--workspace", proposal.workspaceId, "--application", proposal.applicationId,
+    "--scopes", "diagnostics.read", "--wait", "30"], { root, env: {}, fetcher, wait: async () => {}, notify: value => notices.push(value) });
+  assert.equal(result.status, "authorized"); assert.equal(calls, 3);
+  assert.deepEqual(notices.map(({ status, code }) => [status, code]),
+    [["authorization_required", undefined], ["waiting", "request_failed"], ["waiting", "rate_limited"]]);
+  assert(notices.every(notice => notice.authorizationFile === result.authorizationFile));
+  const denied = async (_url, init) => init.method === "POST" ? respond(grantFor(JSON.parse(init.body), "pending"))
+    : Response.json({ error: { code: "forbidden" } }, { status: 403 });
+  await assert.rejects(executeAuth(["login", "--workspace", proposal.workspaceId, "--application", proposal.applicationId,
+    "--scopes", "diagnostics.read", "--wait", "30"], { root: directory(t), env: {}, fetcher: denied, wait: async () => {} }),
+    error => error.message === "forbidden" && /^\.commish\/management\/[a-f0-9]{24}\/authorization\.json$/.test(error.detail.authorizationFile));
+  const output = [], diagnostics = [], controller = new AbortController();
+  const interrupted = async (_url, init) => {
+    if (init.method === "POST") return respond(grantFor(JSON.parse(init.body), "pending"));
+    controller.abort(); throw new Error("private transport detail");
+  };
+  assert.equal(await runAuthCommand(["login", "--workspace", proposal.workspaceId, "--application", proposal.applicationId,
+    "--scopes", "diagnostics.read", "--wait", "30"], { root: directory(t), env: {}, fetcher: interrupted, wait: async () => {},
+    signal: controller.signal, out: value => output.push(value), diagnostic: value => diagnostics.push(value) }), 130);
+  const receipt = JSON.parse(diagnostics.pop());
+  assert.equal(receipt.code, "interrupted"); assert.match(receipt.authorizationFile, /authorization\.json$/);
+  assert(!JSON.stringify([output, diagnostics]).includes("private transport detail"));
+});

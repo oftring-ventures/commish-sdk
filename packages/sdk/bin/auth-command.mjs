@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
-import { argumentsFor, errorReceipt, fail, requestJson } from "./cli-http.mjs";
+import { CliError, argumentsFor, errorReceipt, fail, requestJson } from "./cli-http.mjs";
 import { writeSetupFile } from "./setup-files.mjs";
 import { protectPrivateState } from "./setup-progress.mjs";
 import { managementCatalog, managementClient, managementMode, managementUrl, readManagementAuthorization, tokenHash, validateManagementGrant } from "./management-client.mjs";
@@ -54,20 +54,34 @@ export async function executeAuth(args, { root = process.cwd(), env = process.en
   protectPrivateState(root);
   // Publish authority privately before begin; retries never lose their bearer.
   writeSetupFile(root, path, JSON.stringify(state) + "\n", { privateFile: true });
-  const started = await requestJson(`${state.baseUrl}/grants`, { method: "POST", signal,
-    headers: { "content-type": "application/json" }, body: JSON.stringify(state.proposal) }, fetcher);
-  let grant = validateManagementGrant(started.body.data, state.token, state.proposal);
-  const approvalUrl = `${new URL(state.baseUrl).origin}/cli/manage/${grant.requestId}`;
-  if (grant.status === "pending") notify({ version: 1, status: "authorization_required", approvalUrl, pairingCode: grant.pairingCode,
-    workspaceId: grant.workspaceId, applicationId: grant.applicationId, mode, scopes: grant.scopes, kind: grant.kind,
-    requestExpiresAt: grant.requestExpiresAt, authorizationFile: path });
-  const client = managementClient({ ...clientOptions, authFile: path }), deadline = now() + Number(seconds) * 1000;
-  while (grant.status === "pending" && now() < deadline) {
-    if (signal?.aborted) fail("interrupted");
-    await wait(Math.min(2000, deadline - now()), undefined, { signal });
-    grant = await client.status();
+  try {
+    const started = await requestJson(`${state.baseUrl}/grants`, { method: "POST", signal,
+      headers: { "content-type": "application/json" }, body: JSON.stringify(state.proposal) }, fetcher);
+    let grant = validateManagementGrant(started.body.data, state.token, state.proposal);
+    const approvalUrl = `${new URL(state.baseUrl).origin}/cli/manage/${grant.requestId}`;
+    if (grant.status === "pending") notify({ version: 1, status: "authorization_required", approvalUrl, pairingCode: grant.pairingCode,
+      workspaceId: grant.workspaceId, applicationId: grant.applicationId, mode, scopes: grant.scopes, kind: grant.kind,
+      requestExpiresAt: grant.requestExpiresAt, authorizationFile: path });
+    const client = managementClient({ ...clientOptions, authFile: path }), deadline = now() + Number(seconds) * 1000;
+    while (grant.status === "pending" && now() < deadline) {
+      if (signal?.aborted) fail("interrupted");
+      await wait(Math.min(2000, deadline - now()), undefined, { signal });
+      try { grant = await client.status(); }
+      catch (error) {
+        // A gateway error or rate limit while the human approves is not a decision: keep waiting.
+        if (!(error instanceof CliError) || !(error.message === "service_unavailable" || error.detail?.retryable)) throw error;
+        notify({ version: 1, status: "waiting", code: error.message, authorizationFile: path });
+        const seconds = error.detail?.retryAfter ?? (error.message === "rate_limited" ? 10 : 5);
+        await wait(Math.max(0, Math.min(seconds * 1000, deadline - now())), undefined, { signal });
+      }
+    }
+    return { version: 1, status: grant.status, grant, authorizationFile: path, ...(grant.status === "pending" ? { approvalUrl } : {}) };
+  } catch (error) {
+    // The retained file is the resume and revocation handle, so every failure names it.
+    if (signal?.aborted) throw new CliError("interrupted", { authorizationFile: path });
+    if (error instanceof CliError) error.detail = { ...error.detail, authorizationFile: path };
+    throw error;
   }
-  return { version: 1, status: grant.status, grant, authorizationFile: path, ...(grant.status === "pending" ? { approvalUrl } : {}) };
 }
 export async function runAuthCommand(args, { out = console.log, diagnostic = console.error, ...options } = {}) {
   const controller = new AbortController(), interrupt = () => controller.abort();
@@ -76,8 +90,9 @@ export async function runAuthCommand(args, { out = console.log, diagnostic = con
     const result = await executeAuth(args, { ...options, signal: options.signal ?? controller.signal, notify: value => diagnostic(JSON.stringify(value)) });
     out(JSON.stringify(result)); return result.status === "pending" ? 2 : ["denied", "expired"].includes(result.status) ? 1 : 0;
   } catch (error) {
-    const interrupted = controller.signal.aborted || options.signal?.aborted;
-    diagnostic(JSON.stringify(interrupted ? { version: 1, status: "error", code: "interrupted", nextAction: "Resume login with the retained authorization file or revoke it." } : errorReceipt(error)));
+    const interrupted = controller.signal.aborted || options.signal?.aborted, file = error?.detail?.authorizationFile;
+    diagnostic(JSON.stringify(interrupted ? { version: 1, status: "error", code: "interrupted", ...(file ? { authorizationFile: file } : {}),
+      nextAction: "Resume login with the retained authorization file or revoke it." } : errorReceipt(error)));
     return interrupted ? 130 : 1;
   } finally { process.removeListener("SIGINT", interrupt); process.removeListener("SIGTERM", interrupt); }
 }
