@@ -24,8 +24,11 @@ export function protectPrivateState(root) {
   const git = args => spawnSync("git", args, { cwd: root, encoding: "utf8", timeout: 5000, maxBuffer: 65536,
     env: { ...process.env, GIT_DIR: undefined, GIT_WORK_TREE: undefined, GIT_INDEX_FILE: undefined, GIT_COMMON_DIR: undefined, LC_ALL: "C" }, windowsHide: true });
   const check = git(["rev-parse", "--is-inside-work-tree"]);
-  const repository = check.status === 0 && check.stdout.trim() === "true";
-  if (!repository && !(check.status === 128 && check.stderr.includes("not a git repository"))) fail("setup_git_unavailable");
+  // Without a git executable the directory is treated as plain; the state directory still
+  // ignores itself, so a later checkout never tracks it by accident.
+  const gitless = check.error?.code === "ENOENT";
+  const repository = !gitless && check.status === 0 && check.stdout.trim() === "true";
+  if (!gitless && !repository && !(check.status === 128 && check.stderr.includes("not a git repository"))) fail("setup_git_unavailable");
   if (repository) {
     const tracked = git(["--literal-pathspecs", "ls-files", "--cached", "-z", "--", ".commish"]);
     if (tracked.status !== 0) fail("setup_git_unavailable");

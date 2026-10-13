@@ -50,7 +50,9 @@ test("server request IDs, retry hints and gateway failures survive in error rece
   await assert.rejects(executeApi(["customers", "list"], { env, fetcher: async () => Response.json({ error: { code: "busy" } }, { status: 503, headers: { "retry-after": "5", "x-request-id": "req_busy" } }) }),
     error => error.message === "busy" && error.detail.retryable === true && error.detail.retryAfter === 5 && error.detail.requestId === "req_busy");
   await assert.rejects(executeApi(["customers", "list"], { env, fetcher: async () => new Response("<html>Bad gateway</html>", { status: 502 }) }),
-    error => error.message === "request_failed" && error.detail.httpStatus === 502);
+    error => error.message === "request_failed" && error.detail.httpStatus === 502 && error.detail.retryable === true);
+  await assert.rejects(executeApi(["customers", "list"], { env, fetcher: async () => new Response("<html>Gateway timeout</html>", { status: 504 }) }),
+    error => error.message === "request_failed" && error.detail.retryable === true);
   await assert.rejects(executeApi(["customers", "list"], { env, fetcher: async () => new Response("{}", { headers: { "x-request-id": "bad id with spaces" } }) }), /invalid_response/);
 });
 test("pagination is bounded, preserves filters and returns a resumable cursor", async () => {

@@ -37,7 +37,7 @@ export async function requestJson(url, init, fetcher = fetch) {
   // Keep the server's own request ID format (req_..., platform IDs); never echo anything else.
   const requestId = /^[A-Za-z0-9_.:-]{1,128}$/.test(rawId ?? "") ? rawId : null;
   const retryAfter = /^[0-9]{1,4}$/.test(response.headers.get("retry-after") ?? "") ? Number(response.headers.get("retry-after")) : undefined;
-  const failure = code => new CliError(code, { httpStatus: response.status, requestId, retryable: [429, 503].includes(response.status),
+  const failure = code => new CliError(code, { httpStatus: response.status, requestId, retryable: [429, 502, 503, 504].includes(response.status),
     ...(retryAfter === undefined ? {} : { retryAfter }) });
   let body;
   try {

@@ -84,10 +84,23 @@ test("bounds response bodies and accepts only known server error codes", async (
     [new Response("{broken"), "invalid_response"],
     [Response.json({ error: { code: "rate_limited", message: "private detail" } }, { status: 429 }), "rate_limited"],
     [Response.json({ error: { code: "private detail" } }, { status: 500 }), "service_unavailable"],
+    // Proxy error pages are transport failures that keep the approval wait alive.
+    [new Response("<html>Bad gateway</html>", { status: 502 }), "service_unavailable"],
+    [new Response("<html>Too many requests</html>", { status: 429 }), "rate_limited"],
+    [new Response("x".repeat(70_000), { status: 503 }), "service_unavailable"],
+    [new Response(Buffer.from([0xff, 0xfe]), { status: 504 }), "service_unavailable"],
   ]) {
     const session = createSetupSession({ operations: ["workspace.read"] }, { fetcher: async () => response });
     await assert.rejects(session.begin(), { message });
   }
+});
+test("an interrupted run aborts the request in flight", async () => {
+  const controller = new AbortController(); let seen;
+  const session = createSetupSession({ operations: ["workspace.read"] }, { signal: controller.signal,
+    fetcher: async (_url, options) => { seen = options.signal; controller.abort(); throw new Error("aborted"); } });
+  await assert.rejects(session.begin(), { message: "service_unavailable" });
+  assert.equal(seen.aborted, true);
+  await assert.rejects(session.begin(), { message: "service_unavailable" });
 });
 
 async function webhookDownloadFixture(alter = response => response) {

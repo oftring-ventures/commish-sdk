@@ -26,7 +26,7 @@ export function openSetupBrowser(url, { platform = process.platform, launch = sp
 // Interrupted runs reauthorize and resume from non-secret resource progress.
 export async function authorizeSetup(input, {
   appUrl, noOpen = false, notify = () => {}, signal,
-  session = createSetupSession(input, { appUrl }), openBrowser = openSetupBrowser,
+  session = createSetupSession(input, { appUrl, signal }), openBrowser = openSetupBrowser,
   now = Date.now, sleep = (ms) => delay(ms, undefined, { signal }),
 } = {}) {
   let authorized = false;

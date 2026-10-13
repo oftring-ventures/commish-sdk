@@ -571,7 +571,8 @@ or loss of workspace manager access removes its authority.
 The returned `authorizationFile` is owner-only and ignored under `.commish/`.
 Pass that path to subsequent commands; do not copy its contents into prompts or
 logs. `--wait 0` returns immediately with exit 2 while approval is pending. To
-resume, repeat login with `--auth-file <returned-path>` and the same mode.
+resume, repeat login with `--auth-file <returned-path>` and the same mode; error and
+interrupt receipts name that file as `authorizationFile`.
 `auth status` and `auth revoke` use that file too. The approval page also allows
 revocation. CI may receive `COMMISH_MANAGEMENT_TOKEN` through its secret manager
 instead of a local file; supplying both is rejected.
