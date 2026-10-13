@@ -35,11 +35,11 @@ function fixture(run) {
     artifacts: ["sdk", "next"].map((pkg) => {
       const archive = Buffer.from(`${pkg} already verified archive`),
         digest = createHash("sha512").update(archive).digest();
-      const file = `commish-${pkg}-0.3.0.tgz`;
+      const file = `commish-${pkg}-0.4.0.tgz`;
       writeFileSync(join(directory, file), archive);
       return {
         name: `@commish/${pkg}`,
-        version: "0.3.0",
+        version: "0.4.0",
         file,
         bytes: archive.length,
         sha512: digest.toString("hex"),
@@ -123,7 +123,7 @@ test("CI receipt rejects changed bytes, checksums, extra files and symlinked can
 test("CI receipts retain existing branch, tag and merge-queue push coverage", () => {
   for (const [event, ref] of [
     ["push", "heads/topic"],
-    ["push", "tags/v0.3.0"],
+    ["push", "tags/v0.4.0"],
     ["merge_group", "heads/gh-readonly-queue/main/pr-35"],
   ])
     fixture((directory, env) => {

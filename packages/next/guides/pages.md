@@ -3,7 +3,7 @@
 Experimental measurement requires same-origin browser Web Locks to establish one visitor identity across concurrent tabs. Unsupported browsers or bounded identity failures receive the standard page without new experimental measurement; consent-authorized attribution and shopping remain available.
 
 Pages is an optional module available from SDK/Next 0.3.0. Install matching
-package versions and keep your lockfile. This guide describes 0.3.0; check npm
+package versions and keep your lockfile. This guide describes 0.4.0; check npm
 for published availability. Earlier versions do not include these exports.
 Installing Pages does not enable LIVE activity, publish a creator's page or grant
 visitor consent. Your workspace administrator configures the brand content; each

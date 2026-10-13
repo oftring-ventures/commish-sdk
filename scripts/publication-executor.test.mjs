@@ -50,11 +50,11 @@ function fixture() {
   const artifacts = ["sdk", "next"].map((pkg) => {
     const metadata = {
       name: `@commish/${pkg}`,
-      version: "0.3.0",
+      version: "0.4.0",
       license: "MIT",
       repository: { url: `git+https://github.com/${repository}.git` },
       publishConfig: { access: "public", tag: "latest" },
-      ...(pkg === "next" ? { peerDependencies: { "@commish/sdk": "0.3.0" } } : {}),
+      ...(pkg === "next" ? { peerDependencies: { "@commish/sdk": "0.4.0" } } : {}),
     };
     const data = Buffer.from(JSON.stringify(metadata)),
       header = Buffer.alloc(512);
@@ -74,7 +74,7 @@ function fixture() {
       Buffer.concat([header, data, Buffer.alloc(((512 - (data.length % 512)) % 512) + 1024)]),
     );
     bytes[9] = 255;
-    const file = `commish-${pkg}-0.3.0.tgz`;
+    const file = `commish-${pkg}-0.4.0.tgz`;
     files.set(file, bytes);
     return {
       name: metadata.name,
@@ -152,8 +152,8 @@ function fixture() {
     COMMISH_NPM_ENVIRONMENT: "npm-publication",
     GITHUB_SHA: source,
     GITHUB_WORKFLOW_SHA: source,
-    GITHUB_REF: "refs/tags/v0.3.0",
-    GITHUB_WORKFLOW_REF: `${repository}/.github/workflows/publish-packages.yml@refs/tags/v0.3.0`,
+    GITHUB_REF: "refs/tags/v0.4.0",
+    GITHUB_WORKFLOW_REF: `${repository}/.github/workflows/publish-packages.yml@refs/tags/v0.4.0`,
     COMMISH_NPM_APPROVED_SOURCE: source,
     COMMISH_NPM_APPROVED_MANIFEST_SHA256: ci.manifestSha256,
     COMMISH_NPM_APPROVED_CI_RECEIPT_SHA256: hash(files.get("ci-receipt.json")),

@@ -1,6 +1,6 @@
 {
   "name": "@commish/sdk",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Public server, browser and webhook interfaces for Commish",
   "license": "MIT",
   "repository": {

@@ -9,18 +9,18 @@ Both packages are MIT licensed.
 
 Use Node 22 or later and your application's package manager. Keep the dependency
 lockfile. Releases are built on the Node version in `.node-version`.
-This source documents version 0.3.0; check the [npm SDK package](https://www.npmjs.com/package/@commish/sdk)
+This source documents version 0.4.0; check the [npm SDK package](https://www.npmjs.com/package/@commish/sdk)
 for published availability. Documentation on a release tag matches that release.
 
 ```sh
-pnpm add --save-exact @commish/sdk@0.3.0
+pnpm add --save-exact @commish/sdk@0.4.0
 # Optional, for Next.js App Router applications:
-pnpm add --save-exact @commish/next@0.3.0
+pnpm add --save-exact @commish/next@0.4.0
 ```
 
 The SDK client also runs on edge runtimes; webhook verification and the Next
 server helpers need Node. The Next adapter requires the same SDK minor version
-(`~0.3.0`), Next >=16.3.8 <17 and
+(`~0.4.0`), Next >=16.3.8 <17 and
 React >=19.2.8 <20. Other frameworks can use the core SDK directly.
 
 ## Start in TEST
