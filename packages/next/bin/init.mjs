@@ -19,29 +19,47 @@ const usageText = [
   "Credential setup and verification live in @commish/sdk: commish setup, commish verify --json.",
 ].join("\n");
 if (args.length === 1 && ["--version", "-v"].includes(args[0])) {
-  console.log(json ? JSON.stringify({ name: manifest.name, version: manifest.version }) : manifest.version);
+  console.log(
+    json ? JSON.stringify({ name: manifest.name, version: manifest.version }) : manifest.version,
+  );
   process.exit(0);
 }
-if (args.some((arg) => ["--help", "-h", "help"].includes(arg)) &&
-    args.every((arg) => ["--help", "-h", "help", "--json"].includes(arg))) {
+if (
+  args.some((arg) => ["--help", "-h", "help"].includes(arg)) &&
+  args.every((arg) => ["--help", "-h", "help", "--json"].includes(arg))
+) {
   console.log(json ? JSON.stringify(usage) : usageText);
   process.exit(0);
 }
 // Private-file safety relies on POSIX modes; use WSL on Windows. The version and
 // usage above touch no files, so they still answer there.
 if (process.platform === "win32") {
-  console.error(json ? JSON.stringify({ status: "error", code: "unsupported_platform", platform: "win32",
-    guidance: "Run the Commish CLI on macOS, Linux or WSL." })
-    : "The Commish CLI supports macOS, Linux and WSL; native Windows is not supported.");
+  console.error(
+    json
+      ? JSON.stringify({
+          status: "error",
+          code: "unsupported_platform",
+          platform: "win32",
+          guidance: "Run the Commish CLI on macOS, Linux or WSL.",
+        })
+      : "The Commish CLI supports macOS, Linux and WSL; native Windows is not supported.",
+  );
   process.exit(1);
 }
 if (["setup", "verify"].includes(args[0])) {
   // Both moved to the framework-independent CLI, which keeps key material on disk
   // before any request and resumes safely; this package keeps install and Pages.
   const command = `commish ${args[0]}`;
-  console.error(json ? JSON.stringify({ status: "error", code: "command_moved", command,
-    guidance: `Run ${command} from @commish/sdk; commish-next keeps the installer and Pages commands.` })
-    : `commish-next ${args[0]} moved to ${command} (@commish/sdk).`);
+  console.error(
+    json
+      ? JSON.stringify({
+          status: "error",
+          code: "command_moved",
+          command,
+          guidance: `Run ${command} from @commish/sdk; commish-next keeps the installer and Pages commands.`,
+        })
+      : `commish-next ${args[0]} moved to ${command} (@commish/sdk).`,
+  );
   process.exit(1);
 }
 if (args[0] === "pages") {
@@ -53,42 +71,55 @@ if (args[0] === "pages") {
     // Pages reports stable snake_case codes; anything else (a transport or runtime
     // error) is reported as unavailable so receipts never carry raw messages.
     if (process.env.COMMISH_DEBUG === "1") console.error(error);
-    const code = /^[a-z][a-z0-9_]{2,80}$/.test(error?.message ?? "") ? error.message : "pages_unavailable";
+    const code = /^[a-z][a-z0-9_]{2,80}$/.test(error?.message ?? "")
+      ? error.message
+      : "pages_unavailable";
     console.error(JSON.stringify({ status: "error", code, integrationVerified: false }));
     process.exitCode = 1;
   }
-} else try {
-  let parsed;
+} else
   try {
-    parsed = parseArgs({ args, strict: true, allowPositionals: true,
-      options: { write: { type: "boolean" }, json: { type: "boolean" } } });
-  } catch {
-    throw new Error(usageText);
-  }
-  if (parsed.positionals.length > 1 || (parsed.positionals[0] ?? "init") !== "init" ||
-      new Set(args).size !== args.length) throw new Error(usageText);
-  const stat = (path) => {
-    try { return lstatSync(path); } catch (error) {
-      if (error.code === "ENOENT") return null;
-      throw error;
+    let parsed;
+    try {
+      parsed = parseArgs({
+        args,
+        strict: true,
+        allowPositionals: true,
+        options: { write: { type: "boolean" }, json: { type: "boolean" } },
+      });
+    } catch {
+      throw new Error(usageText);
     }
-  };
-  // Next ignores src/app when a root app directory exists.
-  const app = stat("app") ? "app" : stat("src/app") ? "src/app" : null;
-  if (!app) throw new Error("No Next.js App Router directory found.");
-  const safePath = (path) => {
-    let current = ".";
-    for (const part of path.split("/")) {
-      current = join(current, part);
-      const entry = stat(current);
-      if (entry && (entry.isSymbolicLink() || (current !== path && !entry.isDirectory())))
-        throw new Error(`Refusing unsafe path: ${current}`);
-    }
-  };
-  safePath(`${app}/`);
-  const typed = Boolean(stat("tsconfig.json") || stat(`${app}/layout.tsx`));
-  const files = {
-    [`${app}/api/commish/attribution/route.${typed ? "ts" : "js"}`]: `import { createAttributionHandler } from "@commish/next";
+    if (
+      parsed.positionals.length > 1 ||
+      (parsed.positionals[0] ?? "init") !== "init" ||
+      new Set(args).size !== args.length
+    )
+      throw new Error(usageText);
+    const stat = (path) => {
+      try {
+        return lstatSync(path);
+      } catch (error) {
+        if (error.code === "ENOENT") return null;
+        throw error;
+      }
+    };
+    // Next ignores src/app when a root app directory exists.
+    const app = stat("app") ? "app" : stat("src/app") ? "src/app" : null;
+    if (!app) throw new Error("No Next.js App Router directory found.");
+    const safePath = (path) => {
+      let current = ".";
+      for (const part of path.split("/")) {
+        current = join(current, part);
+        const entry = stat(current);
+        if (entry && (entry.isSymbolicLink() || (current !== path && !entry.isDirectory())))
+          throw new Error(`Refusing unsafe path: ${current}`);
+      }
+    };
+    safePath(`${app}/`);
+    const typed = Boolean(stat("tsconfig.json") || stat(`${app}/layout.tsx`));
+    const files = {
+      [`${app}/api/commish/attribution/route.${typed ? "ts" : "js"}`]: `import { createAttributionHandler } from "@commish/next";
 
 export const runtime = "nodejs";
 export const POST = createAttributionHandler({
@@ -96,7 +127,7 @@ export const POST = createAttributionHandler({
   secretKey: process.env.COMMISH_SECRET_KEY,
 });
 `,
-    [`${app}/commish-provider.${typed ? "tsx" : "jsx"}`]: `import { CommishProvider } from "@commish/next/react";
+      [`${app}/commish-provider.${typed ? "tsx" : "jsx"}`]: `import { CommishProvider } from "@commish/next/react";
 ${typed ? 'import type { ReactNode } from "react";\n' : ""}
 export default function CommishRootProvider({ children }${typed ? ": { children: ReactNode }" : ""}) {
   return (
@@ -109,47 +140,78 @@ export default function CommishRootProvider({ children }${typed ? ": { children:
   );
 }
 `,
-  };
-  for (const extension of ["js", "jsx", "ts", "tsx"])
-    if (stat(`${app}/api/commish/attribution/page.${extension}`))
-      throw new Error("The attribution URL already has a page. Choose a different capturePath and integrate using the Next setup guide.");
-  const plan = Object.entries(files).map(([path, content]) => {
-    safePath(path);
+    };
     for (const extension of ["js", "jsx", "ts", "tsx"])
-      if (path.replace(/\.[^.]+$/, `.${extension}`) !== path &&
-          stat(path.replace(/\.[^.]+$/, `.${extension}`)))
-        throw new Error(`Conflicting file extension for ${path}; integrate using the Next setup guide.`);
-    const entry = stat(path);
-    return { path, status: !entry ? "create" :
-      entry.isFile() && readFileSync(path, "utf8") === content ? "unchanged" : "conflict" };
-  });
-  const conflicts = plan.filter(({ status }) => status === "conflict");
-  if (conflicts.length) throw new Error(`Existing custom files: ${conflicts.map(({ path }) => path).join(", ")}. No files changed; integrate using the Next setup guide.`);
-  const write = Boolean(parsed.values.write);
-  if (write) for (const { path, status } of plan) if (status === "create") {
-    mkdirSync(dirname(path), { recursive: true });
-    writeFileSync(path, files[path], { flag: "wx" });
+      if (stat(`${app}/api/commish/attribution/page.${extension}`))
+        throw new Error(
+          "The attribution URL already has a page. Choose a different capturePath and integrate using the Next setup guide.",
+        );
+    const plan = Object.entries(files).map(([path, content]) => {
+      safePath(path);
+      for (const extension of ["js", "jsx", "ts", "tsx"])
+        if (
+          path.replace(/\.[^.]+$/, `.${extension}`) !== path &&
+          stat(path.replace(/\.[^.]+$/, `.${extension}`))
+        )
+          throw new Error(
+            `Conflicting file extension for ${path}; integrate using the Next setup guide.`,
+          );
+      const entry = stat(path);
+      return {
+        path,
+        status: !entry
+          ? "create"
+          : entry.isFile() && readFileSync(path, "utf8") === content
+            ? "unchanged"
+            : "conflict",
+      };
+    });
+    const conflicts = plan.filter(({ status }) => status === "conflict");
+    if (conflicts.length)
+      throw new Error(
+        `Existing custom files: ${conflicts.map(({ path }) => path).join(", ")}. No files changed; integrate using the Next setup guide.`,
+      );
+    const write = Boolean(parsed.values.write);
+    if (write)
+      for (const { path, status } of plan)
+        if (status === "create") {
+          mkdirSync(dirname(path), { recursive: true });
+          writeFileSync(path, files[path], { flag: "wx" });
+        }
+    const result = {
+      status: write ? "files_installed" : "plan",
+      app,
+      files: plan,
+      requiredEnvironment: [
+        "COMMISH_API_URL",
+        "COMMISH_SECRET_KEY",
+        "NEXT_PUBLIC_COMMISH_PUBLISHABLE_KEY",
+        "NEXT_PUBLIC_COMMISH_APPLICATION_ID",
+      ],
+      next: [
+        `Import CommishRootProvider from './commish-provider' in the existing ${app}/layout file and wrap its existing children. Preserve the layout's other content.`,
+        "Set matching application credentials for the selected TEST or LIVE mode. Keep COMMISH_SECRET_KEY server-only.",
+        "Await referral capture before Checkout; await withCommishStripeMetadata(params) in your authenticated server Checkout handler.",
+        "Build the application, then verify a referral capture and attributed Checkout in TEST before LIVE activation.",
+      ],
+      integrationVerified: false,
+    };
+    console.log(
+      json
+        ? JSON.stringify(result)
+        : [
+            write
+              ? "Commish integration files installed."
+              : "Commish setup plan (use --write to install).",
+            ...plan.map(({ path, status }) => `${status}: ${path}`),
+            `Required environment: ${result.requiredEnvironment.join(", ")}`,
+            ...result.next,
+          ].join("\n"),
+    );
+  } catch (error) {
+    if (process.env.COMMISH_DEBUG === "1") console.error(error);
+    console.error(
+      json ? JSON.stringify({ status: "error", message: error.message }) : error.message,
+    );
+    process.exitCode = 1;
   }
-  const result = {
-    status: write ? "files_installed" : "plan", app, files: plan,
-    requiredEnvironment: ["COMMISH_API_URL", "COMMISH_SECRET_KEY",
-      "NEXT_PUBLIC_COMMISH_PUBLISHABLE_KEY", "NEXT_PUBLIC_COMMISH_APPLICATION_ID"],
-    next: [
-      `Import CommishRootProvider from './commish-provider' in the existing ${app}/layout file and wrap its existing children. Preserve the layout's other content.`,
-      "Set matching application credentials for the selected TEST or LIVE mode. Keep COMMISH_SECRET_KEY server-only.",
-      "Await referral capture before Checkout; await withCommishStripeMetadata(params) in your authenticated server Checkout handler.",
-      "Build the application, then verify a referral capture and attributed Checkout in TEST before LIVE activation.",
-    ],
-    integrationVerified: false,
-  };
-  console.log(json ? JSON.stringify(result) : [
-    write ? "Commish integration files installed." : "Commish setup plan (use --write to install).",
-    ...plan.map(({ path, status }) => `${status}: ${path}`),
-    `Required environment: ${result.requiredEnvironment.join(", ")}`,
-    ...result.next,
-  ].join("\n"));
-} catch (error) {
-  if (process.env.COMMISH_DEBUG === "1") console.error(error);
-  console.error(json ? JSON.stringify({ status: "error", message: error.message }) : error.message);
-  process.exitCode = 1;
-}

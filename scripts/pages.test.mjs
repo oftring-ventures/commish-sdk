@@ -1,34 +1,27 @@
-import test from "node:test";
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import {
-  mkdtempSync,
   mkdirSync,
-  writeFileSync,
-  readFileSync,
+  mkdtempSync,
   readdirSync,
+  readFileSync,
   rmSync,
   symlinkSync,
+  writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { spawnSync } from "node:child_process";
+import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { runPages } from "../packages/next/bin/pages.mjs";
-const cli = fileURLToPath(
-  new URL("../packages/next/bin/init.mjs", import.meta.url),
-);
+
+const cli = fileURLToPath(new URL("../packages/next/bin/init.mjs", import.meta.url));
 function fixture(t) {
   const root = mkdtempSync(join(tmpdir(), "commish-pages-cli-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));
   mkdirSync(join(root, "app"));
-  writeFileSync(
-    join(root, "app/layout.tsx"),
-    "export default function Layout() {}\n",
-  );
-  writeFileSync(
-    join(root, "package.json"),
-    JSON.stringify({ dependencies: { next: "16.3.6" } }),
-  );
+  writeFileSync(join(root, "app/layout.tsx"), "export default function Layout() {}\n");
+  writeFileSync(join(root, "package.json"), JSON.stringify({ dependencies: { next: "16.3.6" } }));
   return {
     root,
     run: (...args) =>
@@ -49,27 +42,17 @@ test("no arguments remain a dry run and Pages apply creates only missing files",
   assert.deepEqual(readdirSync(join(f.root, "app")), before);
   result = f.run("pages", "--apply", "--json");
   assert.equal(result.status, 0, result.stderr);
-  assert.match(
-    readFileSync(join(f.root, "app/c/[creator]/page.tsx"), "utf8"),
-    /createCreatorPage/,
-  );
+  assert.match(readFileSync(join(f.root, "app/c/[creator]/page.tsx"), "utf8"), /createCreatorPage/);
   result = f.run("pages", "--apply", "--json");
   assert.equal(result.status, 0, result.stderr);
-  assert.ok(
-    JSON.parse(result.stdout).files.every(
-      (file) => file.status === "unchanged",
-    ),
-  );
+  assert.ok(JSON.parse(result.stdout).files.every((file) => file.status === "unchanged"));
 });
 test("custom files and symlinks are never overwritten", (t) => {
   const f = fixture(t);
   mkdirSync(join(f.root, "app/c/[creator]"), { recursive: true });
   writeFileSync(join(f.root, "app/c/[creator]/page.tsx"), "merchant-owned");
   assert.notEqual(f.run("pages", "--apply").status, 0);
-  assert.equal(
-    readFileSync(join(f.root, "app/c/[creator]/page.tsx"), "utf8"),
-    "merchant-owned",
-  );
+  assert.equal(readFileSync(join(f.root, "app/c/[creator]/page.tsx"), "utf8"), "merchant-owned");
   assert.deepEqual(readdirSync(join(f.root, "app")), ["c", "layout.tsx"]);
   symlinkSync(join(f.root, "app"), join(f.root, "app/linked"));
   assert.notEqual(f.run("pages", "--apply").status, 0);
@@ -80,19 +63,13 @@ for (const location of ["pages", "src/pages", "src"]) {
     const target = join(f.root, "shared-routes");
     const routes = location === "src" ? join(target, "pages") : target;
     mkdirSync(routes, { recursive: true });
-    writeFileSync(
-      join(routes, "other.jsx"),
-      "export default function Page() {}\n",
-    );
+    writeFileSync(join(routes, "other.jsx"), "export default function Page() {}\n");
     if (location === "src/pages") mkdirSync(join(f.root, "src"));
     symlinkSync(target, join(f.root, location));
     for (const mode of ["--dry-run", "--apply"]) {
       const result = f.run("pages", mode, "--json");
       assert.notEqual(result.status, 0);
-      assert.match(
-        result.stderr,
-        /symlink_requires_manual_integration|unsafe_install_path/,
-      );
+      assert.match(result.stderr, /symlink_requires_manual_integration|unsafe_install_path/);
       assert.deepEqual(readdirSync(join(f.root, "app")), ["layout.tsx"]);
       assert.equal(
         readFileSync(join(routes, "other.jsx"), "utf8"),
@@ -107,35 +84,19 @@ test("CMS catch-alls require manual namespace delegation without changing mercha
   writeFileSync(join(f.root, "app/[[...slug]]/page.tsx"), "cms-owned");
   const result = f.run("pages", "--root-aliases", "--apply", "--json");
   assert.notEqual(result.status, 0);
-  assert.match(
-    result.stderr,
-    /dynamic_route_ownership_requires_manual_integration/,
-  );
-  assert.deepEqual(readdirSync(join(f.root, "app")), [
-    "[[...slug]]",
-    "layout.tsx",
-  ]);
+  assert.match(result.stderr, /dynamic_route_ownership_requires_manual_integration/);
+  assert.deepEqual(readdirSync(join(f.root, "app")), ["[[...slug]]", "layout.tsx"]);
   assert.ok(!readdirSync(f.root).includes("next.config.mjs"));
-  assert.equal(
-    readFileSync(join(f.root, "app/[[...slug]]/page.tsx"), "utf8"),
-    "cms-owned",
-  );
+  assert.equal(readFileSync(join(f.root, "app/[[...slug]]/page.tsx"), "utf8"), "cms-owned");
 });
-for (const route of [
-  "[section]/[slug]",
-  "api/[...route]",
-  "(cms)/[section]/[slug]",
-]) {
+for (const route of ["[section]/[slug]", "api/[...route]", "(cms)/[section]/[slug]"]) {
   test(`dynamic route ${route} cannot be silently shadowed`, (t) => {
     const f = fixture(t);
     mkdirSync(join(f.root, "app", route), { recursive: true });
     writeFileSync(join(f.root, "app", route, "page.tsx"), "merchant-owned");
     const result = f.run("pages", "--apply", "--json");
     assert.notEqual(result.status, 0);
-    assert.match(
-      result.stderr,
-      /dynamic_route_ownership_requires_manual_integration/,
-    );
+    assert.match(result.stderr, /dynamic_route_ownership_requires_manual_integration/);
     assert.ok(!readdirSync(join(f.root, "app")).includes("c"));
   });
 }
@@ -156,17 +117,11 @@ test("Pages Router files and src middleware are inventoried", (t) => {
   mkdirSync(join(f.root, "pages/c"), { recursive: true });
   writeFileSync(join(f.root, "pages/c/[creator].tsx"), "merchant-owned");
   assert.notEqual(f.run("pages", "--apply").status, 0);
-  assert.equal(
-    readFileSync(join(f.root, "pages/c/[creator].tsx"), "utf8"),
-    "merchant-owned",
-  );
+  assert.equal(readFileSync(join(f.root, "pages/c/[creator].tsx"), "utf8"), "merchant-owned");
   rmSync(join(f.root, "pages"), { recursive: true });
   mkdirSync(join(f.root, "src"));
   writeFileSync(join(f.root, "src/proxy.js"), "export function proxy() {}");
-  assert.equal(
-    JSON.parse(f.run("pages", "doctor", "--json").stdout).routingReviewRequired,
-    true,
-  );
+  assert.equal(JSON.parse(f.run("pages", "doctor", "--json").stdout).routingReviewRequired, true);
 });
 test("doctor is read-only and rejects apply", (t) => {
   const f = fixture(t);
@@ -200,8 +155,7 @@ test("doctor checks every Pages entry point and the installed peer floors withou
   put("next", { version: "16.3.6" });
   put("react", { version: "19.2.7" });
   const status = () =>
-    JSON.parse(f.run("pages", "doctor", "--json").stdout).installedPackages
-      .status;
+    JSON.parse(f.run("pages", "doctor", "--json").stdout).installedPackages.status;
   assert.equal(status(), "peer_review_required");
   put("react", { version: "19.2.8" });
   assert.equal(status(), "pages_export_present_check_build");
@@ -210,12 +164,7 @@ test("doctor checks every Pages entry point and the installed peer floors withou
   assert.equal(status(), "pages_export_or_peer_not_installed");
 });
 
-for (const failedProbe of [
-  "canonical",
-  "alias",
-  "configuration",
-  "malformed",
-]) {
+for (const failedProbe of ["canonical", "alias", "configuration", "malformed"]) {
   test(`doctor preserves independent diagnostic results after ${failedProbe} failure`, async (t) => {
     const f = fixture(t),
       cwd = process.cwd();
@@ -225,9 +174,7 @@ for (const failedProbe of [
       COMMISH_PAGES_PROGRAM_ID: "prg_123456789012",
       COMMISH_PAGES_ORIGIN: "https://brand.example",
     };
-    const before = Object.fromEntries(
-      Object.keys(values).map((key) => [key, process.env[key]]),
-    );
+    const before = Object.fromEntries(Object.keys(values).map((key) => [key, process.env[key]]));
     t.after(() => {
       process.chdir(cwd);
       for (const [key, value] of Object.entries(before)) {
@@ -237,8 +184,7 @@ for (const failedProbe of [
     });
     process.chdir(f.root);
     Object.assign(process.env, values);
-    if (failedProbe === "configuration")
-      delete process.env.COMMISH_PAGES_ORIGIN;
+    if (failedProbe === "configuration") delete process.env.COMMISH_PAGES_ORIGIN;
     t.mock.method(globalThis, "fetch", async (url) => {
       if (String(url).startsWith("https://api.example.test/")) {
         if (failedProbe === "malformed") return Response.json({ data: null });
@@ -254,8 +200,7 @@ for (const failedProbe of [
         });
       }
       if (String(url).endsWith("/c/maya")) {
-        if (failedProbe === "canonical")
-          return new Response("x".repeat(262145));
+        if (failedProbe === "canonical") return new Response("x".repeat(262145));
         return new Response('data-commish-page="cpg_123456789012"');
       }
       if (failedProbe === "alias") throw new Error("timeout");
@@ -280,9 +225,7 @@ for (const failedProbe of [
     if (failedProbe !== "configuration" && failedProbe !== "malformed") {
       assert.equal(
         result.canonicalRoute,
-        failedProbe === "canonical"
-          ? "missing_conflicting_or_unavailable"
-          : "correct_page_marker",
+        failedProbe === "canonical" ? "missing_conflicting_or_unavailable" : "correct_page_marker",
       );
       assert.equal(
         result.aliasRoute,

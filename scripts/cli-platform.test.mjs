@@ -1,13 +1,21 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { fileURLToPath } from "node:url";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
 
 // Simulate native Windows before the entry point loads.
 const windows = 'data:text/javascript,Object.defineProperty(process,"platform",{value:"win32"})';
 const run = (bin, args) =>
-  spawnSync(process.execPath, ["--import", windows, fileURLToPath(new URL(`../packages/${bin}/bin/init.mjs`, import.meta.url)), ...args],
-    { encoding: "utf8" });
+  spawnSync(
+    process.execPath,
+    [
+      "--import",
+      windows,
+      fileURLToPath(new URL(`../packages/${bin}/bin/init.mjs`, import.meta.url)),
+      ...args,
+    ],
+    { encoding: "utf8" },
+  );
 
 test("native Windows answers version and usage but refuses every command", () => {
   for (const bin of ["sdk", "next"]) {

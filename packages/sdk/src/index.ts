@@ -1,34 +1,36 @@
-import type {
-  ConversionReceipt,
-  CursorPage,
-  PageOptions,
-  PublicConversion,
-  PublicRefund,
-  PublicCommission,
-  PublicPayout,
-  PublicWebhookDelivery,
-  WebhookDeliveryListOptions,
-  PublicProgram,
-  PublicMembership,
-  ConversionInput,
-  CustomerIdentification,
-  CustomerListOptions,
-  PublicCustomer,
-  CustomerIdentifyInput,
-  InvitationInput,
-  RefundInput,
-} from "./types.js";
 import {
   customerPageQuery,
-  webhookDeliveryPageQuery,
   iteratePages,
   pageQuery,
   publicId,
+  webhookDeliveryPageQuery,
 } from "./reads.js";
-export type * from "./types.js";
+import type {
+  ConversionInput,
+  ConversionReceipt,
+  CursorPage,
+  CustomerIdentification,
+  CustomerIdentifyInput,
+  CustomerListOptions,
+  InvitationInput,
+  PageOptions,
+  PublicCommission,
+  PublicConversion,
+  PublicCustomer,
+  PublicMembership,
+  PublicPayout,
+  PublicProgram,
+  PublicRefund,
+  PublicWebhookDelivery,
+  RefundInput,
+  WebhookDeliveryListOptions,
+} from "./types.js";
+
 export type * from "./pages.js";
 export { assertCreatorPage } from "./pages.js";
-import { assertCreatorPage, pageHandle, type CreatorPage } from "./pages.js";
+export type * from "./types.js";
+
+import { assertCreatorPage, type CreatorPage, pageHandle } from "./pages.js";
 
 export type CommishOptions = {
   secretKey: string;
@@ -62,10 +64,7 @@ export class Commish {
       !/^cm_(?:test|live)_sk_[A-Za-z0-9_-]{12,}$/.test(options.secretKey)
     )
       throw new Error("Invalid Commish secret key");
-    this.baseUrl = (options.baseUrl ?? "https://app.commish.sh/api/v1").replace(
-      /\/$/,
-      "",
-    );
+    this.baseUrl = (options.baseUrl ?? "https://app.commish.sh/api/v1").replace(/\/$/, "");
     this.fetcher = options.fetch ?? globalThis.fetch;
   }
 
@@ -80,17 +79,13 @@ export class Commish {
       idempotencyKey !== undefined &&
       (!normalizedIdempotencyKey || normalizedIdempotencyKey.length > 255)
     )
-      throw new TypeError(
-        "Idempotency key must be between 1 and 255 characters",
-      );
+      throw new TypeError("Idempotency key must be between 1 and 255 characters");
     const response = await this.fetcher(`${this.baseUrl}${path}`, {
       ...init,
       headers: {
         authorization: `Bearer ${this.options.secretKey}`,
         "content-type": "application/json",
-        ...(normalizedIdempotencyKey
-          ? { "idempotency-key": normalizedIdempotencyKey }
-          : {}),
+        ...(normalizedIdempotencyKey ? { "idempotency-key": normalizedIdempotencyKey } : {}),
         ...init.headers,
       },
     });
@@ -127,11 +122,7 @@ export class Commish {
   }
 
   readonly pages = {
-    resolve: async (input: {
-      programId: string;
-      handle: string;
-      signal?: AbortSignal;
-    }) => {
+    resolve: async (input: { programId: string; handle: string; signal?: AbortSignal }) => {
       const result = await this.request<{ data: CreatorPage }>(
         `/pages/${publicId(input.programId, "prg")}/${pageHandle(input.handle)}`,
         { method: "GET", cache: "no-store", signal: input.signal },
@@ -148,11 +139,7 @@ export class Commish {
 
   readonly conversions = {
     lookup: (externalId: string) => {
-      if (
-        typeof externalId !== "string" ||
-        !externalId ||
-        externalId.length > 255
-      )
+      if (typeof externalId !== "string" || !externalId || externalId.length > 255)
         throw new TypeError("External ID must be between 1 and 255 characters");
       return this.request<{ data: ConversionReceipt | null }>(
         `/conversions?${new URLSearchParams({ externalId })}`,
@@ -160,10 +147,9 @@ export class Commish {
       );
     },
     retrieve: (id: string) =>
-      this.request<{ data: PublicConversion }>(
-        `/conversions/${publicId(id, "cnv")}`,
-        { method: "GET" },
-      ),
+      this.request<{ data: PublicConversion }>(`/conversions/${publicId(id, "cnv")}`, {
+        method: "GET",
+      }),
     listRefunds: (id: string, options: PageOptions = {}) =>
       this.request<CursorPage<PublicRefund>>(
         `/conversions/${publicId(id, "cnv")}/refunds${pageQuery(options)}`,
@@ -177,14 +163,8 @@ export class Commish {
     iterateRefunds: (id: string, options: PageOptions = {}) =>
       iteratePages((page) => this.conversions.listRefunds(id, page), options),
     iterateCommissions: (id: string, options: PageOptions = {}) =>
-      iteratePages(
-        (page) => this.conversions.listCommissions(id, page),
-        options,
-      ),
-    create: (
-      input: ConversionCreateInput,
-      options: { idempotencyKey: string },
-    ) =>
+      iteratePages((page) => this.conversions.listCommissions(id, page), options),
+    create: (input: ConversionCreateInput, options: { idempotencyKey: string }) =>
       this.request<{ data: ConversionReceipt }>(
         "/conversions",
         { method: "POST", body: JSON.stringify(input) },
@@ -193,24 +173,16 @@ export class Commish {
   };
   readonly customers = {
     retrieve: (id: string) =>
-      this.request<{ data: PublicCustomer }>(
-        `/customers/${publicId(id, "cst")}`,
-        { method: "GET" },
-      ),
+      this.request<{ data: PublicCustomer }>(`/customers/${publicId(id, "cst")}`, {
+        method: "GET",
+      }),
     list: (options: CustomerListOptions = {}) =>
-      this.request<CursorPage<PublicCustomer>>(
-        `/customers${customerPageQuery(options)}`,
-        { method: "GET" },
-      ),
+      this.request<CursorPage<PublicCustomer>>(`/customers${customerPageQuery(options)}`, {
+        method: "GET",
+      }),
     iterate: (options: CustomerListOptions = {}) =>
-      iteratePages(
-        (page) => this.customers.list({ ...options, ...page }),
-        options,
-      ),
-    identify: (
-      input: CustomerIdentifyInput,
-      options: { idempotencyKey: string },
-    ) =>
+      iteratePages((page) => this.customers.list({ ...options, ...page }), options),
+    identify: (input: CustomerIdentifyInput, options: { idempotencyKey: string }) =>
       this.request<{ data: CustomerIdentification }>(
         "/customers/identify",
         { method: "POST", body: JSON.stringify(input) },
@@ -231,27 +203,22 @@ export class Commish {
   };
   readonly commissions = {
     retrieve: (id: string) =>
-      this.request<{ data: PublicCommission }>(
-        `/commissions/${publicId(id, "cms")}`,
-        { method: "GET" },
-      ),
+      this.request<{ data: PublicCommission }>(`/commissions/${publicId(id, "cms")}`, {
+        method: "GET",
+      }),
   };
   readonly webhookDeliveries = {
     retrieve: (id: string) =>
-      this.request<{ data: PublicWebhookDelivery }>(
-        `/webhook-deliveries/${publicId(id, "evt")}`,
-        { method: "GET" },
-      ),
+      this.request<{ data: PublicWebhookDelivery }>(`/webhook-deliveries/${publicId(id, "evt")}`, {
+        method: "GET",
+      }),
     list: (options: WebhookDeliveryListOptions = {}) =>
       this.request<CursorPage<PublicWebhookDelivery>>(
         `/webhook-deliveries${webhookDeliveryPageQuery(options)}`,
         { method: "GET" },
       ),
     iterate: (options: WebhookDeliveryListOptions = {}) =>
-      iteratePages(
-        (page) => this.webhookDeliveries.list({ ...options, ...page }),
-        options,
-      ),
+      iteratePages((page) => this.webhookDeliveries.list({ ...options, ...page }), options),
   };
   readonly payouts = {
     retrieve: (id: string) =>
@@ -261,24 +228,19 @@ export class Commish {
   };
   readonly programs = {
     retrieve: (id: string) =>
-      this.request<{ data: PublicProgram }>(
-        `/programs/${publicId(id, "prg")}`,
-        { method: "GET" },
-      ),
+      this.request<{ data: PublicProgram }>(`/programs/${publicId(id, "prg")}`, { method: "GET" }),
   };
   readonly memberships = {
     list: (options: PageOptions = {}) =>
-      this.request<CursorPage<PublicMembership>>(
-        `/memberships${pageQuery(options)}`,
-        { method: "GET" },
-      ),
+      this.request<CursorPage<PublicMembership>>(`/memberships${pageQuery(options)}`, {
+        method: "GET",
+      }),
     iterate: (options: PageOptions = {}) =>
       iteratePages((page) => this.memberships.list(page), options),
     retrieve: (id: string) =>
-      this.request<{ data: PublicMembership }>(
-        `/memberships/${publicId(id, "mbr")}`,
-        { method: "GET" },
-      ),
+      this.request<{ data: PublicMembership }>(`/memberships/${publicId(id, "mbr")}`, {
+        method: "GET",
+      }),
   };
   readonly invitations = {
     create: (input: InvitationInput, options: { idempotencyKey: string }) =>

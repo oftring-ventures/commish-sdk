@@ -20,21 +20,38 @@ export const jsx = (type, props) => ({ type, props }); export const jsxs = jsx;`
 export const useSearchParams = () => ${access}.query;`,
     "@commish/sdk/browser": `export async function captureReferral(options) { ${access}.calls.push(options); }`,
   };
-  const hooks = registerHooks({ resolve(specifier, context, nextResolve) {
-    return Object.hasOwn(mocks, specifier)
-      ? { url: `data:text/javascript,${encodeURIComponent(mocks[specifier])}`, shortCircuit: true }
-      : nextResolve(specifier, context);
-  } });
+  const hooks = registerHooks({
+    resolve(specifier, context, nextResolve) {
+      return Object.hasOwn(mocks, specifier)
+        ? {
+            url: `data:text/javascript,${encodeURIComponent(mocks[specifier])}`,
+            shortCircuit: true,
+          }
+        : nextResolve(specifier, context);
+    },
+  });
   try {
     const provider = await loadProvider();
     assert.deepEqual(Object.keys(provider), ["CommishProvider"]);
     let props = { publishableKey: "pk_first", applicationId: "app_first", capturePath: undefined };
     const expected = [];
-    for (const change of ["initial", "unchanged", "pathname", "query", "publishableKey", "applicationId", "capturePath", "children"]) {
+    for (const change of [
+      "initial",
+      "unchanged",
+      "pathname",
+      "query",
+      "publishableKey",
+      "applicationId",
+      "capturePath",
+      "children",
+    ]) {
       if (change === "pathname") state.pathname = "/second";
       if (change === "query") state.query = new URLSearchParams("a=2");
       if (["publishableKey", "applicationId", "capturePath"].includes(change))
-        props = { ...props, [change]: change === "capturePath" ? "/custom-capture" : `${change}_second` };
+        props = {
+          ...props,
+          [change]: change === "capturePath" ? "/custom-capture" : `${change}_second`,
+        };
       const children = change === "children" ? "updated child" : "preserved child";
       const tree = provider.CommishProvider({ ...props, children });
       assert.equal(tree.type, "Fragment");

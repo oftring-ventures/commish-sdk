@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
-import { pnpmVersion } from "./toolchain.mjs";
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
+import { pnpmVersion } from "./toolchain.mjs";
 import { browserConsumerScope, verifySdkBrowserConsumer } from "./verify-sdk-browser-consumer.mjs";
 
 function fixture() {

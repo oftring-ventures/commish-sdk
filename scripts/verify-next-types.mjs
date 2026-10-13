@@ -1,10 +1,9 @@
-import { releaseVersion } from "./stable-release.mjs";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { readFileSync, realpathSync, statSync, writeFileSync } from "node:fs";
 import { basename, dirname, isAbsolute, join, relative, sep } from "node:path";
-
 import { readProviderTypeInputs } from "./provider-types-lock.mjs";
+import { releaseVersion } from "./stable-release.mjs";
 
 export const nextBrowserTypesScope = "next-browser-types-external-ts";
 export const nextProviderTypesScope = "next-provider-types-external-ts";
@@ -70,7 +69,9 @@ function verifyNextTypes(kind, consumer, sdk, next, context, execute = execFileS
     return { packed, installed, declaration };
   });
   const typeInputs = () =>
-    kind === "provider" ? readProviderTypeInputs(consumer, context.typeVersions) : { roots: [], files: [] };
+    kind === "provider"
+      ? readProviderTypeInputs(consumer, context.typeVersions)
+      : { roots: [], files: [] };
   const originalTypes = typeInputs();
   const typeRoots = originalTypes.roots;
   const env = Object.freeze({

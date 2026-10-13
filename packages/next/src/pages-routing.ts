@@ -1,9 +1,4 @@
-import {
-  Commish,
-  CommishError,
-  assertCreatorPage,
-  type CreatorPage,
-} from "@commish/sdk";
+import { assertCreatorPage, Commish, CommishError, type CreatorPage } from "@commish/sdk";
 
 export type CreatorPageOptions = {
   secretKey: string;
@@ -15,15 +10,15 @@ export type CreatorPageOptions = {
   integrationPath?: string;
 };
 export type PageOptionsSource =
-  CreatorPageOptions | (() => CreatorPageOptions | Promise<CreatorPageOptions>);
+  | CreatorPageOptions
+  | (() => CreatorPageOptions | Promise<CreatorPageOptions>);
 
 export async function resolveCreatorPage(
   options: CreatorPageOptions,
   handle: string,
 ): Promise<CreatorPage> {
   const prefix = options.prefix ?? "/c";
-  if (!/^\/[a-z][a-z0-9-]{0,29}$/.test(prefix))
-    throw new TypeError("Invalid page prefix");
+  if (!/^\/[a-z][a-z0-9-]{0,29}$/.test(prefix)) throw new TypeError("Invalid page prefix");
   const { data } = await new Commish({
     secretKey: options.secretKey,
     baseUrl: options.apiUrl,
@@ -33,20 +28,14 @@ export async function resolveCreatorPage(
     signal: AbortSignal.timeout(4000),
   });
   assertCreatorPage(data);
-  if (
-    data.origin !== options.origin ||
-    data.canonicalPath !== `${prefix}/${handle}`
-  )
-    throw new Error(
-      "Commish page configuration does not match this installation",
-    );
+  if (data.origin !== options.origin || data.canonicalPath !== `${prefix}/${handle}`)
+    throw new Error("Commish page configuration does not match this installation");
   return data;
 }
 
 /** Use ONLY in next.config rewrites().fallback, after all merchant routing. */
 export function creatorPageFallbackRewrite(handlerPath = "/api/commish/alias") {
-  if (!/^\/[a-zA-Z0-9/-]+$/.test(handlerPath))
-    throw new TypeError("Invalid alias handler path");
+  if (!/^\/[a-zA-Z0-9/-]+$/.test(handlerPath)) throw new TypeError("Invalid alias handler path");
   return {
     source: "/:creator([a-z0-9][a-z0-9_-]{2,39})",
     destination: `${handlerPath}/:creator`,
@@ -80,8 +69,7 @@ let windowStart = 0,
   windowLookups = 0;
 function remember<T>(cache: Map<string, T>, key: string, value: T) {
   cache.delete(key);
-  if (cache.size >= MAX_ENTRIES)
-    cache.delete(cache.keys().next().value as string);
+  if (cache.size >= MAX_ENTRIES) cache.delete(cache.keys().next().value as string);
   cache.set(key, value);
 }
 function forget(key: string, ttl: number) {
@@ -117,8 +105,7 @@ async function lookupAlias(
   }
   // An exhausted budget protects Commish from crawler noise; a recently verified
   // alias keeps redirecting until its next revalidation fits in the budget.
-  if (windowLookups >= MAX_LOOKUPS_PER_WINDOW)
-    return hit && hit.staleUntil > now ? hit.page : null;
+  if (windowLookups >= MAX_LOOKUPS_PER_WINDOW) return hit && hit.staleUntil > now ? hit.page : null;
   windowLookups += 1;
   const lookup = resolveCreatorPage(options, handle)
     .then((page) => {
@@ -165,10 +152,7 @@ export function createCreatorAliasHandler(
   source: PageOptionsSource,
   handlerOptions: CreatorAliasHandlerOptions = {},
 ) {
-  return async function GET(
-    request: Request,
-    context: { params: Promise<{ creator: string }> },
-  ) {
+  return async function GET(request: Request, context: { params: Promise<{ creator: string }> }) {
     const headers = { "cache-control": "private, no-store" };
     if (!["GET", "HEAD"].includes(request.method))
       return new Response(null, { status: 405, headers });

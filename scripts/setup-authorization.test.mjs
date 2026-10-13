@@ -5,33 +5,67 @@ import { authorizeSetup, openSetupBrowser } from "../packages/sdk/bin/setup-auth
 
 const url = `https://app.commish.sh/cli/authorize/${"a".repeat(64)}`;
 function fixture(outcomes = [{ status: "authorized", workspaceId: "wrk_123456789012" }]) {
-  let now = 0, revoked = 0, opened = 0;
-  const notifications = [], waits = [];
+  let now = 0,
+    revoked = 0,
+    opened = 0;
+  const notifications = [],
+    waits = [];
   const session = {
-    begin: async () => ({ approvalUrl: url, pairingCode: "AAAA-AAAA", requestExpiresAt: new Date(60000).toISOString() }),
-    poll: async () => { const result = outcomes.shift() ?? { status: "pending" }; if (result instanceof Error) throw result; return result; },
-    revoke: async () => { revoked++; },
+    begin: async () => ({
+      approvalUrl: url,
+      pairingCode: "AAAA-AAAA",
+      requestExpiresAt: new Date(60000).toISOString(),
+    }),
+    poll: async () => {
+      const result = outcomes.shift() ?? { status: "pending" };
+      if (result instanceof Error) throw result;
+      return result;
+    },
+    revoke: async () => {
+      revoked++;
+    },
   };
-  return { session, notifications, waits, revoked: () => revoked, opened: () => opened,
-    options: { session, now: () => now, sleep: async (ms) => { waits.push(ms); now += ms; },
-      notify: (value) => notifications.push(value), openBrowser: async () => { opened++; return true; } } };
+  return {
+    session,
+    notifications,
+    waits,
+    revoked: () => revoked,
+    opened: () => opened,
+    options: {
+      session,
+      now: () => now,
+      sleep: async (ms) => {
+        waits.push(ms);
+        now += ms;
+      },
+      notify: (value) => notifications.push(value),
+      openBrowser: async () => {
+        opened++;
+        return true;
+      },
+    },
+  };
 }
 test("returns an in-memory session after browser pairing and pending polls", async () => {
   const f = fixture([{ status: "pending" }, { status: "authorized" }]);
   const result = await authorizeSetup({}, f.options);
   assert.equal(result.session, f.session);
-  assert.equal(f.opened(), 1); assert.equal(f.revoked(), 0);
+  assert.equal(f.opened(), 1);
+  assert.equal(f.revoked(), 0);
   assert.deepEqual(f.waits, [2000]);
   assert.equal(f.notifications[0].status, "authorization_required");
   assert.equal(f.notifications.at(-1).status, "authorized");
 });
 test("no-open provides the same URL and code without launching a browser", async () => {
-  const f = fixture(); await authorizeSetup({}, { ...f.options, noOpen: true });
-  assert.equal(f.opened(), 0); assert.equal(f.notifications[0].approvalUrl, url);
+  const f = fixture();
+  await authorizeSetup({}, { ...f.options, noOpen: true });
+  assert.equal(f.opened(), 0);
+  assert.equal(f.notifications[0].approvalUrl, url);
   assert.equal(f.notifications[0].pairingCode, "AAAA-AAAA");
 });
 test("browser launch failure keeps a manual handoff available", async () => {
-  const f = fixture(); await authorizeSetup({}, { ...f.options, openBrowser: async () => false });
+  const f = fixture();
+  await authorizeSetup({}, { ...f.options, openBrowser: async () => false });
   assert.equal(f.notifications[1].status, "browser_unavailable");
   assert.equal(f.notifications[1].approvalUrl, url);
 });
@@ -41,16 +75,25 @@ test("denial, expiry and interruption end polling and attempt revocation", async
     await assert.rejects(authorizeSetup({}, f.options), { message: "access_denied" });
     assert.equal(f.revoked(), 1);
   }
-  const f = fixture([]); await assert.rejects(authorizeSetup({}, f.options), { message: "setup_expired" });
-  assert.equal(f.waits.reduce((sum, ms) => sum + ms, 0), 60000);
+  const f = fixture([]);
+  await assert.rejects(authorizeSetup({}, f.options), { message: "setup_expired" });
+  assert.equal(
+    f.waits.reduce((sum, ms) => sum + ms, 0),
+    60000,
+  );
   assert.equal(f.revoked(), 1);
   const interrupted = fixture();
-  await assert.rejects(authorizeSetup({}, { ...interrupted.options, signal: AbortSignal.abort() }), { message: "setup_interrupted" });
-  assert.equal(interrupted.opened(), 0); assert.equal(interrupted.revoked(), 1);
+  await assert.rejects(
+    authorizeSetup({}, { ...interrupted.options, signal: AbortSignal.abort() }),
+    { message: "setup_interrupted" },
+  );
+  assert.equal(interrupted.opened(), 0);
+  assert.equal(interrupted.revoked(), 1);
 });
 test("temporary failures back off while unknown failures stay redacted", async () => {
   const f = fixture([new Error("service_unavailable"), { status: "authorized" }]);
-  await authorizeSetup({}, f.options); assert.deepEqual(f.waits, [5000]);
+  await authorizeSetup({}, f.options);
+  assert.deepEqual(f.waits, [5000]);
   const limited = fixture([new Error("rate_limited")]);
   await assert.rejects(authorizeSetup({}, limited.options), { message: "setup_expired" });
   assert.deepEqual(limited.waits, [60000]);
@@ -60,46 +103,109 @@ test("temporary failures back off while unknown failures stay redacted", async (
 });
 test("output failure after approval revokes otherwise orphaned authority", async () => {
   const f = fixture();
-  await assert.rejects(authorizeSetup({}, { ...f.options, notify: (receipt) => {
-    if (receipt.status === "authorized") throw new Error("renderer failed");
-  } }), { message: "service_unavailable" });
+  await assert.rejects(
+    authorizeSetup(
+      {},
+      {
+        ...f.options,
+        notify: (receipt) => {
+          if (receipt.status === "authorized") throw new Error("renderer failed");
+        },
+      },
+    ),
+    { message: "service_unavailable" },
+  );
   assert.equal(f.revoked(), 1);
 });
 test("native launch uses argument arrays, no shell, and a bounded child", async () => {
-  for (const [platform, executable] of [["darwin", "open"], ["win32", "rundll32.exe"], ["linux", "xdg-open"]]) {
+  for (const [platform, executable] of [
+    ["darwin", "open"],
+    ["win32", "rundll32.exe"],
+    ["linux", "xdg-open"],
+  ]) {
     let called;
-    const opened = await openSetupBrowser(url, { platform, launch: (...args) => {
-      called = args; const child = new EventEmitter(); queueMicrotask(() => child.emit("exit", 0)); return child;
-    } });
-    assert.equal(opened, true); assert.equal(called[0], executable);
-    assert.equal(called[1].at(-1), url); assert.equal(called[2].shell, false);
-    assert.equal(called[2].timeout, 5000); assert.equal(called[2].killSignal, "SIGKILL");
+    const opened = await openSetupBrowser(url, {
+      platform,
+      launch: (...args) => {
+        called = args;
+        const child = new EventEmitter();
+        queueMicrotask(() => child.emit("exit", 0));
+        return child;
+      },
+    });
+    assert.equal(opened, true);
+    assert.equal(called[0], executable);
+    assert.equal(called[1].at(-1), url);
+    assert.equal(called[2].shell, false);
+    assert.equal(called[2].timeout, 5000);
+    assert.equal(called[2].killSignal, "SIGKILL");
   }
-  for (const bad of ["broken", "javascript:evil()", "https://user:password@app.commish.sh/", `${url}?token=secret`])
-    assert.equal(await openSetupBrowser(bad, { launch: () => { throw new Error("must not launch"); } }), false);
+  for (const bad of [
+    "broken",
+    "javascript:evil()",
+    "https://user:password@app.commish.sh/",
+    `${url}?token=secret`,
+  ])
+    assert.equal(
+      await openSetupBrowser(bad, {
+        launch: () => {
+          throw new Error("must not launch");
+        },
+      }),
+      false,
+    );
 });
 
 test("interruption during an in-flight authorization revokes the approved session", async () => {
-  const f = fixture(), controller = new AbortController();
-  f.session.poll = async () => { controller.abort(); return { status: "authorized" }; };
-  await assert.rejects(authorizeSetup({}, { ...f.options, signal: controller.signal }), { message: "setup_interrupted" });
+  const f = fixture(),
+    controller = new AbortController();
+  f.session.poll = async () => {
+    controller.abort();
+    return { status: "authorized" };
+  };
+  await assert.rejects(authorizeSetup({}, { ...f.options, signal: controller.signal }), {
+    message: "setup_interrupted",
+  });
   assert.equal(f.revoked(), 1);
   assert(!f.notifications.some((item) => item.status === "authorized"));
 });
 test("opens only the exact TEST or LIVE Stripe settings handoff", async () => {
   const path = "https://app.commish.sh/dashboard/workspace/wrk_123456789012/settings";
-  const launch = () => { const child = new EventEmitter(); queueMicrotask(() => child.emit("exit", 0)); return child; };
-  for (const mode of ["test", "live"]) assert.equal(await openSetupBrowser(`${path}?mode=${mode}`, { launch }), true);
-  for (const suffix of ["", "?mode=live&state=private", "?mode=test&mode=live", "?mode=test#private"])
-    assert.equal(await openSetupBrowser(path + suffix, { launch: () => assert.fail("must not open") }), false);
+  const launch = () => {
+    const child = new EventEmitter();
+    queueMicrotask(() => child.emit("exit", 0));
+    return child;
+  };
+  for (const mode of ["test", "live"])
+    assert.equal(await openSetupBrowser(`${path}?mode=${mode}`, { launch }), true);
+  for (const suffix of [
+    "",
+    "?mode=live&state=private",
+    "?mode=test&mode=live",
+    "?mode=test#private",
+  ])
+    assert.equal(
+      await openSetupBrowser(path + suffix, { launch: () => assert.fail("must not open") }),
+      false,
+    );
 });
 
 test("native launch accepts only canonical focused Stripe continuations", async () => {
   const path = "https://app.commish.sh/cli/setup/workspace/wrk_123456789012/stripe?mode=test";
   let calls = 0;
-  const launch = () => { calls++; const child = new EventEmitter(); queueMicrotask(() => child.emit("exit", 0)); return child; };
+  const launch = () => {
+    calls++;
+    const child = new EventEmitter();
+    queueMicrotask(() => child.emit("exit", 0));
+    return child;
+  };
   assert.equal(await openSetupBrowser(path, { launch }), true);
-  for (const value of [path + "&state=hidden", path + "#fragment", path.replace("mode=test", "mode=other"), path.replace("/stripe?", "/stripe/extra?")])
+  for (const value of [
+    path + "&state=hidden",
+    path + "#fragment",
+    path.replace("mode=test", "mode=other"),
+    path.replace("/stripe?", "/stripe/extra?"),
+  ])
     assert.equal(await openSetupBrowser(value, { launch }), false);
   assert.equal(calls, 1);
 });

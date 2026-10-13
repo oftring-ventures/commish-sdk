@@ -1,9 +1,8 @@
 import assert from "node:assert/strict";
-import { pnpmVersion } from "./toolchain.mjs";
 import { execFileSync } from "node:child_process";
 import {
-  existsSync,
   cpSync,
+  existsSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -12,12 +11,12 @@ import {
   symlinkSync,
   writeFileSync,
 } from "node:fs";
-import { join } from "node:path";
-import { tmpdir } from "node:os";
 import { stripTypeScriptTypes } from "node:module";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test, { after } from "node:test";
 import { providerTypesLock } from "./provider-types-lock.mjs";
-import { nextBrowserTypesScope, nextProviderTypesScope } from "./verify-next-types.mjs";
+import { pnpmVersion } from "./toolchain.mjs";
 import {
   nextBrowserScope,
   nextMetadataScope,
@@ -25,6 +24,7 @@ import {
   verifyNextBrowserConsumer,
   verifyNextProviderConsumer,
 } from "./verify-next-browser-consumer.mjs";
+import { nextBrowserTypesScope, nextProviderTypesScope } from "./verify-next-types.mjs";
 
 const owned = realpathSync(mkdtempSync(join(tmpdir(), "commish-next-context-")));
 after(() => rmSync(owned, { recursive: true, force: true }));
@@ -180,7 +180,11 @@ test("paired manifests and every promised target fail before commands", () => {
 });
 
 test("all Next shapes run the actual browser identity probe from isolated paired fixtures", () => {
-  for (const [react, framework] of [[false, false], [false, true], [true, true]])
+  for (const [react, framework] of [
+    [false, false],
+    [false, true],
+    [true, true],
+  ])
     for (const server of [false, true]) {
       const packages = fixture(react, server, framework),
         calls = [];

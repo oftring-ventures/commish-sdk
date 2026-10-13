@@ -93,17 +93,27 @@ function fixture(sdk, cli, run, sdkCli = false) {
     let sdkArtifact;
     if (sdkCli) {
       const source = join(modules, "@commish/sdk");
-      sdkArtifact = { packed: new Map([
-        ["package/package.json", { data: Buffer.from(JSON.stringify({ name: "@commish/sdk", bin: { commish: "./bin/init.mjs" } })) }],
-        ["package/bin/init.mjs", { data: Buffer.from("#!/usr/bin/env node\n// SDK fixture.\n") }],
-      ]) };
+      sdkArtifact = {
+        packed: new Map([
+          [
+            "package/package.json",
+            {
+              data: Buffer.from(
+                JSON.stringify({ name: "@commish/sdk", bin: { commish: "./bin/init.mjs" } }),
+              ),
+            },
+          ],
+          ["package/bin/init.mjs", { data: Buffer.from("#!/usr/bin/env node\n// SDK fixture.\n") }],
+        ]),
+      };
       for (const [name, member] of sdkArtifact.packed)
         write(join(source, name.slice(8)), member.data, name.endsWith(".mjs") ? 0o755 : 0o644);
       mkdirSync(join(consumer, "node_modules/@commish"), { recursive: true });
       symlinkSync(source, join(consumer, "node_modules/@commish/sdk"));
       bins.push(shim("commish", source, modules, "bin/init.mjs"));
     }
-    const verify = () => verifyFrameworkPackage(consumer, root, { packed }, registry, sdkArtifact, "16.3.8");
+    const verify = () =>
+      verifyFrameworkPackage(consumer, root, { packed }, registry, sdkArtifact, "16.3.8");
     run({ consumer, root, next, bins, verify, write });
   } finally {
     rmSync(consumer, { recursive: true, force: true });
@@ -133,11 +143,16 @@ test("exact SDK payload and S7/S9 installer bins retain complete archive verific
 });
 
 test("Next's SDK peer launcher is bound to the exact verified SDK artifact", () => {
-  fixture(false, true, ({ bins, verify, write }) => {
-    assert(verify().some((entry) => entry.name === "node_modules/.bin/commish"));
-    write(bins[2], readFileSync(bins[2], "utf8") + "echo changed\n", 0o755);
-    assert.throws(verify, /generated bin content differs/);
-  }, true);
+  fixture(
+    false,
+    true,
+    ({ bins, verify, write }) => {
+      assert(verify().some((entry) => entry.name === "node_modules/.bin/commish"));
+      write(bins[2], readFileSync(bins[2], "utf8") + "echo changed\n", 0o755);
+      assert.throws(verify, /generated bin content differs/);
+    },
+    true,
+  );
 });
 
 test("bin tampering, extra members, links and changed source or payload cannot be ignored", () => {
@@ -174,12 +189,17 @@ test("bin tampering, extra members, links and changed source or payload cannot b
       /generated bin content differs/,
     ],
     [(f) => chmodSync(f.bins[1], 0o644), /invalid bin type\/mode/],
-    [(f) => {
-      rmSync(f.bins[1]);
-      symlinkSync(join(f.root, "bin/init.mjs"), f.bins[1]);
-    }, /invalid bin type\/mode/],
-    [(f) => f.write(join(f.root, "node_modules/.bin/commish-next"), "unexpected", 0o755),
-      /member inventory differs/],
+    [
+      (f) => {
+        rmSync(f.bins[1]);
+        symlinkSync(join(f.root, "bin/init.mjs"), f.bins[1]);
+      },
+      /invalid bin type\/mode/,
+    ],
+    [
+      (f) => f.write(join(f.root, "node_modules/.bin/commish-next"), "unexpected", 0o755),
+      /member inventory differs/,
+    ],
   ];
   for (const [mutate, error] of cases)
     fixture(false, true, (f) => {
@@ -220,13 +240,21 @@ test("registry launcher normalization preserves code and executable identity che
     f.write(join(source, "cli.js"), "#!/usr/bin/env node\n", 0o755);
     symlinkSync(source, peer);
     const bin = join(f.next, "node_modules/.bin", name);
-    const paths = [join(source, "node_modules"), dirname(source),
-      join(f.consumer, "node_modules/.pnpm/node_modules")].join(":");
+    const paths = [
+      join(source, "node_modules"),
+      dirname(source),
+      join(f.consumer, "node_modules/.pnpm/node_modules"),
+    ].join(":");
     let canonical;
     for (const target of [join(source, "cli.js"), join(peer, "cli.js")]) {
-      f.write(bin, template.replaceAll("@@NODE_PATH@@", paths)
-        .replaceAll("@@RELATIVE_TARGET@@", relative(dirname(bin), target))
-        .replaceAll("@@TARGET@@", target), 0o755);
+      f.write(
+        bin,
+        template
+          .replaceAll("@@NODE_PATH@@", paths)
+          .replaceAll("@@RELATIVE_TARGET@@", relative(dirname(bin), target))
+          .replaceAll("@@TARGET@@", target),
+        0o755,
+      );
       const actual = frameworkRegistryBinHash(f.consumer, f.next, name);
       canonical ??= actual;
       assert.equal(actual, canonical);
@@ -236,6 +264,9 @@ test("registry launcher normalization preserves code and executable identity che
     assert.throws(() => frameworkRegistryBinHash(f.consumer, f.next, "unknown"), /unexpected/);
     rmSync(peer);
     symlinkSync(f.root, peer);
-    assert.throws(() => frameworkRegistryBinHash(f.consumer, f.next, name), /source identity differs/);
+    assert.throws(
+      () => frameworkRegistryBinHash(f.consumer, f.next, name),
+      /source identity differs/,
+    );
   });
 });

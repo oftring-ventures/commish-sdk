@@ -1,12 +1,11 @@
-import { nodeVersion, pnpmVersion } from "./toolchain.mjs";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
-  mkdtempSync,
   mkdirSync,
-  readFileSync,
+  mkdtempSync,
   readdirSync,
+  readFileSync,
   realpathSync,
   rmSync,
   writeFileSync,
@@ -14,8 +13,6 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { gunzipSync } from "node:zlib";
-
-import { verifyNextBuild } from "./verify-next-build.mjs";
 import {
   inspectLockfile,
   inspectPackageManifest,
@@ -23,13 +20,15 @@ import {
   inspectWorkspace,
   packageNames,
 } from "./package-shape.mjs";
-import { licenseHash, publicPackageManifests } from "./public-package-manifest.mjs";
 import { candidateDirectory, normalizePackage, writeCandidate } from "./public-candidate.mjs";
-import { verifySdkBrowserConsumer } from "./verify-sdk-browser-consumer.mjs";
+import { licenseHash, publicPackageManifests } from "./public-package-manifest.mjs";
+import { nodeVersion, pnpmVersion } from "./toolchain.mjs";
 import {
   verifyNextBrowserConsumer,
   verifyNextProviderConsumer,
 } from "./verify-next-browser-consumer.mjs";
+import { verifyNextBuild } from "./verify-next-build.mjs";
+import { verifySdkBrowserConsumer } from "./verify-sdk-browser-consumer.mjs";
 
 // The tree is verified by shape: files may be added under the allowed paths, but
 // the release gate, the toolchain declaration and the pair's manifests must keep
@@ -86,23 +85,40 @@ export function inspect(files) {
     );
     if (name.startsWith("packages/"))
       assert(packageNames.includes(name.split("/")[1]), "orphan package source");
-    assert(allowedPaths.some((pattern) => pattern.test(name)), `unexpected source path ${name}`);
+    assert(
+      allowedPaths.some((pattern) => pattern.test(name)),
+      `unexpected source path ${name}`,
+    );
   }
   for (const name of required) bytes(files, name);
   assert.equal(sha(bytes(files, "LICENSE")), licenseHash, "MIT license differs");
-  assert.equal(bytes(files, ".node-version").toString().trim(), nodeVersion, "source .node-version differs from the toolchain");
+  assert.equal(
+    bytes(files, ".node-version").toString().trim(),
+    nodeVersion,
+    "source .node-version differs from the toolchain",
+  );
   inspectRootManifest(json(files, "package.json"), pnpmVersion);
   inspectWorkspace(bytes(files, "pnpm-workspace.yaml").toString());
   inspectLockfile(bytes(files, "pnpm-lock.yaml").toString());
   return packageNames.map((pkg) => {
     const dir = `packages/${pkg}`;
-    for (const name of ["LICENSE", "README.md", "build.mjs", "tsconfig.build.json", "src/index.ts", "src/browser.ts"])
+    for (const name of [
+      "LICENSE",
+      "README.md",
+      "build.mjs",
+      "tsconfig.build.json",
+      "src/index.ts",
+      "src/browser.ts",
+    ])
       bytes(files, `${dir}/${name}`);
     assert.equal(sha(bytes(files, `${dir}/LICENSE`)), licenseHash, "package MIT license differs");
     const manifest = json(files, `${dir}/package.json`);
     const has = (stem) => files.has(`${dir}/src/${stem}.ts`) || files.has(`${dir}/src/${stem}.tsx`);
     const { targets } = inspectPackageManifest(pkg, manifest, has);
-    assert(bytes(files, `${dir}/bin/init.mjs`).toString().startsWith("#!/usr/bin/env node\n"), "entry point must start with the node shebang");
+    assert(
+      bytes(files, `${dir}/bin/init.mjs`).toString().startsWith("#!/usr/bin/env node\n"),
+      "entry point must start with the node shebang",
+    );
     return { dir, manifest, targets };
   });
 }
@@ -123,8 +139,9 @@ export function archiveFiles(compressed) {
     const mode = Number.parseInt(field(100, 8).trim(), 8);
     // Only the manifest, documentation, built output, flat CLI modules and shipped guides.
     assert(
-      /^package\/(?:package\.json|README\.md|LICENSE|dist\/[a-zA-Z0-9_.-]+|bin\/[a-z0-9-]+\.(?:mjs|json)|guides\/[a-z-]+\.md)$/.test(name) &&
-        !files.has(name),
+      /^package\/(?:package\.json|README\.md|LICENSE|dist\/[a-zA-Z0-9_.-]+|bin\/[a-z0-9-]+\.(?:mjs|json)|guides\/[a-z-]+\.md)$/.test(
+        name,
+      ) && !files.has(name),
       "unsafe archive entry",
     );
     assert(
@@ -149,7 +166,14 @@ export function archiveFiles(compressed) {
   return files;
 }
 
-export async function verifyPackages(files, packages, run, checkout = process.cwd(), releaseManifests, consumers = defaultConsumers) {
+export async function verifyPackages(
+  files,
+  packages,
+  run,
+  checkout = process.cwd(),
+  releaseManifests,
+  consumers = defaultConsumers,
+) {
   const artifacts = [];
   let evidence = { scopes: [] },
     sdkArchive;
@@ -194,8 +218,15 @@ export async function verifyPackages(files, packages, run, checkout = process.cw
         );
       }
       if (releaseManifests) {
-        ({ archive, packed } = normalizePackage(files, dir, releaseManifests[artifacts.length],
-          packed, work, run, archiveFiles));
+        ({ archive, packed } = normalizePackage(
+          files,
+          dir,
+          releaseManifests[artifacts.length],
+          packed,
+          work,
+          run,
+          archiveFiles,
+        ));
         artifacts.push({ archive, packed });
       }
       const context = {
@@ -210,7 +241,9 @@ export async function verifyPackages(files, packages, run, checkout = process.cw
         assert(sdkArchive, "Next browser consumer requires the verified SDK pair");
         evidence.scopes.push(...consumers.nextBrowser(sdkArchive, { archive, packed }, context));
         evidence.scopes.push(...consumers.nextProvider(sdkArchive, { archive, packed }, context));
-        evidence.scopes.push(...(await consumers.nextBuild(sdkArchive, { archive, packed }, context)));
+        evidence.scopes.push(
+          ...(await consumers.nextBuild(sdkArchive, { archive, packed }, context)),
+        );
       }
     }
     for (const [name, file] of files)
@@ -224,10 +257,16 @@ export async function verifyPackages(files, packages, run, checkout = process.cw
   }
 }
 
-export async function verify(root, expectedSha, candidateOutput, {
-  run = (command, args, cwd) => execFileSync(command, args, { cwd, stdio: "inherit", timeout: 600_000 }),
-  consumers = defaultConsumers,
-} = {}) {
+export async function verify(
+  root,
+  expectedSha,
+  candidateOutput,
+  {
+    run = (command, args, cwd) =>
+      execFileSync(command, args, { cwd, stdio: "inherit", timeout: 600_000 }),
+    consumers = defaultConsumers,
+  } = {},
+) {
   const git = (...args) => execFileSync("git", args, { cwd: root });
   const head = git("rev-parse", "HEAD").toString().trim();
   assert(
@@ -253,7 +292,8 @@ export async function verify(root, expectedSha, candidateOutput, {
       }),
   );
   const packages = inspect(files);
-  const output = candidateOutput === undefined ? undefined : candidateDirectory(root, candidateOutput);
+  const output =
+    candidateOutput === undefined ? undefined : candidateDirectory(root, candidateOutput);
   const releaseManifests = output ? publicPackageManifests(files) : undefined;
   assert.equal(
     execFileSync("pnpm", ["--version"], { encoding: "utf8" }).trim(),
@@ -261,10 +301,27 @@ export async function verify(root, expectedSha, candidateOutput, {
     "pnpm differs from the root packageManager",
   );
   const evidence = await verifyPackages(files, packages, run, root, releaseManifests, consumers);
-  assert.equal(git("rev-parse", "HEAD").toString().trim(), head, "source HEAD changed during verification");
-  assert.equal(git("status", "--porcelain", "--untracked-files=all").length, 0, "source changed during verification");
-  const candidate = output ? writeCandidate(root, output, head, evidence.artifacts, evidence.scopes,
-    releaseManifests, archiveFiles) : undefined;
+  assert.equal(
+    git("rev-parse", "HEAD").toString().trim(),
+    head,
+    "source HEAD changed during verification",
+  );
+  assert.equal(
+    git("status", "--porcelain", "--untracked-files=all").length,
+    0,
+    "source changed during verification",
+  );
+  const candidate = output
+    ? writeCandidate(
+        root,
+        output,
+        head,
+        evidence.artifacts,
+        evidence.scopes,
+        releaseManifests,
+        archiveFiles,
+      )
+    : undefined;
   return {
     sha: head,
     scope: "frozen-install-build-typecheck-pack-exports",
@@ -280,16 +337,23 @@ export async function verify(root, expectedSha, candidateOutput, {
 // Command output and file bytes may carry paths or key material, so only the error
 // code and an author-written assertion message are shown, never Node's generated diff.
 export function failureDiagnostic(error) {
-  const code = typeof error?.code === "string" && /^[A-Z][A-Z0-9_]{0,63}$/.test(error.code) ? error.code : "unknown";
-  const reason = error instanceof assert.AssertionError && error.generatedMessage === false
-    ? `: ${error.message.split("\n", 1)[0]}` : "";
+  const code =
+    typeof error?.code === "string" && /^[A-Z][A-Z0-9_]{0,63}$/.test(error.code)
+      ? error.code
+      : "unknown";
+  const reason =
+    error instanceof assert.AssertionError && error.generatedMessage === false
+      ? `: ${error.message.split("\n", 1)[0]}`
+      : "";
   return `Public source verification failed (${code}${reason}); no acceptance receipt issued.`;
 }
 
 if (import.meta.main) {
   try {
     assert(process.argv.length <= 3, "unexpected verifier arguments");
-    console.log(JSON.stringify(await verify(process.cwd(), process.env.EXPECTED_SHA, process.argv[2])));
+    console.log(
+      JSON.stringify(await verify(process.cwd(), process.env.EXPECTED_SHA, process.argv[2])),
+    );
   } catch (error) {
     console.error(failureDiagnostic(error));
     process.exitCode = 1;

@@ -1,5 +1,5 @@
-import { rmSync } from "node:fs";
 import { spawnSync } from "node:child_process";
+import { rmSync } from "node:fs";
 
 const root = new URL("./", import.meta.url);
 rmSync(new URL("dist/", root), { recursive: true, force: true });

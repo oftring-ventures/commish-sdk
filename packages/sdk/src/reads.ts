@@ -16,10 +16,7 @@ function isPageCursor(value: unknown): value is string {
 }
 
 export function publicId(value: string, prefix: string): string {
-  if (
-    typeof value !== "string" ||
-    !new RegExp(`^${prefix}_[A-Za-z0-9_-]{12,}$`).test(value)
-  )
+  if (typeof value !== "string" || !new RegExp(`^${prefix}_[A-Za-z0-9_-]{12,}$`).test(value))
     throw new TypeError(`Expected a public ${prefix} ID`);
   return encodeURIComponent(value);
 }
@@ -27,17 +24,12 @@ export function publicId(value: string, prefix: string): string {
 export function pageQuery(options: PageOptions): string {
   const query = new URLSearchParams();
   if (options.limit !== undefined) {
-    if (
-      !Number.isInteger(options.limit) ||
-      options.limit < 1 ||
-      options.limit > 100
-    )
+    if (!Number.isInteger(options.limit) || options.limit < 1 || options.limit > 100)
       throw new TypeError("Page limit must be an integer between 1 and 100");
     query.set("limit", String(options.limit));
   }
   if (options.cursor !== undefined) {
-    if (!isPageCursor(options.cursor))
-      throw new TypeError("Expected an opaque pagination cursor");
+    if (!isPageCursor(options.cursor)) throw new TypeError("Expected an opaque pagination cursor");
     query.set("cursor", options.cursor);
   }
   return query.size ? `?${query}` : "";
@@ -55,16 +47,12 @@ export function customerPageQuery(options: CustomerListOptions): string {
   return query.size ? `?${query}` : "";
 }
 
-export function webhookDeliveryPageQuery(
-  options: WebhookDeliveryListOptions,
-): string {
+export function webhookDeliveryPageQuery(options: WebhookDeliveryListOptions): string {
   const query = new URLSearchParams(pageQuery(options));
   if (options.endpointId !== undefined)
     query.set("endpointId", publicId(options.endpointId, "whe"));
   if (options.status !== undefined) {
-    if (
-      !["pending", "processing", "delivered", "failed"].includes(options.status)
-    )
+    if (!["pending", "processing", "delivered", "failed"].includes(options.status))
       throw new TypeError("Expected a webhook delivery status");
     query.set("status", options.status);
   }
@@ -82,13 +70,8 @@ export async function* iteratePages<T>(
   do {
     const page = await fetchPage({ ...options, cursor });
     const next = page.next_cursor;
-    if (
-      !Array.isArray(page.data) ||
-      (next !== null && (!isPageCursor(next) || seen.has(next)))
-    )
-      throw new Error(
-        "Commish returned an invalid or repeated pagination cursor",
-      );
+    if (!Array.isArray(page.data) || (next !== null && (!isPageCursor(next) || seen.has(next))))
+      throw new Error("Commish returned an invalid or repeated pagination cursor");
     if (next) seen.add(next);
     yield* page.data;
     cursor = next ?? undefined;

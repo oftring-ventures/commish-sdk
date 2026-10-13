@@ -14,7 +14,8 @@ pnpm lint
 pnpm test
 ```
 
-`pnpm lint` runs Biome with the rules in `biome.json`; CI runs the same command and
+`pnpm lint` checks formatting and the lint rules in `biome.json` (`pnpm format` applies
+them); CI runs the same check and
 reports test coverage for the CLI and release scripts.
 
 The complete source pair targets the stable version declared in both package

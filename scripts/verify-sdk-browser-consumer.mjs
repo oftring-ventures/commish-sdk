@@ -1,24 +1,23 @@
-import { verifySetupCli } from "./fixtures/setup-cli.mjs";
-import { verifyCliProbe } from "./fixtures/next-cli.mjs";
-import { releaseVersion } from "./stable-release.mjs";
 import assert from "node:assert/strict";
-import { pnpmVersion } from "./toolchain.mjs";
 import { execFileSync } from "node:child_process";
 import {
   mkdtempSync,
-  readFileSync,
   readdirSync,
+  readFileSync,
   realpathSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { isAbsolute, join, relative, sep } from "node:path";
-
-import { verifySdkTypes } from "./verify-sdk-types.mjs";
-import { verifySdkWebhooks } from "./verify-sdk-webhooks.mjs";
+import { verifyCliProbe } from "./fixtures/next-cli.mjs";
+import { verifySetupCli } from "./fixtures/setup-cli.mjs";
+import { releaseVersion } from "./stable-release.mjs";
+import { pnpmVersion } from "./toolchain.mjs";
 import { verifySdkHttp } from "./verify-sdk-http.mjs";
 import { verifySdkReads } from "./verify-sdk-reads.mjs";
+import { verifySdkTypes } from "./verify-sdk-types.mjs";
+import { verifySdkWebhooks } from "./verify-sdk-webhooks.mjs";
 
 export const browserConsumerScope = "sdk-browser-node-primitives";
 const contained = (root, path) => {
@@ -164,9 +163,15 @@ export function verifySdkBrowserConsumer(
     run(process.execPath, ["--conditions=browser", "probe.mjs"], consumer);
     if (manifest.bin) {
       assert.deepEqual(manifest.bin, { commish: "./bin/init.mjs" });
-      writeFileSync(join(consumer, "cli-probe.mjs"), `await (${verifyCliProbe.toString()})(${JSON.stringify(join(consumer, "node_modules/.bin/commish"))}, { generic: true });\n`);
+      writeFileSync(
+        join(consumer, "cli-probe.mjs"),
+        `await (${verifyCliProbe.toString()})(${JSON.stringify(join(consumer, "node_modules/.bin/commish"))}, { generic: true });\n`,
+      );
       run(process.execPath, ["cli-probe.mjs"], consumer);
-      writeFileSync(join(consumer, "setup-probe.mjs"), `await (${verifySetupCli.toString()})(${JSON.stringify(join(consumer, "node_modules/.bin/commish"))});\n`);
+      writeFileSync(
+        join(consumer, "setup-probe.mjs"),
+        `await (${verifySetupCli.toString()})(${JSON.stringify(join(consumer, "node_modules/.bin/commish"))});\n`,
+      );
       run(process.execPath, ["setup-probe.mjs"], consumer);
     }
     const http = verifySdkHttp(consumer, packed);
@@ -175,7 +180,14 @@ export function verifySdkBrowserConsumer(
     const webhooks = verifySdkWebhooks(consumer, packed);
     return {
       ...types,
-      scopes: [...(manifest.bin ? ["sdk-cli-installed-verify", "sdk-cli-installed-setup"] : []), browserConsumerScope, ...types.scopes, ...webhooks, ...http, ...reads],
+      scopes: [
+        ...(manifest.bin ? ["sdk-cli-installed-verify", "sdk-cli-installed-setup"] : []),
+        browserConsumerScope,
+        ...types.scopes,
+        ...webhooks,
+        ...http,
+        ...reads,
+      ],
     };
   } finally {
     rmSync(consumer, { recursive: true, force: true });

@@ -1,13 +1,6 @@
 "use client";
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type MouseEvent,
-} from "react";
 import type { CreatorPage } from "@commish/sdk";
+import { type MouseEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 type Visit = {
   identified?: boolean;
@@ -17,9 +10,7 @@ type Visit = {
   retryable?: boolean;
 };
 /** One same-origin identity across concurrent tabs; unsupported clients do not measure. */
-export async function identifyCreatorPage(
-  identify: () => Promise<Visit>,
-): Promise<boolean> {
+export async function identifyCreatorPage(identify: () => Promise<Visit>): Promise<boolean> {
   if (typeof navigator === "undefined" || !navigator.locks) return false;
   try {
     return await navigator.locks.request(
@@ -57,17 +48,12 @@ export function CreatorPageView({
 }) {
   const surface = useRef<HTMLElement>(null);
   const id = useRef<string | null>(null);
-  const [variation, setVariation] = useState<"standard" | "alternate">(
-    "standard",
-  );
+  const [variation, setVariation] = useState<"standard" | "alternate">("standard");
   const [visitToken, setVisitToken] = useState<string>();
   const [shopping, setShopping] = useState(false);
   const ready = page.status === "ready";
   const send = useCallback(
-    async (
-      action: string,
-      extra: Record<string, unknown> = {},
-    ): Promise<Visit> => {
+    async (action: string, extra: Record<string, unknown> = {}): Promise<Visit> => {
       if (!id.current) id.current = crypto.randomUUID();
       const response = await fetch(integrationPath, {
         method: "POST",
@@ -95,9 +81,7 @@ export function CreatorPageView({
     () =>
       createCreatorPageStart(send, (data) => {
         if (typeof data.captured === "boolean") {
-          setVariation(
-            data.variation === "alternate" ? "alternate" : "standard",
-          );
+          setVariation(data.variation === "alternate" ? "alternate" : "standard");
           setVisitToken(data.visitToken);
         }
       }),
@@ -129,15 +113,10 @@ export function CreatorPageView({
       intersecting = false,
       exposed = false;
     const expose = () => {
-      if (document.visibilityState !== "visible" || !intersecting || exposed)
-        return;
+      if (document.visibilityState !== "visible" || !intersecting || exposed) return;
       frame = requestAnimationFrame(() => {
         painted = requestAnimationFrame(() => {
-          if (
-            document.visibilityState === "visible" &&
-            intersecting &&
-            !exposed
-          ) {
+          if (document.visibilityState === "visible" && intersecting && !exposed) {
             exposed = true;
             void send("exposure", { visitToken }).catch(() => {});
           }
@@ -201,9 +180,7 @@ export function CreatorPageView({
       @media(prefers-reduced-motion:reduce){.commish-page *{scroll-behavior:auto}}
     `}</style>
       <header>
-        {brand.logoUrl && (
-          <img src={brand.logoUrl} alt="" referrerPolicy="no-referrer" />
-        )}
+        {brand.logoUrl && <img src={brand.logoUrl} alt="" referrerPolicy="no-referrer" />}
         <span>{brand.name}</span>
       </header>
       {page.status === "ended" ? (
@@ -239,16 +216,13 @@ export function CreatorPageView({
                   return <li key={index}>{benefit}</li>;
                 })}
               </ul>
-              <div
-                className="cp-offer"
-                style={{ borderTop: `3px solid ${brand.accentColor}` }}
-              >
+              <div className="cp-offer" style={{ borderTop: `3px solid ${brand.accentColor}` }}>
                 <h2>{page.content.offer.title}</h2>
                 <p>{page.content.offer.description}</p>
                 {page.couponCode && (
                   <p>
-                    Use code <code>{page.couponCode}</code> at checkout. Check
-                    store terms for eligibility.
+                    Use code <code>{page.couponCode}</code> at checkout. Check store terms for
+                    eligibility.
                   </p>
                 )}
                 <a

@@ -1,5 +1,6 @@
-import type { PublicPayout, PublicMembership, PublicWebhookDelivery } from "@commish/sdk";
+import type { PublicMembership, PublicPayout, PublicWebhookDelivery } from "@commish/sdk";
 import { captureReferral } from "@commish/sdk/browser";
+
 const payout: PublicPayout = {
   id: "pay_fixture",
   mode: "test",

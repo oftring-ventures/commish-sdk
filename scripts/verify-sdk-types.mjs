@@ -18,20 +18,36 @@ const child = (root, path) => {
 export function selectSdkTypes(packed) {
   const { exports } = JSON.parse(packed.get("package/package.json").data);
   const browser = exports["./browser"];
-  assert(browser && !Object.hasOwn(browser, "browser") && browser.types === "./dist/browser.d.ts" &&
-    browser.default === "./dist/browser.js", "unsupported SDK root tuple");
+  assert(
+    browser &&
+      !Object.hasOwn(browser, "browser") &&
+      browser.types === "./dist/browser.d.ts" &&
+      browser.default === "./dist/browser.js",
+    "unsupported SDK root tuple",
+  );
   const targets = [browser.types, browser.default];
   let kind = null;
   for (const [entry, value] of Object.entries(exports)) {
     if (entry === "./browser" || entry === "./package.json") continue;
     assert([".", "./webhooks"].includes(entry), "unsupported SDK root tuple");
-    const stem = entry === "./webhooks" ? "webhooks" : value?.types === "./dist/types.d.ts" ? "types" : "index";
-    assert(value && value.browser === null && value.types === `./dist/${stem}.d.ts` &&
-      value.default === `./dist/${stem}.js`, "unsupported SDK root tuple");
+    const stem =
+      entry === "./webhooks"
+        ? "webhooks"
+        : value?.types === "./dist/types.d.ts"
+          ? "types"
+          : "index";
+    assert(
+      value &&
+        value.browser === null &&
+        value.types === `./dist/${stem}.d.ts` &&
+        value.default === `./dist/${stem}.js`,
+      "unsupported SDK root tuple",
+    );
     if (entry === ".") kind = stem;
     targets.push(value.types, value.default);
   }
-  for (const target of targets) assert(packed.has(`package/${target.slice(2)}`), "missing promised SDK target");
+  for (const target of targets)
+    assert(packed.has(`package/${target.slice(2)}`), "missing promised SDK target");
   return kind;
 }
 export function verifySdkTypes(consumer, packed, context, execute = execFileSync) {

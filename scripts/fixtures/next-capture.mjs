@@ -6,8 +6,10 @@ export async function captureRequestProbe(runApp) {
   const { default: assert } = await import("node:assert/strict");
   const { createServer } = await import("node:http");
   const { createHash } = await import("node:crypto");
-  const requests = [], expiry = new Date(Date.now() + 3_600_000).toISOString();
-  const token = "atr_consumer_capture_token", payload = { data: { token, expiresAt: expiry } };
+  const requests = [],
+    expiry = new Date(Date.now() + 3_600_000).toISOString();
+  const token = "atr_consumer_capture_token",
+    payload = { data: { token, expiresAt: expiry } };
   let reply = { status: 200, body: JSON.stringify(payload) };
   const upstream = createServer(async (request, response) => {
     let body = "";
@@ -25,12 +27,16 @@ export async function captureRequestProbe(runApp) {
     });
     process.env.COMMISH_API_URL = `http://127.0.0.1:${upstream.address().port}${upstreamPath}${"/".repeat(2_048)}`;
     await runApp(async (origin) => {
-      const captureId = "a".repeat(32), clean = { token: "ref_consumer", applicationId: "app_consumer" };
+      const captureId = "a".repeat(32),
+        clean = { token: "ref_consumer", applicationId: "app_consumer" };
       const body = JSON.stringify({ ...clean, previousAttributionId: "atr_browser_forgery" });
-      const send = (headers = {}, input = body) => fetch(`${origin}/api/commish/attribution`, {
-        method: "POST", body: input, signal: AbortSignal.timeout(10_000),
-        headers: { "x-commish-capture-id": captureId, ...headers },
-      });
+      const send = (headers = {}, input = body) =>
+        fetch(`${origin}/api/commish/attribution`, {
+          method: "POST",
+          body: input,
+          signal: AbortSignal.timeout(10_000),
+          headers: { "x-commish-capture-id": captureId, ...headers },
+        });
       for (const invalid of ["", "A".repeat(32), "a".repeat(31)]) {
         const response = await send({ "x-commish-capture-id": invalid });
         assert.equal(response.status, 400);
@@ -38,18 +44,32 @@ export async function captureRequestProbe(runApp) {
         assert.equal(response.headers.get("set-cookie"), null);
       }
       assert.equal(requests.length, 0, "invalid capture IDs reached upstream");
-      const key = `attribution:${createHash("sha256").update(`${captureId}.${JSON.stringify(clean)}`).digest("hex")}`;
+      const key = `attribution:${createHash("sha256")
+        .update(`${captureId}.${JSON.stringify(clean)}`)
+        .digest("hex")}`;
       for (const prior of ["atr_consumer_previous1", "atr_consumer_previous2"]) {
-        const response = await send({ cookie: `commish_attribution=${prior}`,
-          "x-vercel-forwarded-for": "192.0.2.7", "x-forwarded-for": "192.0.2.99",
-          "x-commish-client-ip": "192.0.2.98", "user-agent": "commish-consumer",
-          "x-vercel-ip-country": "US", "x-commish-publishable-key": "cm_test_pk_consumer",
-          authorization: "Bearer browser-forgery" });
+        const response = await send({
+          cookie: `commish_attribution=${prior}`,
+          "x-vercel-forwarded-for": "192.0.2.7",
+          "x-forwarded-for": "192.0.2.99",
+          "x-commish-client-ip": "192.0.2.98",
+          "user-agent": "commish-consumer",
+          "x-vercel-ip-country": "US",
+          "x-commish-publishable-key": "cm_test_pk_consumer",
+          authorization: "Bearer browser-forgery",
+        });
         assert.equal(response.status, 200);
         assert.deepEqual(await response.json(), { data: { captured: true, expiresAt: expiry } });
         const cookie = response.headers.get("set-cookie");
-        for (const part of [`commish_attribution=${token}`, "Path=/", "HttpOnly", "Secure", "SameSite=lax",
-          `Expires=${new Date(expiry).toUTCString()}`]) assert(cookie.includes(part), `missing cookie ${part}`);
+        for (const part of [
+          `commish_attribution=${token}`,
+          "Path=/",
+          "HttpOnly",
+          "Secure",
+          "SameSite=lax",
+          `Expires=${new Date(expiry).toUTCString()}`,
+        ])
+          assert(cookie.includes(part), `missing cookie ${part}`);
         const age = Number(/Max-Age=(\d+)/.exec(cookie)?.[1]);
         assert(age > 0 && age <= 3600);
         const forwarded = requests.at(-1);
@@ -65,14 +85,19 @@ export async function captureRequestProbe(runApp) {
         assert.equal(forwarded.headers.authorization, `Bearer ${process.env.COMMISH_SECRET_KEY}`);
       }
       for (const prior of [null, "invalid"]) {
-        const response = await send({ ...(prior ? { cookie: `commish_attribution=${prior}` } : {}),
-          "x-forwarded-for": "192.0.2.99", "x-commish-client-ip": "192.0.2.98" });
+        const response = await send({
+          ...(prior ? { cookie: `commish_attribution=${prior}` } : {}),
+          "x-forwarded-for": "192.0.2.99",
+          "x-commish-client-ip": "192.0.2.98",
+        });
         assert.equal(response.status, 200);
         await response.text();
         assert.deepEqual(JSON.parse(requests.at(-1).body), clean);
         assert.equal(requests.at(-1).headers["x-commish-client-ip"], undefined);
       }
-      const error = { error: { code: "invalid_request", message: "Controlled upstream rejection" } };
+      const error = {
+        error: { code: "invalid_request", message: "Controlled upstream rejection" },
+      };
       reply = { status: 400, body: JSON.stringify(error) };
       const malformed = await send({}, "{invalid");
       assert.equal(malformed.status, 400);
@@ -81,10 +106,14 @@ export async function captureRequestProbe(runApp) {
       assert.equal(requests.at(-1).body, "{invalid");
       for (const [status, value, expected, code] of [
         [503, "unavailable", 503, "attribution_capture_failed"],
-        ...[{}, { data: { token: 123, expiresAt: expiry } },
-          { data: { token, expiresAt: 123 } }, { data: { token, expiresAt: "invalid" } },
-          { data: { token, expiresAt: "2000-01-01" } }, { data: { token: "", expiresAt: expiry } }]
-          .map((value) => [200, JSON.stringify(value), 502, "invalid_capture_response"]),
+        ...[
+          {},
+          { data: { token: 123, expiresAt: expiry } },
+          { data: { token, expiresAt: 123 } },
+          { data: { token, expiresAt: "invalid" } },
+          { data: { token, expiresAt: "2000-01-01" } },
+          { data: { token: "", expiresAt: expiry } },
+        ].map((value) => [200, JSON.stringify(value), 502, "invalid_capture_response"]),
       ]) {
         reply = { status, body: value };
         const response = await send();
@@ -96,10 +125,11 @@ export async function captureRequestProbe(runApp) {
   } finally {
     if (previous === undefined) delete process.env.COMMISH_API_URL;
     else process.env.COMMISH_API_URL = previous;
-    if (upstream.listening) await new Promise((resolve, reject) => {
-      upstream.close((error) => error ? reject(error) : resolve());
-      upstream.closeAllConnections();
-    });
+    if (upstream.listening)
+      await new Promise((resolve, reject) => {
+        upstream.close((error) => (error ? reject(error) : resolve()));
+        upstream.closeAllConnections();
+      });
     assert(!upstream.listening, "owned capture upstream remained listening");
   }
 }

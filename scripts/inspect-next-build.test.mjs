@@ -19,7 +19,9 @@ function fixture(run) {
     put(".next/server/app/api/artifact/route.js", `const marker = '${serverMarker}';`);
     put(
       ".next/server/middleware-manifest.json",
-      JSON.stringify({ functions: { "/api/edge/route": { files: ["server/app/api/edge/route.js"] } } }),
+      JSON.stringify({
+        functions: { "/api/edge/route": { files: ["server/app/api/edge/route.js"] } },
+      }),
     );
     put(".next/server/app/api/edge/route.js", `const edge = '${serverMarker}';`);
     put(".next/static/chunks/client.js", "export const provider = true;");
@@ -48,11 +50,17 @@ test("build evidence requires the real server witness before client absence", ()
     assert.throws(() => inspectNextBuild(root), /edge marker witness missing/);
     put(".next/server/middleware-manifest.json", JSON.stringify({ functions: {} }));
     assert.throws(() => inspectNextBuild(root), /missing edge route/);
-    put(".next/server/middleware-manifest.json",
-      JSON.stringify({ functions: { "/api/edge/route": { files: ["../outside.js"] } } }));
+    put(
+      ".next/server/middleware-manifest.json",
+      JSON.stringify({ functions: { "/api/edge/route": { files: ["../outside.js"] } } }),
+    );
     assert.throws(() => inspectNextBuild(root), /escaped owned root|ENOENT/);
-    put(".next/server/middleware-manifest.json",
-      JSON.stringify({ functions: { "/api/edge/route": { files: ["server/app/api/edge/route.js"] } } }));
+    put(
+      ".next/server/middleware-manifest.json",
+      JSON.stringify({
+        functions: { "/api/edge/route": { files: ["server/app/api/edge/route.js"] } },
+      }),
+    );
     put(".next/server/app/api/edge/route.js", `const edge = '${serverMarker}';`);
     put(".next/server/app/api/artifact/route.js", "export const noMarker = true;");
     assert.throws(() => inspectNextBuild(root), /server marker witness missing/);
