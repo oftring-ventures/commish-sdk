@@ -164,7 +164,7 @@ test("Next declaration compiler, project, resolution and mutation boundaries fai
           );
         }
       }
-      const context = { build, checkout, lock: Buffer.from("locked") },
+      const context = { build, checkout, lock: Buffer.from("locked"), typeVersions: { "@types/react": "19.2.18", csstype: "3.2.3" } },
         calls = [];
       if (failure === "lock") write(join(build, "pnpm-lock.yaml"), "changed");
       if (failure === "compiler-path" || failure === "sdk-link") {

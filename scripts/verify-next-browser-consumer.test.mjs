@@ -373,12 +373,8 @@ test("provider layout freezes registry types then extends the exact local pair o
         join(build, "scripts/fixtures/types-next-provider.tsx"),
         readFileSync(new URL("./fixtures/types-next-provider.tsx", import.meta.url)),
       );
-      // Controlled source context only: inspect's complete lock fingerprint is independently tested.
-      const lock = Buffer.from(
-        failure === "integrity"
-          ? "invalid"
-          : "sha512-AnzbBERsrLKtk2XSfTbYRLjQPdy116Sty4q+T+Bp3IC4l6jNBvreVPAHmpq9qhXQM7CXZPjLVmGMw9sy+hxQ3w== sha512-z1HGKcYy2xA8AGQfwrn0PAy+PB7X/GSj3UVJW9qKyn43xWa+gl5nXmU4qqLMRzWVLFC8KusUX8T/0kCiOYpAIQ==",
-      );
+      // Controlled source context only: the complete workspace lock is independently verified.
+      const lock = Buffer.from(sourceLockFixture(failure !== "integrity"));
       writeFileSync(join(build, "pnpm-lock.yaml"), lock);
       const source = { build, checkout: context.checkout, lock },
         packages = fixture(true, failure === "server"),
@@ -527,3 +523,54 @@ test("provider layout freezes registry types then extends the exact local pair o
     }
   }
 });
+
+// A minimal workspace lock with the records the provider type gate reads.
+function sourceLockFixture(valid = true) {
+  return `lockfileVersion: '9.0'
+
+settings:
+  autoInstallPeers: true
+  excludeLinksFromLockfile: false
+
+importers:
+
+  .: {}
+
+  packages/next:
+    devDependencies:
+      '@commish/sdk':
+        specifier: workspace:*
+        version: link:../sdk
+      '@types/react':
+        specifier: 19.2.18
+        version: 19.2.18
+      next:
+        specifier: 16.3.8
+        version: 16.3.8(react@19.2.8)
+      react:
+        specifier: 19.2.8
+        version: 19.2.8
+
+  packages/sdk:
+    devDependencies:
+      typescript:
+        specifier: 5.9.2
+        version: 5.9.2
+
+packages:
+
+  '@types/react@19.2.18':
+    resolution: ${valid ? "{integrity: sha512-AnzbBERsrLKtk2XSfTbYRLjQPdy116Sty4q+T+Bp3IC4l6jNBvreVPAHmpq9qhXQM7CXZPjLVmGMw9sy+hxQ3w==}" : "{}"}
+
+  csstype@3.2.3:
+    resolution: {integrity: sha512-z1HGKcYy2xA8AGQfwrn0PAy+PB7X/GSj3UVJW9qKyn43xWa+gl5nXmU4qqLMRzWVLFC8KusUX8T/0kCiOYpAIQ==}
+
+snapshots:
+
+  '@types/react@19.2.18':
+    dependencies:
+      csstype: 3.2.3
+
+  csstype@3.2.3: {}
+`;
+}

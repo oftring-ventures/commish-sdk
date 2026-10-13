@@ -15,11 +15,8 @@ import { tmpdir } from "node:os";
 import { isAbsolute, join, relative, sep } from "node:path";
 
 import { verifyNextBrowserTypes, verifyNextProviderTypes } from "./verify-next-types.mjs";
-import {
-  readProviderTypeInputs,
-  providerTypeDependencies,
-  providerTypesLock,
-} from "./provider-types-lock.mjs";
+import { readProviderTypeInputs, providerTypesLock } from "./provider-types-lock.mjs";
+import { peerAllows } from "./package-shape.mjs";
 
 export const nextBrowserScope = "next-browser-node-bridge";
 export const nextMetadataScope = "next-metadata-installed-node";
@@ -133,26 +130,28 @@ function verifyNextConsumer(provider, sdk, next, context, execute = execFileSync
     assert.equal(manifest.version, releaseVersion);
     for (const field of ["dependencies", "optionalDependencies"])
       assert.deepEqual(manifest[field] ?? {}, {}, "unexpected paired runtime dependency");
-    assert.deepEqual(manifest.exports["./browser"], pair("browser"));
+    const browser = manifest.exports["./browser"];
+    assert(browser && !Object.hasOwn(browser, "browser") && browser.types === "./dist/browser.d.ts" &&
+      browser.default === "./dist/browser.js", "unsupported browser entry");
   }
   assert.deepEqual(manifests[0].peerDependencies ?? {}, {});
-  const exports = { "./browser": pair("browser") },
-    peers = { "@commish/sdk": manifests[0].version };
-  if (Object.hasOwn(manifests[1].exports, ".")) exports["."] = pair("index", true);
-  if (Object.hasOwn(manifests[1].exports, "./react")) {
-    exports["./react"] = pair("provider");
-    assert(Object.hasOwn(manifests[1].peerDependencies, "next"), "provider framework peer missing");
+  // The source gate validated the full export shape; the paired consumer re-checks the
+  // properties its probes rely on: secret-bearing entries stay out of browsers and the
+  // peers name the released SDK and bounded framework ranges.
+  const nextExports = manifests[1].exports;
+  for (const entry of Object.keys(nextExports)) {
+    assert(["./browser", ".", "./react", "./pages", "./pages/handlers", "./pages/routing"].includes(entry),
+      "unsupported Next export tuple");
+    if (["./browser", "./react"].includes(entry)) assert(!Object.hasOwn(nextExports[entry], "browser"), "unsupported Next export tuple");
+    else assert.equal(nextExports[entry].browser, null, "unsupported Next export tuple");
   }
-  if (Object.hasOwn(manifests[1].peerDependencies, "next")) {
-    Object.assign(peers, { next: ">=16.3.8 <17", react: ">=19.2.8 <20" });
-  }
-  for (const name of ["handlers", "routing"]) {
-    if (Object.hasOwn(manifests[1].exports, "./pages/" + name))
-      exports["./pages/" + name] = pair("pages-" + name, true);
-  }
-  if (Object.hasOwn(manifests[1].exports, "./pages")) exports["./pages"] = pair("pages", true);
-  assert.deepEqual(manifests[1].exports, exports, "unsupported Next export tuple");
-  assert.deepEqual(manifests[1].peerDependencies, peers, "unexpected Next peers");
+  const peers = manifests[1].peerDependencies ?? {};
+  const range = /^>=\d+\.\d+\.\d+ <\d+$/;
+  assert(peerAllows(peers["@commish/sdk"], manifests[0].version), "unexpected Next peers");
+  for (const name of Object.keys(peers))
+    assert(name === "@commish/sdk" || (["next", "react"].includes(name) && range.test(peers[name])), "unexpected Next peers");
+  if (Object.hasOwn(nextExports, "./react"))
+    assert(Object.hasOwn(peers, "next"), "provider framework peer missing");
   for (const [index, { packed }] of [sdk, next].entries())
     for (const target of [
       ...Object.values(manifests[index].exports).flatMap(Object.values),
@@ -196,7 +195,7 @@ function verifyNextConsumer(provider, sdk, next, context, execute = execFileSync
           dependencies,
         }),
       );
-    writeManifest(provider ? providerTypeDependencies : pairDependencies);
+    writeManifest(provider ? locks.dependencies : pairDependencies);
     writeFileSync(join(consumer, "sdk.tgz"), sdk.archive);
     writeFileSync(join(consumer, "next.tgz"), next.archive);
     const common = ["--ignore-scripts", "--ignore-workspace", "--config.auto-install-peers=false"];
@@ -217,8 +216,8 @@ function verifyNextConsumer(provider, sdk, next, context, execute = execFileSync
         locks.registry,
         "provider registry lock changed",
       );
-      originalTypes = readProviderTypeInputs(consumer);
-      writeManifest({ ...pairDependencies, ...providerTypeDependencies });
+      originalTypes = readProviderTypeInputs(consumer, locks.dependencies);
+      writeManifest({ ...pairDependencies, ...locks.dependencies });
       checkVersion();
       run("pnpm", ["install", "--offline", "--no-frozen-lockfile", ...common]);
       assert.equal(
@@ -227,7 +226,7 @@ function verifyNextConsumer(provider, sdk, next, context, execute = execFileSync
         "provider paired lock differs",
       );
       assert.deepEqual(
-        readProviderTypeInputs(consumer),
+        readProviderTypeInputs(consumer, locks.dependencies),
         originalTypes,
         "provider types changed during extension",
       );
@@ -245,7 +244,7 @@ function verifyNextConsumer(provider, sdk, next, context, execute = execFileSync
       inside(consumer, join(modules, "@commish", name)),
     );
     const extra = provider
-      ? Object.keys(providerTypeDependencies).map((name) => inside(consumer, join(modules, name)))
+      ? Object.keys(locks.dependencies).map((name) => inside(consumer, join(modules, name)))
       : [];
     const expected = [...installed, ...extra]
       .map((path) => relative(realpathSync(store), inside(realpathSync(store), path)).split(sep)[0])
@@ -288,7 +287,7 @@ function verifyNextConsumer(provider, sdk, next, context, execute = execFileSync
       consumer,
       sdk.packed,
       next.packed,
-      context,
+      { ...context, ...(provider ? { typeVersions: locks.dependencies } : {}) },
       execute,
     );
     if (provider)
@@ -299,7 +298,7 @@ function verifyNextConsumer(provider, sdk, next, context, execute = execFileSync
       );
     if (provider)
       assert.deepEqual(
-        readProviderTypeInputs(consumer),
+        readProviderTypeInputs(consumer, locks.dependencies),
         originalTypes,
         "provider types changed during probe",
       );
