@@ -115,6 +115,9 @@ export function inspectPackageManifest(pkg, manifest, has) {
       if (Object.hasOwn(value, name)) {
         assert(pkg === "sdk" && entry === ".", `${name} is supported only by the SDK client`);
         assert.equal(value[name], value.default, `${name} must resolve the default build`);
+        // Conditions match in key order and edge resolvers also match `browser`, so an
+        // edge condition listed after `browser: null` would never be reached.
+        assert(names.indexOf(name) < names.indexOf("browser"), `${name} must precede the browser condition`);
       }
     targets.push(value.types, value.default);
   }

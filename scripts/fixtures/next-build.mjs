@@ -18,6 +18,17 @@ export async function GET() {
   return Response.json({ kind: typeof client });
 }
 `,
+  // The SDK client only needs fetch, so it must also bundle for the Edge runtime.
+  "app/api/edge/route.ts": `import { Commish } from '@commish/sdk';
+export const runtime = 'edge';
+export const dynamic = 'force-dynamic';
+export async function GET() {
+  const client = new Commish({ secretKey: '${serverMarker}',
+    baseUrl: 'https://api.example.test/api/v1',
+    fetch: async () => { throw new Error('Build fixture network forbidden'); } });
+  return Response.json({ kind: typeof client, runtime: 'edge' });
+}
+`,
   "tsconfig.json": JSON.stringify({
     compilerOptions: {
       target: "ES2017",

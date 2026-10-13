@@ -301,7 +301,8 @@ export default function Layout({ children }: { children: ReactNode }) {
       `Next.js v${locks.dependencies.next}`,
       "wrong framework CLI",
     );
-    await run(process.execPath, [executable, "build", "--webpack"], 600_000);
+    // The default bundler, as consumers build; the inspector then checks both the Node and Edge output.
+    await run(process.execPath, [executable, "build"], 600_000);
     inspectNextBuild(consumer);
     if (cookieHelpers) {
       await run(process.execPath, ["cookie-probe.mjs"]);
