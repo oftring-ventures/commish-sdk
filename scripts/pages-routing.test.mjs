@@ -1,4 +1,4 @@
-import test from "node:test";
+import test, { mock } from "node:test";
 import assert from "node:assert/strict";
 import {createCreatorAliasHandler,creatorPageFallbackRewrite} from "../packages/next/dist/pages-routing.js";
 import {createCreatorPageHandlers} from "../packages/next/dist/pages-handlers.js";
@@ -124,4 +124,43 @@ test("same-origin integration rejects forged hosts and unsafe bodies before cook
  assert.equal((await POST(new Request(page.origin,{method:"POST",headers:{origin:page.origin,"content-type":"text/plain"},body:"{}"}))).status,415);
  assert.equal((await POST(new Request(page.origin,{method:"POST",headers:{origin:page.origin,"content-type":"application/json"},body:"x".repeat(4097)}))).status,413);
  assert.equal((await POST(new Request(page.origin,{method:"POST",headers:{origin:page.origin,"content-type":"application/json"},body:'{"action":"purchase"}'}))).status,400);
+});
+
+test("verified aliases are cached and survive crawler bursts and outages", async () => {
+  // Alias state is per module, so start past every budget window the tests above used.
+  mock.timers.enable({ apis: ["Date"], now: Date.now() + 20_000 });
+  const original = globalThis.fetch;
+  const alice = { ...page, programId: "prg_alias_cache_0001", canonicalPath: "/c/alice",
+    preferredPath: "/c/alice", creator: { handle: "alice" } };
+  let calls = 0, outage = false;
+  globalThis.fetch = async (url) => {
+    calls += 1;
+    if (outage) throw new Error("offline");
+    if (String(url).endsWith("/alice")) return Response.json({ data: alice });
+    return Response.json({ error: { code: "page_not_found", message: "Not found" } }, { status: 404 });
+  };
+  try {
+    const handler = createCreatorAliasHandler({ ...options, programId: alice.programId });
+    const alias = async (handle) =>
+      (await handler(new Request(`${page.origin}/${handle}`), params(handle))).status;
+    for (let i = 0; i < 70; i += 1) assert.equal(await alias("alice"), 307);
+    assert.equal(calls, 1, "a verified alias is read once per freshness window");
+    const other = createCreatorAliasHandler({ ...options, programId: alice.programId, origin: "https://other.example" });
+    assert.equal((await other(new Request("https://other.example/alice"), params("alice"))).status, 404,
+      "an alias verified for one origin is not reused for another");
+    for (let i = 0; i < 60; i += 1) assert.equal(await alias(`scan-${i}`), 404);
+    assert.equal(await alias("alice"), 307, "crawler noise does not starve a verified alias");
+    mock.timers.tick(61_000);
+    outage = true;
+    calls = 0;
+    assert.equal(await alias("alice"), 307, "an outage keeps a recently verified alias redirecting");
+    assert.equal(await alias("alice"), 307);
+    assert.equal(calls, 1, "revalidation during an outage is attempted at most once per failure window");
+    assert.equal(await alias("scan-0"), 404, "an unverified path stays a 404 during an outage");
+    mock.timers.tick(600_000);
+    assert.equal(await alias("alice"), 404, "a stale alias is not served beyond its bound");
+  } finally {
+    globalThis.fetch = original;
+    mock.timers.reset();
+  }
 });
