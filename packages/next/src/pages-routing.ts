@@ -92,7 +92,15 @@ async function lookupAlias(
   options: CreatorPageOptions,
   handle: string,
 ): Promise<CreatorPage | null> {
-  const key = `${options.programId}/${handle}`;
+  // Everything resolveCreatorPage checks belongs in the key, so a hit cached
+  // for one installation is never served to another sharing the program.
+  const key = JSON.stringify([
+    options.apiUrl ?? "",
+    options.programId,
+    options.origin,
+    options.prefix ?? "/c",
+    handle,
+  ]);
   const now = Date.now();
   const hit = hits.get(key);
   if (hit && hit.freshUntil > now) return hit.page;
