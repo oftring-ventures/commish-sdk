@@ -37,6 +37,7 @@ mkdirSync(context.checkout);
 const compiler = join(context.build, "packages/sdk/node_modules/typescript");
 for (const [name, data] of Object.entries({
   "pnpm-lock.yaml": "locked",
+  "packages/sdk/package.json": JSON.stringify({ devDependencies: { typescript: "5.9.2" } }),
   "packages/sdk/node_modules/typescript/package.json": JSON.stringify({
     name: "typescript",
     version: "5.9.2",

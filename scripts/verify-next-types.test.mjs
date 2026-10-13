@@ -28,6 +28,7 @@ test("Next declaration compiler, project, resolution and mutation boundaries fai
     ["lock", /Next type lock changed/, 0],
     ["compiler-path", /escaped its owned root/, 0],
     ["version", /5\.9\.2/, 0],
+    ["unpinned", /TypeScript must be pinned exactly/, 0],
     ["actual-version", /wrong actual Next type compiler/, 1],
     ["fixture", /ENOENT.*types-next-(browser\.ts|provider\.tsx)/, 1],
     ["sdk-link", /escaped its owned root/, 0],
@@ -80,6 +81,12 @@ test("Next declaration compiler, project, resolution and mutation boundaries fai
     try {
       mkdirSync(checkout);
       write(join(build, "pnpm-lock.yaml"), "locked");
+      write(
+        join(build, "packages/sdk/package.json"),
+        JSON.stringify({
+          devDependencies: { typescript: failure === "unpinned" ? "^5.9.2" : "5.9.2" },
+        }),
+      );
       write(
         join(compiler, "package.json"),
         JSON.stringify({
