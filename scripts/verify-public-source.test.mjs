@@ -3,181 +3,34 @@ import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createRequire } from "node:module";
 import { gzipSync } from "node:zlib";
+import { createRequire } from "node:module";
 import test from "node:test";
 import { archiveFiles, failureDiagnostic, inspect, verify, verifyPackages } from "./verify-public-source.mjs";
-import { nodeVersion, pnpmVersion } from "./toolchain.mjs";
+import { releaseVersion } from "./stable-release.mjs";
 
-function bootstrap() {
+const root = new URL("../", import.meta.url);
+// The tracked tree with its index modes: the same inventory `verify` reads from HEAD.
+function repositoryTree() {
   const files = new Map();
-  put(files, "LICENSE", readFileSync(new URL("../LICENSE", import.meta.url)));
-  put(files, ".gitignore", "node_modules/\ndist/\n*.tgz\n");
-  put(
-    files,
-    "README.md",
-    "# Commish public packages\n\nMIT-licensed source for integrating applications with Commish in TEST and LIVE modes.\n\nThis repository is receiving independently buildable source layers.\nVerify npm availability, provenance and hosted acceptance separately from this source checkout.\n\nSee LICENSE for copyright and permission terms.\n",
-  );
-  for (const name of [
-    "scripts/catalog.test.mjs",
-    "scripts/setup-session.test.mjs",
-  "scripts/api-command.test.mjs",
-  "scripts/headless-command.test.mjs",
-    "scripts/setup-intent.test.mjs",
-    "scripts/setup-resources.test.mjs",
-    "scripts/setup-files.test.mjs",
-    "scripts/setup-config.test.mjs",
-    "scripts/setup-progress.test.mjs",
-    "scripts/setup-secrets.test.mjs",
-    "scripts/setup-provisioning.test.mjs",
-    "scripts/setup-arguments.test.mjs",
-    "scripts/setup-workflow.test.mjs",
-    "scripts/setup-command.test.mjs",
-    "scripts/setup-authorization.test.mjs",
-    "scripts/stable-release.mjs",
-    "scripts/toolchain.mjs",
-    "scripts/stable-release.test.mjs",
-    ".github/workflows/publish-packages.yml",
-    "scripts/publication-workflow.test.mjs",
-    ".github/workflows/public-source.yml",
-    ".github/workflows/public-review.yml",
-    ".github/workflows/public-review-merge-group.yml",
-    "scripts/verify-public-source.mjs",
-    "scripts/verify-public-source.test.mjs",
-    "scripts/next-metadata.test.mjs",
-    "scripts/verify-sdk-browser-consumer.mjs",
-    "scripts/verify-sdk-browser-consumer.test.mjs",
-    "scripts/verify-next-browser-consumer.mjs",
-    "scripts/verify-next-browser-consumer.test.mjs",
-    "scripts/verify-next-types.mjs",
-    "scripts/verify-next-types.test.mjs",
-    "scripts/fixtures/types-next-browser.ts",
-    "scripts/fixtures/types-next-provider.tsx",
-    "scripts/provider-types-lock.mjs",
-    "scripts/inspect-next-build.mjs",
-    "scripts/inspect-next-build.test.mjs",
-    "scripts/next-command-scope.mjs",
-    "scripts/next-command-scope.test.mjs",
-    "scripts/verify-framework-package.mjs",
-    "scripts/verify-framework-package.test.mjs",
-    "scripts/fixtures/next-peer-bin.txt",
-    "scripts/verify-next-build.mjs",
-    "scripts/verify-pages-artifact.mjs",
-    "scripts/verify-next-build.test.mjs",
-    "scripts/next-framework-lock.mjs",
-    "scripts/fixtures/next-build.mjs",
-  "scripts/fixtures/next-capture.mjs",
-  "scripts/fixtures/next-provider.mjs",
-  "scripts/fixtures/next-cli.mjs",
-  "scripts/fixtures/setup-cli.mjs",
-  "scripts/public-package-manifest.mjs",
-  "scripts/public-package-manifest.test.mjs",
-  "scripts/public-candidate.mjs",
-  "scripts/public-candidate.test.mjs",
-  "scripts/candidate-ci-receipt.mjs",
-  "scripts/candidate-ci-receipt.test.mjs",
-  "scripts/publication-preflight.mjs",
-  "scripts/publication-preflight.test.mjs",
-  "scripts/publication-executor.mjs",
-  "scripts/publication-executor.test.mjs",
-  "scripts/publication-handoff.mjs",
-  "scripts/publication-handoff.test.mjs",
-    "scripts/verify-sdk-types.mjs",
-    "scripts/verify-sdk-types.test.mjs",
-    "scripts/verify-sdk-webhooks.mjs",
-    "scripts/verify-sdk-webhooks.test.mjs",
-    "scripts/verify-sdk-http.mjs",
-    "scripts/verify-sdk-http.test.mjs",
-    "scripts/verify-sdk-reads.mjs",
-    "scripts/verify-sdk-reads.test.mjs",
-    "scripts/fixtures/types-common.ts",
-    "scripts/fixtures/types-only.ts",
-    "scripts/fixtures/types-client.ts",
-  ])
-    put(files, name, "");
+  const listing = execFileSync("git", ["ls-files", "-z", "--stage"], { cwd: root }).toString();
+  for (const entry of listing.split("\0").filter(Boolean)) {
+    const [metadata, name] = entry.split("\t"), [mode] = metadata.split(" ");
+    files.set(name, { mode, data: readFileSync(new URL(name, root)) });
+  }
   return files;
 }
 function put(files, name, value) {
   files.set(name, {
     mode: "100644",
-    data: Buffer.from(
-      typeof value === "object" && !Buffer.isBuffer(value) ? JSON.stringify(value) : value,
-    ),
+    data: Buffer.from(typeof value === "object" && !Buffer.isBuffer(value) ? JSON.stringify(value) : value),
   });
 }
-function packageTree() {
-  const files = bootstrap();
-  put(files, ".node-version", `${nodeVersion}\n`);
-  put(files, "package.json", {
-    name: "commish-public-packages",
-    private: true,
-    packageManager: `pnpm@${pnpmVersion}`,
-    engines: { node: ">=24 <25" },
-    scripts: { build: "pnpm --filter @commish/sdk build" },
-  });
-  put(files, "pnpm-workspace.yaml", "packages:\n  - packages/sdk\nengineStrict: true\n");
-  put(
-    files,
-    "pnpm-lock.yaml",
-    `lockfileVersion: '9.0'
-
-settings:
-  autoInstallPeers: true
-  excludeLinksFromLockfile: false
-
-importers:
-
-  .: {}
-
-  packages/sdk:
-    devDependencies:
-      '@types/node':
-        specifier: 24.13.3
-        version: 24.13.3
-      typescript:
-        specifier: 5.9.2
-        version: 5.9.2
-
-packages:
-
-  '@types/node@24.13.3':
-    resolution: {integrity: sha512-Dh8vAsV36ig5wa9OX4pXvMc9D3Veibfw2wix0CUwYODLD8nkj9UsLjASr49nPg+2eKzxhBV+v7L8pXvT4e639Q==}
-
-  typescript@5.9.2:
-    resolution: {integrity: sha512-CWBzXQrc/qOkhidw1OzBTQuYRbfyxDXJMVJ1XNwUHGROVmuaeiEm3OslpZ1RV96d7SKKjZKrSJu3+t/xlw3R9A==}
-    engines: {node: '>=14.17'}
-    hasBin: true
-
-  undici-types@7.18.2:
-    resolution: {integrity: sha512-AsuCzffGHJybSaRrmr5eHr81mwJU3kjw6M+uprWvCXiNeN9SOGwQ3Jn8jb8m3Z6izVgknn1R0FTCEAP2QrLY/w==}
-
-snapshots:
-
-  '@types/node@24.13.3':
-    dependencies:
-      undici-types: 7.18.2
-
-  typescript@5.9.2: {}
-
-  undici-types@7.18.2: {}
-`,
-  );
-  put(files, "packages/sdk/package.json", {
-    name: "@commish/sdk",
-    version: "0.3.0",
-    type: "module",
-    scripts: {
-      build: "node build.mjs",
-      prepack: "pnpm build",
-      typecheck: "tsc -p tsconfig.build.json --noEmit",
-    },
-    devDependencies: { typescript: "5.9.2", "@types/node": "24.13.3" },
-    exports: { "./browser": { types: "./dist/browser.d.ts", default: "./dist/browser.js" } },
-  });
-  for (const name of ["LICENSE", "build.mjs", "tsconfig.build.json", "src/browser.ts"])
-    put(files, `packages/sdk/${name}`, "");
-  return files;
-}
+const patch = (files, name, change) => {
+  const manifest = JSON.parse(files.get(name).data);
+  change(manifest);
+  put(files, name, manifest);
+};
 function tar(entries) {
   return gzipSync(
     Buffer.concat([
@@ -202,204 +55,131 @@ function tar(entries) {
     ]),
   );
 }
+const stubConsumers = (log) => ({
+  sdk: (archive, packed, run, context) => {
+    log.push("sdk-consumer");
+    assert(archive.length > 0 && packed.has("package/dist/index.js") && packed.has("package/bin/init.mjs"));
+    assert.equal(typeof run, "function");
+    assert(context.lock.length > 0 && existsSync(context.build));
+    return { scopes: ["sdk-scope"] };
+  },
+  nextBrowser: (sdk, next) => {
+    log.push("next-browser");
+    assert(sdk.packed.has("package/dist/webhooks.js") && next.packed.has("package/dist/provider.js"));
+    return ["next-browser-scope"];
+  },
+  nextProvider: () => {
+    log.push("next-provider");
+    return ["next-provider-scope"];
+  },
+  nextBuild: async () => {
+    log.push("next-build");
+    return ["next-build-scope"];
+  },
+});
+// Stands in for pnpm: build writes every declared dist target, pack archives them.
+function stubRun(packages, calls, failure) {
+  let work;
+  const run = (command, args, cwd) => {
+    assert.equal(command, "pnpm");
+    calls.push(args[0]);
+    work ??= cwd;
+    if (args[0] === failure) throw new Error("controlled command failure");
+    if (args[0] === "install")
+      assert.deepEqual(args, ["install", "--frozen-lockfile", "--ignore-scripts", "--registry=https://registry.npmjs.org"]);
+    const pkg = packages.find(({ dir }) => cwd === join(work, dir));
+    if (args[0] === "build") {
+      mkdirSync(join(cwd, "dist"), { recursive: true });
+      for (const target of pkg.targets.filter((name) => name.startsWith("./dist/")))
+        writeFileSync(join(cwd, target), `// ${target}\n`);
+    }
+    if (args[0] === "pack") {
+      const manifest = structuredClone(pkg.manifest);
+      delete manifest.scripts.prepack;
+      const entries = [["package/package.json", JSON.stringify(manifest)]];
+      for (const target of pkg.targets)
+        if (!(failure === "missing-export" && target.endsWith(".d.ts")))
+          entries.push([`package/${target.slice(2)}`, readFileSync(join(cwd, target)), "0",
+            target.startsWith("./bin/") ? "0000755" : "0000644"]);
+      writeFileSync(join(args[2], "fixture.tgz"), tar(entries));
+      if (failure === "mutated-lock") writeFileSync(join(work, "pnpm-lock.yaml"), "changed");
+    }
+  };
+  return { run, work: () => work };
+}
 
-test("only the exact approved bootstrap receives the empty package plan", () => {
-  assert.deepEqual(inspect(bootstrap()), []);
-  for (const [name, value] of [
-    ["README.md", "different"],
-    ["packages/sdk/src/browser.ts", "export {}"],
-    ["package.json", "{}"],
-    ["packages/sdk/package.json", "{}"],
-    ["packages/next/package.json", "{}"],
-    ["pnpm-workspace.yaml", "packages: []"],
-    ["pnpm-lock.yaml", "lockfileVersion: 9"],
-    ["surprise.ts", ""],
-    [".github/workflows/extra.yml", ""],
-  ]) {
-    const files = bootstrap();
-    put(files, name, value);
-    assert.throws(() => inspect(files));
-  }
-  for (const name of bootstrap().keys()) {
-    const files = bootstrap();
-    files.delete(name);
-    assert.throws(() => inspect(files));
-  }
-  const linked = bootstrap();
-  linked.get("LICENSE").mode = "120000";
-  assert.throws(() => inspect(linked));
-});
-test("package shapes fail closed on missing scaffolding, orphan sources, unsafe commands and exports", () => {
-  assert.equal(inspect(packageTree())[0].manifest.name, "@commish/sdk");
-  for (const name of [
-    "package.json",
-    "pnpm-lock.yaml",
-    "packages/sdk/package.json",
-    "packages/sdk/build.mjs",
-    "packages/sdk/src/browser.ts",
-  ]) {
-    const files = packageTree();
-    files.delete(name);
-    assert.throws(() => inspect(files));
-  }
-  for (const patch of [
-    { scripts: { install: "do-something" } },
-    { dependencies: { unexpected: "1.0.0" } },
-    { exports: {} },
-    { exports: { "./browser": "../../outside.js" } },
-    { bin: { other: "./bin/other" } },
-    { devDependencies: { typescript: "latest" } },
-  ]) {
-    const files = packageTree(),
-      name = "packages/sdk/package.json";
-    put(files, name, { ...JSON.parse(files.get(name).data), ...patch });
-    assert.throws(() => inspect(files));
-  }
-  for (const [name, value] of [
-    ["packages/next/src/browser.ts", ""],
-    ["pnpm-workspace.yaml", "packages: ['**']"],
-    ["pnpm-lock.yaml", "lockfileVersion: '9.0'\n  tarball: https://example.invalid/a.tgz"],
-    [
-      "pnpm-lock.yaml",
-      "lockfileVersion: '9.0'\n  resolution: {type: git, repo: 'git@example.invalid:repo.git', commit: abc}",
-    ],
-    [
-      "pnpm-lock.yaml",
-      "lockfileVersion: '9.0'\n  resolution: {type: directory, directory: '../../outside'}",
-    ],
-  ]) {
-    const files = packageTree();
-    put(files, name, value);
-    assert.throws(() => inspect(files));
-  }
-});
-test("Next server metadata may precede CLI without admitting mismatched package states", () => {
-  const nextTree = () => {
-    const files = packageTree();
-    for (const name of [
-      "package.json",
-      "pnpm-workspace.yaml",
-      "pnpm-lock.yaml",
-      "packages/next/package.json",
-      "packages/next/LICENSE",
-      "packages/next/build.mjs",
-      "packages/next/tsconfig.build.json",
-      "packages/next/src/browser.ts",
-      "packages/next/src/index.ts",
-      "packages/next/src/metadata.ts",
-      "packages/next/src/capture.ts",
-      "packages/next/src/provider.tsx",
-    ])
-      put(files, name, readFileSync(new URL(`../${name}`, import.meta.url)));
-    // Preserve the pre-CLI stage independently of the current source manifest.
-    const manifest = JSON.parse(files.get("packages/next/package.json").data);
-    delete manifest.bin;
-    manifest.files = manifest.files.filter((name) => name !== "guides");
-    delete manifest.exports["./pages"];
-    delete manifest.exports["./pages/handlers"];
-    delete manifest.exports["./pages/routing"];
-    manifest.private = true;
-    put(files, "packages/next/package.json", manifest);
-    return files;
-  };
-  const manifestPath = "packages/next/package.json",
-    binPath = "packages/next/bin/init.mjs";
-  const patch = (files, change) => {
-    const manifest = JSON.parse(files.get(manifestPath).data);
-    change(manifest);
-    put(files, manifestPath, manifest);
-  };
-  assert.deepEqual(inspect(nextTree())[1].targets, [
-    "./dist/browser.d.ts",
-    "./dist/browser.js",
-    "./dist/index.d.ts",
-    "./dist/index.js",
-    "./dist/provider.d.ts",
-    "./dist/provider.js",
+test("the committed pair is admitted and archive targets follow the exports", () => {
+  const packages = inspect(repositoryTree());
+  assert.deepEqual(packages.map(({ dir, manifest }) => [dir, manifest.name, manifest.version]), [
+    ["packages/sdk", "@commish/sdk", releaseVersion],
+    ["packages/next", "@commish/next", releaseVersion],
   ]);
-  const legacy = nextTree();
-  put(legacy, "packages/next/src/index.ts", legacy.get("packages/next/src/metadata.ts").data);
-  legacy.delete("packages/next/src/metadata.ts");
-  legacy.delete("packages/next/src/capture.ts");
-  legacy.delete("packages/next/src/provider.tsx");
-  patch(legacy, (manifest) => {
-    for (const name of ["next", "react", "react-dom", "@types/react", "@types/react-dom"])
-      delete manifest.devDependencies[name];
-    delete manifest.exports["./react"];
-    delete manifest.peerDependencies.next;
-    delete manifest.peerDependencies.react;
-  });
-  put(legacy, "pnpm-workspace.yaml", "packages:\n  - packages/sdk\n  - packages/next\nengineStrict: true\n");
-  const sdkLock = packageTree().get("pnpm-lock.yaml").data.toString();
-  const sdkImporter = sdkLock.split("  packages/sdk:\n")[1].split("\npackages:\n")[0];
-  const nextImporter = sdkImporter.replace("    devDependencies:\n",
-    "    devDependencies:\n      '@commish/sdk':\n        specifier: workspace:*\n        version: link:../sdk\n");
-  put(legacy, "pnpm-lock.yaml", sdkLock.replace("  packages/sdk:\n",
-    `  packages/next:\n${nextImporter}\n  packages/sdk:\n`));
-  assert.deepEqual(inspect(legacy)[1].targets, inspect(nextTree())[1].targets.slice(0, 4));
-  const browser = nextTree();
-  browser.delete("packages/next/src/index.ts");
-  browser.delete("packages/next/src/metadata.ts");
-  browser.delete("packages/next/src/capture.ts");
-  browser.delete("packages/next/src/provider.tsx");
-  patch(browser, (manifest) => {
-    delete manifest.exports["./react"];
-    delete manifest.exports["."];
-  });
-  assert.equal(inspect(browser)[1].targets.length, 2);
-  const withCli = nextTree();
-  put(withCli, binPath, readFileSync(new URL(`../${binPath}`, import.meta.url)));
-  withCli.get(binPath).mode = "100755";
-  patch(withCli, (manifest) => {
-    manifest.bin = { "commish-next": "./bin/init.mjs" };
-  });
-  assert(inspect(withCli)[1].targets.includes("./bin/init.mjs"));
-  withCli.get(binPath).mode = "100644";
-  assert.throws(() => inspect(withCli), /invalid source mode/);
-  withCli.get(binPath).mode = "100755";
-  for (const change of [
-    (files) => files.delete("packages/next/src/provider.tsx"),
-    (files) => patch(files, (manifest) => { delete manifest.exports["./react"]; }),
-    (files) => files.delete("packages/next/src/index.ts"),
-    (files) =>
-      patch(files, (manifest) => {
-        delete manifest.exports["."];
-      }),
-    (files) =>
-      patch(files, (manifest) => {
-        delete manifest.exports["."].browser;
-      }),
-    (files) =>
-      patch(files, (manifest) => {
-        manifest.bin = { "commish-next": "./bin/init.mjs" };
-      }),
-    (files) => {
-      put(files, binPath, "");
-      files.get(binPath).mode = "100755";
-    },
-    (files) =>
-      patch(files, (manifest) => {
-        manifest.peerDependencies.next = ">=16";
-      }),
-    (files) => put(files, "pnpm-lock.yaml", "different"),
-    (files) => patch(files, (manifest) => { manifest.devDependencies.next = "16.3.5"; }),
-    (files) => patch(files, (manifest) => { delete manifest.peerDependencies.react; }),
-    (files) => {
-      put(files, "packages/next/src/provider.tsx", "export {};\n");
-      patch(files, (manifest) => { delete manifest.devDependencies.next; });
-    },
-  ]) {
-    const files = nextTree();
-    change(files);
-    assert.throws(() => inspect(files));
-  }
-  withCli.delete("packages/next/src/index.ts");
-  patch(withCli, (manifest) => {
-    delete manifest.exports["."];
-  });
-  assert.throws(() => inspect(withCli), /CLI requires its server source/);
+  assert.deepEqual([...packages[0].targets].sort(), ["./bin/init.mjs", "./dist/browser.d.ts", "./dist/browser.js",
+    "./dist/index.d.ts", "./dist/index.js", "./dist/webhooks.d.ts", "./dist/webhooks.js"]);
+  assert.deepEqual([...packages[1].targets].sort(), ["./bin/init.mjs", ...["browser", "index", "pages", "pages-handlers",
+    "pages-routing", "provider"].flatMap((stem) => [`./dist/${stem}.d.ts`, `./dist/${stem}.js`])].sort());
 });
-test("archive inspection rejects traversal, duplicate paths, links and truncated bodies", () => {
+
+test("source shape fails closed on modes, orphans, toolchain drift, lockfile origins and manifest contracts", () => {
+  const sdk = "packages/sdk/package.json", next = "packages/next/package.json", lock = "pnpm-lock.yaml";
+  const lockText = (files) => files.get(lock).data.toString();
+  for (const [label, change, expected] of [
+    ["symlinked license", (f) => { f.get("LICENSE").mode = "120000"; }, /invalid source mode/],
+    ["executable module", (f) => { f.get("packages/sdk/bin/cli-http.mjs").mode = "100755"; }, /invalid source mode/],
+    ["plain entry point", (f) => { f.get("packages/sdk/bin/init.mjs").mode = "100644"; }, /invalid source mode/],
+    ["orphan package", (f) => put(f, "packages/other/index.ts", ""), /orphan package source/],
+    ["dot segment", (f) => put(f, "packages/sdk/../x", ""), /unsafe source path/],
+    ["changed license", (f) => put(f, "LICENSE", "different"), /MIT license differs/],
+    ["changed package license", (f) => put(f, "packages/next/LICENSE", "different"), /MIT license differs/],
+    ["toolchain drift", (f) => put(f, ".node-version", "1.2.3\n"), /node-version differs/],
+    ["missing workflow", (f) => f.delete(".github/workflows/publish-packages.yml"), /missing required file/],
+    ["missing gate test", (f) => f.delete("scripts/publication-workflow.test.mjs"), /missing required file/],
+    ["root lifecycle script", (f) => patch(f, "package.json", (m) => { m.scripts.postinstall = "x"; }), /lifecycle/],
+    ["root package manager", (f) => patch(f, "package.json", (m) => { m.packageManager = "pnpm@11"; }), /packageManager/],
+    ["root runtime dependency", (f) => patch(f, "package.json", (m) => { m.dependencies = { left: "1.0.0" }; }), /runtime dependencies/],
+    ["root ranged dev dependency", (f) => patch(f, "package.json", (m) => { m.devDependencies = { lint: "^1.0.0" }; }), /exact version/],
+    ["extra workspace package", (f) => put(f, "pnpm-workspace.yaml", "packages:\n  - packages/sdk\n  - packages/next\n  - apps/*\nengineStrict: true\n"), /workspace packages/],
+    ["workspace without engines", (f) => put(f, "pnpm-workspace.yaml", "packages:\n  - packages/sdk\n  - packages/next\n"), /enforce engines/],
+    ["lockfile version", (f) => put(f, lock, "lockfileVersion: '6.0'\n"), /lockfile version/],
+    ["lockfile tarball", (f) => put(f, lock, `${lockText(f)}\n  left@1.0.0:\n    resolution: {tarball: https://example.invalid/left.tgz}\n`), /registry only/],
+    ["lockfile git", (f) => put(f, lock, `${lockText(f)}\n  left@1.0.0:\n    resolution: {type: git, repo: 'git@example.invalid:repo.git', commit: abc}\n`), /registry only/],
+    ["lockfile directory", (f) => put(f, lock, `${lockText(f)}\n  left@1.0.0:\n    resolution: {type: directory, directory: '../../outside'}\n`), /registry only/],
+    ["lockfile without integrity", (f) => put(f, lock, `${lockText(f)}\n  left@1.0.0:\n    resolution: {commit: abc}\n`), /without integrity/],
+    ["lockfile foreign link", (f) => put(f, lock, lockText(f).replace("link:../sdk", "link:../../outside")), /lockfile link/],
+    ["lockfile extra importer", (f) => put(f, lock, lockText(f).replace("\n  packages/next:\n", "\n  apps/web:\n    dependencies: {}\n\n  packages/next:\n")), /importers/],
+    ["install script", (f) => patch(f, sdk, (m) => { m.scripts.install = "do-something"; }), /lifecycle/],
+    ["runtime dependency", (f) => patch(f, sdk, (m) => { m.dependencies = { unexpected: "1.0.0" }; }), /production dependency/],
+    ["ranged dev dependency", (f) => patch(f, sdk, (m) => { m.devDependencies.typescript = "latest"; }), /exact version/],
+    ["missing dev dependency", (f) => patch(f, sdk, (m) => { delete m.devDependencies.typescript; }), /missing development dependency/],
+    ["export without source", (f) => patch(f, next, (m) => { m.exports["./webhooks"] = { types: "./dist/webhooks.d.ts", default: "./dist/webhooks.js" }; }), /unknown export/],
+    ["source without export", (f) => patch(f, sdk, (m) => { delete m.exports["./webhooks"]; }), /has no export/],
+    ["untyped entry", (f) => patch(f, sdk, (m) => { m.exports["./browser"] = { default: "./dist/browser.js" }; }), /declare types/],
+    ["server entry in browsers", (f) => patch(f, sdk, (m) => { const { browser: _unused, ...rest } = m.exports["."]; void _unused; m.exports["."] = rest; }), /must not resolve in browsers/],
+    ["browser entry excluded", (f) => patch(f, sdk, (m) => { m.exports["./browser"] = { types: "./dist/browser.d.ts", browser: null, default: "./dist/browser.js" }; }), /is a browser entry/],
+    ["unknown condition", (f) => patch(f, sdk, (m) => { m.exports["."].import = "./dist/index.js"; }), /unknown export condition/],
+    ["edge runtime on webhooks", (f) => patch(f, sdk, (m) => { m.exports["./webhooks"]["edge-light"] = "./dist/webhooks.js"; }), /supported only by the SDK client/],
+    ["outside target", (f) => patch(f, sdk, (m) => { m.exports["./browser"].default = "../../outside.js"; }), /default target/],
+    ["manifest export", (f) => patch(f, sdk, (m) => { m.exports["./package.json"] = "./dist/index.js"; }), /package.json export/],
+    ["other bin", (f) => patch(f, sdk, (m) => { m.bin = { other: "./bin/other" }; }), /entry point/],
+    ["shipping source", (f) => patch(f, sdk, (m) => { m.files.push("src"); }), /files list/],
+    ["side effects", (f) => patch(f, sdk, (m) => { m.sideEffects = true; }), /side-effect free/],
+    ["engines", (f) => patch(f, sdk, (m) => { m.engines = { node: "24" }; }), /engines/],
+    ["private release", (f) => patch(f, next, (m) => { m.private = true; }), /private/],
+    ["version drift", (f) => patch(f, next, (m) => { m.version = "0.0.1"; }), /release version/],
+    ["sdk peer mismatch", (f) => patch(f, next, (m) => { m.peerDependencies["@commish/sdk"] = "0.0.1"; }), /allow the released SDK/],
+    ["sdk peer caret", (f) => patch(f, next, (m) => { m.peerDependencies["@commish/sdk"] = `^${releaseVersion}`; }), /allow the released SDK/],
+    ["react peer missing", (f) => patch(f, next, (m) => { delete m.peerDependencies.react; }), /Next peers/],
+    ["next peer unbounded", (f) => patch(f, next, (m) => { m.peerDependencies.next = ">=16"; }), /next peer range/],
+    ["sdk with peers", (f) => patch(f, sdk, (m) => { m.peerDependencies = { react: ">=19.0.0 <20" }; }), /no peers/],
+    ["shebang", (f) => { put(f, "packages/sdk/bin/init.mjs", "console.log(1)\n"); f.get("packages/sdk/bin/init.mjs").mode = "100755"; }, /shebang/],
+  ]) {
+    const files = repositoryTree();
+    change(files);
+    assert.throws(() => inspect(files), expected, label);
+  }
+});
+
+test("archive inspection rejects traversal, duplicate paths, links, truncated bodies and nested modules", () => {
   assert.equal(
     archiveFiles(tar([["package/dist/browser.js", "ok"]]))
       .get("package/dist/browser.js")
@@ -417,127 +197,72 @@ test("archive inspection rejects traversal, duplicate paths, links and truncated
       ["package/a", ""],
     ],
     [["package/a", "", "2"]],
+    [["package/src/index.ts", ""]],
+    [["package/bin/nested/a.mjs", ""]],
+    [["package/bin/Upper.mjs", ""]],
+    [["package/bin/a.js", ""]],
+    [["package/guides/notes.txt", ""]],
+    [["package/.npmrc", ""]],
   ])
     assert.throws(() => archiveFiles(tar(entries)));
+  for (const name of ["package/bin/new-command.mjs", "package/bin/api-catalog.json", "package/guides/pages.md", "package/dist/pages-client.js"])
+    assert.equal(archiveFiles(tar([[name, "x"]])).size, 1);
   assert.throws(() => archiveFiles(gzipSync(Buffer.alloc(512))));
-  assert.throws(() => archiveFiles(tar([["package/a", "content"]]).subarray(0, 20)));
 });
-test("package commands run frozen install then ordered build/typecheck/pack and clean up after any failure", async () => {
-  for (const failure of [
-    null,
-    "install",
-    "build",
-    "typecheck",
-    "pack",
-    "missing-export",
-    "mutated-lock",
-  ]) {
-    const files = packageTree(),
-      packages = inspect(files),
-      calls = [];
-    let work;
-    const run = (command, args, cwd) => {
-      if (command === process.execPath) {
-        calls.push("consumer-probe");
-        return;
-      }
-      assert.equal(command, "pnpm");
-      if (args.includes("--offline")) {
-        calls.push("consumer-install");
-        mkdirSync(join(cwd, "node_modules/.pnpm/sdk"), { recursive: true });
-        for (const [name, entry] of archiveFiles(readFileSync(join(cwd, "sdk.tgz")))) {
-          const path = join(cwd, "node_modules/@commish/sdk", name.slice(8));
-          mkdirSync(join(path, ".."), { recursive: true });
-          writeFileSync(path, entry.data);
-        }
-        return;
-      }
-      calls.push(args[0]);
-      work ??= cwd;
-      if (args[0] === failure) throw new Error("controlled command failure");
-      if (args[0] === "install")
-        assert.deepEqual(args, [
-          "install",
-          "--frozen-lockfile",
-          "--ignore-scripts",
-          "--registry=https://registry.npmjs.org",
-        ]);
-      if (args[0] === "build") {
-        mkdirSync(join(cwd, "dist"));
-        for (const ext of ["js", "d.ts"])
-          writeFileSync(join(cwd, `dist/browser.${ext}`), "export {};");
-      }
-      if (args[0] === "pack") {
-        const manifest = structuredClone(packages[0].manifest);
-        delete manifest.scripts.prepack;
-        const entries = [
-          ["package/package.json", JSON.stringify(manifest)],
-          ["package/dist/browser.js", "export {};"],
-        ];
-        if (failure !== "missing-export") entries.push(["package/dist/browser.d.ts", "export {};"]);
-        writeFileSync(join(args[2], "fixture.tgz"), tar(entries));
-        if (failure === "mutated-lock") writeFileSync(join(work, "pnpm-lock.yaml"), "changed");
-      }
-    };
-    if (failure) await assert.rejects(() => verifyPackages(files, packages, run));
+
+test("package commands run frozen install, ordered build/typecheck/pack per package and consumers, then clean up", async () => {
+  for (const failure of [null, "install", "build", "typecheck", "pack", "missing-export", "mutated-lock"]) {
+    const files = repositoryTree(), packages = inspect(files), calls = [], log = [];
+    const { run, work } = stubRun(packages, calls, failure);
+    if (failure) await assert.rejects(() => verifyPackages(files, packages, run, undefined, undefined, stubConsumers(log)));
     else {
-      await verifyPackages(files, packages, run);
-      assert.deepEqual(calls, [
-        "install",
-        "build",
-        "typecheck",
-        "pack",
-        "consumer-install",
-        "consumer-probe",
-      ]);
+      const evidence = await verifyPackages(files, packages, run, undefined, undefined, stubConsumers(log));
+      assert.deepEqual(calls, ["install", "build", "typecheck", "pack", "build", "typecheck", "pack"]);
+      assert.deepEqual(log, ["sdk-consumer", "next-browser", "next-provider", "next-build"]);
+      assert.deepEqual(evidence.scopes, ["sdk-scope", "next-browser-scope", "next-provider-scope", "next-build-scope"]);
     }
-    assert(work && !existsSync(work), "owned working tree must be removed");
+    assert(work() && !existsSync(work()), "owned working tree must be removed");
   }
 });
+
 test("verification binds its receipt to the actual immutable checkout and rejects dirty source", async () => {
-  const root = mkdtempSync(join(tmpdir(), "commish-public-git-test-"));
+  const checkout = mkdtempSync(join(tmpdir(), "commish-public-git-test-"));
   const env = Object.fromEntries(
     Object.entries(process.env).filter(([name]) => !name.startsWith("GIT_")),
   );
   Object.assign(env, { GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_SYSTEM: "/dev/null" });
   const git = (...args) =>
-    execFileSync("git", args, { cwd: root, env, stdio: ["ignore", "pipe", "pipe"] })
+    execFileSync("git", args, { cwd: checkout, env, stdio: ["ignore", "pipe", "pipe"] })
       .toString()
       .trim();
   try {
     git("init");
     git("config", "core.hooksPath", "/dev/null");
-    for (const [name, { data }] of bootstrap()) {
-      mkdirSync(join(root, name, ".."), { recursive: true });
-      writeFileSync(join(root, name), data);
+    const files = repositoryTree();
+    for (const [name, { data, mode }] of files) {
+      mkdirSync(join(checkout, name, ".."), { recursive: true });
+      writeFileSync(join(checkout, name), data, { mode: Number.parseInt(mode, 8) & 0o777 });
     }
     git("add", ".");
-    git(
-      "-c",
-      "user.name=Public verifier test",
-      "-c",
-      "user.email=fixture@example.invalid",
-      "-c",
-      "commit.gpgSign=false",
-      "commit",
-      "-m",
-      "fixture",
-    );
+    git("-c", "user.name=Public verifier test", "-c", "user.email=fixture@example.invalid",
+      "-c", "commit.gpgSign=false", "commit", "-m", "fixture");
     const head = git("rev-parse", "HEAD");
-    assert.deepEqual(await verify(root, head), {
+    const packages = inspect(files), calls = [], log = [];
+    const options = { run: stubRun(packages, calls, null).run, consumers: stubConsumers(log) };
+    assert.deepEqual(await verify(checkout, head, undefined, options), {
       sha: head,
-      scope: "exact-bootstrap-and-automation",
-      packages: [],
-      consumerScopes: [],
+      scope: "frozen-install-build-typecheck-pack-exports",
+      packages: ["@commish/sdk", "@commish/next"],
+      consumerScopes: ["sdk-scope", "next-browser-scope", "next-provider-scope", "next-build-scope"],
       consumerChecks: false,
       publication: false,
     });
     for (const sha of [undefined, "", "a".repeat(40)])
-      await assert.rejects(() => verify(root, sha));
-    writeFileSync(join(root, "README.md"), "dirty");
-    await assert.rejects(() => verify(root, head));
+      await assert.rejects(() => verify(checkout, sha, undefined, options), /expected SHA/);
+    writeFileSync(join(checkout, "README.md"), "dirty");
+    await assert.rejects(() => verify(checkout, head, undefined, options), /must be clean/);
   } finally {
-    rmSync(root, { recursive: true, force: true });
+    rmSync(checkout, { recursive: true, force: true });
   }
 });
 
@@ -749,11 +474,6 @@ test("skipped model jobs cannot impersonate the required gate and group bridging
   assert.match(group, /^  codex_review:$/m);
   assert.match(group, /mode: merge_group/);
   assert.doesNotMatch(group, /pull_request:|pull_request_target:|\n\s+if:|secrets:/);
-});
-
-test("archive admits only reviewed CLI modules", () => {
-  assert.equal(archiveFiles(tar([["package/bin/setup-session.mjs", "// reviewed module"]])).size, 1);
-  assert.throws(() => archiveFiles(tar([["package/bin/arbitrary.mjs", "extra"]])));
 });
 
 test("the failure diagnostic names the assertion without printing generated diffs", () => {
