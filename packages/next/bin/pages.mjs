@@ -8,6 +8,7 @@ import {
 import { dirname, join } from "node:path";
 import { createRequire } from "node:module";
 import { resolve } from "node:path";
+import { parseArgs } from "node:util";
 
 const stat = (path) => {
   try {
@@ -38,31 +39,41 @@ function filesAt(root) {
   return result;
 }
 function options(args) {
-  const value = {
-    command: "init",
-    prefix: "/c",
-    apply: false,
-    aliases: false,
-    json: false,
-    creator: null,
-  };
-  if (args[0] && !args[0].startsWith("--")) value.command = args.shift();
-  const seen = new Set();
-  for (let i = 0; i < args.length; i++) {
-    const arg = args[i];
-    if (seen.has(arg)) throw new Error("duplicate_option");
-    seen.add(arg);
-    if (arg === "--apply") value.apply = true;
-    else if (arg === "--dry-run") value.apply = false;
-    else if (arg === "--root-aliases") value.aliases = true;
-    else if (arg === "--json") value.json = true;
-    else if (arg === "--prefix") value.prefix = args[++i];
-    else if (arg === "--creator") value.creator = args[++i];
-    else throw new Error("unknown_pages_option");
+  let parsed;
+  try {
+    parsed = parseArgs({
+      args,
+      strict: true,
+      allowPositionals: true,
+      tokens: true,
+      options: {
+        apply: { type: "boolean" },
+        "dry-run": { type: "boolean" },
+        "root-aliases": { type: "boolean" },
+        json: { type: "boolean" },
+        prefix: { type: "string" },
+        creator: { type: "string" },
+      },
+    });
+  } catch (error) {
+    const option = /--prefix/.test(error?.message) ? "invalid_page_prefix"
+      : /--creator/.test(error?.message) ? "invalid_creator" : "unknown_pages_option";
+    throw new Error(option);
   }
+  const names = parsed.tokens.filter((token) => token.kind === "option").map((token) => token.name);
+  if (new Set(names).size !== names.length) throw new Error("duplicate_option");
+  const value = {
+    command: parsed.positionals[0] ?? "init",
+    prefix: parsed.values.prefix ?? "/c",
+    apply: Boolean(parsed.values.apply),
+    aliases: Boolean(parsed.values["root-aliases"]),
+    json: Boolean(parsed.values.json),
+    creator: parsed.values.creator ?? null,
+  };
   if (
+    parsed.positionals.length > 1 ||
     !["init", "doctor", "verify-alias"].includes(value.command) ||
-    (seen.has("--apply") && seen.has("--dry-run"))
+    (parsed.values.apply && parsed.values["dry-run"])
   )
     throw new Error("invalid_pages_command");
   if (!/^\/[a-z][a-z0-9-]{0,29}$/.test(value.prefix))
@@ -243,15 +254,18 @@ function endpoint(environment) {
   const url = new URL(
     environment.COMMISH_API_URL ?? "https://app.commish.sh/api/v1",
   );
+  // The same shape every other Commish command accepts: the /api/v1 base, HTTPS
+  // except on loopback, and no credentials, query or fragment.
   if (
     url.username ||
     url.password ||
     url.search ||
     url.hash ||
+    url.pathname.replace(/\/$/, "") !== "/api/v1" ||
     !(
       url.protocol === "https:" ||
       (url.protocol === "http:" &&
-        ["localhost", "127.0.0.1"].includes(url.hostname))
+        ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname))
     )
   )
     throw new Error("unsafe_api_url");

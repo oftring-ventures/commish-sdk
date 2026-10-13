@@ -89,6 +89,16 @@ const guideText = () =>
   `Configuration/schema: ${setupGuide.discoveryUrl}\nGuide: ${setupGuide.documentationUrl}`;
 const args = process.argv.slice(2);
 const json = args.includes("--json");
+// Private-file safety relies on POSIX modes and O_NOFOLLOW; use WSL on Windows.
+if (process.platform === "win32") {
+  console.error(json ? JSON.stringify({ status: "error", code: "unsupported_platform", platform: "win32", guidance: "Run the Commish CLI on macOS, Linux or WSL." })
+    : "The Commish CLI supports macOS, Linux and WSL; native Windows is not supported.");
+  process.exit(1);
+}
+if (args.length === 1 && ["--version", "-v"].includes(args[0])) {
+  console.log(json ? JSON.stringify({ name: manifest.name, version: manifest.version }) : manifest.version);
+  process.exit(0);
+}
 // The default plan command reads only commish.setup.json, so it is offered only when no explicit
 // configuration path or input was given; option values never appear in output.
 const defaultInputsOnly = args.slice(1).every(arg => ["--json", "--no-open", "--non-interactive"].includes(arg));
@@ -176,13 +186,15 @@ if (Object.hasOwn(managementRunners, args[0])) {
       "invalid_api_key", "access_denied", "program_not_found", "verification_unavailable",
       "invalid_response", "application_mismatch", "program_mode_mismatch"];
     const code = codes.includes(error?.message) ? error.message : "verification_unavailable";
+    // Receipts stay sanitized; the underlying error is available for bug reports on request.
+    if (process.env.COMMISH_DEBUG === "1") console.error(error);
     console.error(json ? JSON.stringify({ status: "error", code, integrationVerified: false }) : `Verification failed: ${code}.`);
     process.exitCode = 1;
   }
 } else {
-  const valid = args.length === 0 || args.every((arg) => ["help", "--help", "--json"].includes(arg)) && new Set(args).size === args.length;
+  const valid = args.length === 0 || args.every((arg) => ["help", "--help", "-h", "--json"].includes(arg)) && new Set(args).size === args.length;
   if (!valid) {
-    console.error(json ? JSON.stringify({ status: "error", code: "invalid_arguments" }) : "Usage: commish setup [options] | commish verify [--json]");
+    console.error(json ? JSON.stringify({ status: "error", code: "invalid_arguments" }) : "Usage: commish <setup|verify|api|auth|manage|keys|doctor|test|agent> [options] | commish --version");
     process.exitCode = 1;
   } else {
     const help = { status: "help", commands: ["setup [options]", "verify [--json]", "api [operationId] [options]", "auth [command]", "manage [operation]", "keys [command]", "doctor [options]", "test [command]", "agent --json", ...apiHelp().commands.slice(3)],
@@ -190,6 +202,6 @@ if (Object.hasOwn(managementRunners, args[0])) {
       requiredEnvironmentPurpose: "verify_only", setupGuide, integrationApi: apiHelp(), management: managementHelp(), authorization: authHelp(), diagnostics: doctorHelp(),
       integrationVerified: false };
     console.log(json ? JSON.stringify(help) : "Commish developer CLI\n\n" + guideText() +
-      "\n\ncommish setup --help — configuration and noninteractive flags.\ncommish verify [--json] — check configured credentials and program access.\ncommish api list — discover integration operations.\ncommish auth login --help — authorize scoped management access.\ncommish manage list — discover management operations.\ncommish keys --help — create or rotate credentials privately.\ncommish doctor --help — inspect readiness and observed integration evidence.\ncommish test --help — TEST fixtures and local webhook checks.\ncommish agent --json — versioned agent workflow guide.");
+      "\n\ncommish --version — installed package version.\ncommish setup --help — configuration and noninteractive flags.\ncommish verify [--json] — check configured credentials and program access.\ncommish api list — discover integration operations.\ncommish auth login --help — authorize scoped management access.\ncommish manage list — discover management operations.\ncommish keys --help — create or rotate credentials privately.\ncommish doctor --help — inspect readiness and observed integration evidence.\ncommish test --help — TEST fixtures and local webhook checks.\ncommish agent --json — versioned agent workflow guide.");
   }
 }

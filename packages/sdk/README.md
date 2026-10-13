@@ -3,7 +3,9 @@
 Commish's SDK for Node 22 or later connects creator referrals to purchases, commissions and
 webhooks. It supports permanent TEST and LIVE environments and includes a CLI for
 setup and API operations. The SDK ships ESM JavaScript and TypeScript declarations
-with no production dependencies. It is MIT licensed.
+with no production dependencies. It is MIT licensed. The CLI runs on macOS, Linux
+and WSL; native Windows is not supported because private credential files rely on
+POSIX permissions.
 
 ```ts
 import { Commish } from "@commish/sdk";
