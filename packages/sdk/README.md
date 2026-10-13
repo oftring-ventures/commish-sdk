@@ -270,7 +270,7 @@ Application provenance and sealed historical scope are not inferred. Live keys
 remain denied. Retrieve returns `{ data }` for the same metadata contract; missing
 or foreign delivery IDs return 404. Credentials are revalidated on every request.
 
-Retrieve a related test payout's diagnostic status:
+Retrieve a related payout's diagnostic status:
 
 ```ts
 const { data: payout } = await commish.payouts.retrieve("pay_123456789012");

@@ -43,7 +43,7 @@ export type CustomerIdentification = {
 
 export type PublicCustomer = {
   id: string;
-  mode: "test";
+  mode: "test" | "live";
   createdAt: string;
 };
 export type CustomerListOptions = {
@@ -81,7 +81,7 @@ export type PublicConversion = {
   programId: string;
   membershipId: string | null;
   externalId: string;
-  mode: "test";
+  mode: "test" | "live";
   amount: number;
   currency: "usd";
   occurredAt: string;
@@ -91,7 +91,7 @@ export type PublicRefund = {
   id: string;
   conversionId: string;
   externalId: string;
-  mode: "test";
+  mode: "test" | "live";
   amount: number;
   currency: "usd";
   occurredAt: string;
@@ -102,7 +102,7 @@ export type PublicCommission = {
   conversionId: string;
   parentCommissionId: string | null;
   refundId: string | null;
-  mode: "test";
+  mode: "test" | "live";
   amount: number;
   currency: "usd";
   status: CommissionStatus;
@@ -119,10 +119,10 @@ export type PublicCommission = {
       };
 };
 export type PublicPayout =
-  | { id: string; mode: "test"; status: "pending"; processedAt: null }
+  | { id: string; mode: "test" | "live"; status: "pending"; processedAt: null }
   | {
       id: string;
-      mode: "test";
+      mode: "test" | "live";
       status: "processing" | "paid" | "failed" | "canceled";
       processedAt: string;
     };
@@ -131,7 +131,7 @@ export type WebhookDeliveryStatus =
 export type PublicWebhookDelivery = {
   id: string;
   endpointId: string;
-  mode: "test";
+  mode: "test" | "live";
   eventType:
     | "invitation.created"
     | "invitation.accepted"
@@ -192,7 +192,7 @@ export type PublicMembership = {
   programId: string;
   creatorId: string;
   creatorHandle: string;
-  mode: "test";
+  mode: "test" | "live";
   status: "invited" | "applied" | "active" | "terminated" | "suspended";
   activatedAt: string | null;
   termsAcceptance: {
