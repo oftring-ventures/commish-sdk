@@ -124,8 +124,12 @@ const guideText = () =>
   `Configuration/schema: ${setupGuide.discoveryUrl}\nGuide: ${setupGuide.documentationUrl}`;
 const args = process.argv.slice(2);
 const json = args.includes("--json");
-// Private-file safety relies on POSIX modes and O_NOFOLLOW; use WSL on Windows.
-if (process.platform === "win32") {
+// Private-file safety relies on POSIX modes and O_NOFOLLOW; use WSL on Windows. The
+// version and usage touch no files, so they still answer there.
+const informational =
+  (args.length === 1 && ["--version", "-v"].includes(args[0])) ||
+  args.every((arg) => ["help", "--help", "-h", "--json"].includes(arg));
+if (process.platform === "win32" && !informational) {
   console.error(
     json
       ? JSON.stringify({

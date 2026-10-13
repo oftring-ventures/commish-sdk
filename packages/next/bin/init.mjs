@@ -18,20 +18,6 @@ const usageText = [
   "       commish-next --version",
   "Credential setup and verification live in @commish/sdk: commish setup, commish verify --json.",
 ].join("\n");
-// Private-file safety relies on POSIX modes; use WSL on Windows.
-if (process.platform === "win32") {
-  console.error(
-    json
-      ? JSON.stringify({
-          status: "error",
-          code: "unsupported_platform",
-          platform: "win32",
-          guidance: "Run the Commish CLI on macOS, Linux or WSL.",
-        })
-      : "The Commish CLI supports macOS, Linux and WSL; native Windows is not supported.",
-  );
-  process.exit(1);
-}
 if (args.length === 1 && ["--version", "-v"].includes(args[0])) {
   console.log(
     json ? JSON.stringify({ name: manifest.name, version: manifest.version }) : manifest.version,
@@ -44,6 +30,21 @@ if (
 ) {
   console.log(json ? JSON.stringify(usage) : usageText);
   process.exit(0);
+}
+// Private-file safety relies on POSIX modes; use WSL on Windows. The version and
+// usage above touch no files, so they still answer there.
+if (process.platform === "win32") {
+  console.error(
+    json
+      ? JSON.stringify({
+          status: "error",
+          code: "unsupported_platform",
+          platform: "win32",
+          guidance: "Run the Commish CLI on macOS, Linux or WSL.",
+        })
+      : "The Commish CLI supports macOS, Linux and WSL; native Windows is not supported.",
+  );
+  process.exit(1);
 }
 if (["setup", "verify"].includes(args[0])) {
   // Both moved to the framework-independent CLI, which keeps key material on disk

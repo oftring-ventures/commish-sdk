@@ -9,9 +9,11 @@ on:
 permissions:
   contents: read
 # One run per head: a superseded pull-request head is cancelled, while main, tag and
-# merge-group runs always finish because their candidates may be handed off.
+# merge-group runs always finish because their candidates may be handed off. Those
+# are grouped by commit, since GitHub cancels a pending run whenever a newer one
+# queues in the same group.
 concurrency:
-  group: public-source-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  group: public-source-${{ github.event_name }}-${{ github.event.pull_request.number || github.sha }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
   source:
@@ -81,4 +83,4 @@ jobs:
       - run: pnpm install --frozen-lockfile --ignore-scripts --registry=https://registry.npmjs.org
       - run: pnpm build
       - name: Run the package and CLI tests
-        run: node --test 'scripts/setup-*.test.mjs' scripts/api-command.test.mjs scripts/headless-command.test.mjs scripts/catalog.test.mjs 'scripts/pages*.test.mjs' scripts/next-metadata.test.mjs
+        run: node --test 'scripts/setup-*.test.mjs' scripts/api-command.test.mjs scripts/headless-command.test.mjs scripts/catalog.test.mjs 'scripts/pages*.test.mjs' scripts/next-metadata.test.mjs scripts/verify-sdk-http.test.mjs scripts/verify-sdk-reads.test.mjs scripts/verify-sdk-webhooks.test.mjs

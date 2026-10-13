@@ -146,9 +146,11 @@ export function createSetupSession(
           : {}),
         redirect: "error",
         cache: "no-store",
-        signal: signal
-          ? AbortSignal.any([signal, AbortSignal.timeout(15_000)])
-          : AbortSignal.timeout(15_000),
+        // Revoking is the cleanup an interrupted run performs, so only its own timeout bounds it.
+        signal:
+          signal && method !== "DELETE"
+            ? AbortSignal.any([signal, AbortSignal.timeout(15_000)])
+            : AbortSignal.timeout(15_000),
       });
     } catch {
       fail("service_unavailable");

@@ -49,6 +49,14 @@ const required = {
   ],
 };
 
+// Framework peers start at the versions the fixtures build and test against, and
+// never below these floors (next 16.3.8 carries the image-optimization fix).
+const peerFloors = { next: "16.3.8", react: "19.2.8" };
+const compareVersions = (a, b) => {
+  const [x, y] = [a, b].map((version) => version.split(".").map(Number));
+  return x[0] - y[0] || x[1] - y[1] || x[2] - y[2];
+};
+
 // The pair ships together: a peer may pin the exact SDK version or allow its patch line.
 export function peerAllows(range, version) {
   const match = /^(~?)((0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*))$/.exec(range ?? "");
@@ -136,12 +144,22 @@ export function inspectPackageManifest(pkg, manifest, has) {
       peerAllows(peers["@commish/sdk"], releaseVersion),
       "Next peer must allow the released SDK",
     );
-    for (const name of ["next", "react"])
-      assert.match(
-        peers[name],
-        /^>=(0|[1-9][0-9]*)\.[0-9]+\.[0-9]+ <(0|[1-9][0-9]*)$/,
-        `unsupported ${name} peer range`,
+    for (const name of ["next", "react"]) {
+      const range = /^>=((0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)) <(0|[1-9][0-9]*)$/.exec(
+        peers[name] ?? "",
       );
+      assert(range, `unsupported ${name} peer range`);
+      assert.equal(range[1], dev[name], `${name} peer floor must be the tested version`);
+      assert.equal(
+        Number(range[5]),
+        Number(range[2]) + 1,
+        `${name} peer range must stay within its major`,
+      );
+      assert(
+        compareVersions(range[1], peerFloors[name]) >= 0,
+        `${name} peer floor is below ${peerFloors[name]}`,
+      );
+    }
   }
   const exported = manifest.exports;
   assert(record(exported), "missing exports");
@@ -194,6 +212,7 @@ export function inspectPackageManifest(pkg, manifest, has) {
   return { targets: [...targets, ...Object.values(bin)] };
 }
 
+const rootFields = ["name", "private", "packageManager", "engines", "scripts", "devDependencies"];
 export function inspectRootManifest(manifest, pnpmVersion) {
   assert(record(manifest), "invalid root manifest");
   assert.equal(manifest.name, "commish-public-packages", "unexpected root name");
@@ -216,6 +235,9 @@ export function inspectRootManifest(manifest, pnpmVersion) {
     assert(!Object.hasOwn(manifest, name), "the root must not ship runtime dependencies");
   for (const [name, version] of Object.entries(manifest.devDependencies ?? {}))
     assert(exact.test(version), `root development dependency ${name} must pin an exact version`);
+  // No pnpm field: overrides, patches and build permissions stay in reviewed places.
+  for (const key of Object.keys(manifest))
+    assert(rootFields.includes(key), `unsupported root manifest field ${key}`);
 }
 
 export function inspectWorkspace(text) {
@@ -226,6 +248,27 @@ export function inspectWorkspace(text) {
     "unsupported workspace packages",
   );
   assert.match(text, /^engineStrict: true$/m, "workspace must enforce engines");
+  // Only these settings: registries, patches, build permissions and hooks stay out.
+  let section;
+  for (const line of text.split("\n").filter(Boolean)) {
+    if (!line.startsWith(" ")) {
+      section = line;
+      assert(
+        ["packages:", "engineStrict: true", "overrides:"].includes(line),
+        `unsupported workspace setting ${line}`,
+      );
+    } else if (section === "overrides:")
+      assert.match(
+        line,
+        /^  [a-z0-9@][a-z0-9@/._-]*: (0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$/,
+        "workspace overrides must pin exact versions",
+      );
+    else
+      assert(
+        section === "packages:" && line.startsWith("  - "),
+        `unsupported workspace setting ${line}`,
+      );
+  }
 }
 
 // Every dependency resolves from the public registry by integrity; the only link

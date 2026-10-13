@@ -194,9 +194,16 @@ test("verified aliases are cached and survive crawler bursts and outages", async
       (await handler(new Request(`${page.origin}/${handle}`), params(handle))).status;
     for (let i = 0; i < 70; i += 1) assert.equal(await alias("alice"), 307);
     assert.equal(calls, 1, "a verified alias is read once per freshness window");
-    const other = createCreatorAliasHandler({ ...options, programId: alice.programId, origin: "https://other.example" });
-    assert.equal((await other(new Request("https://other.example/alice"), params("alice"))).status, 404,
-      "an alias verified for one origin is not reused for another");
+    const other = createCreatorAliasHandler({
+      ...options,
+      programId: alice.programId,
+      origin: "https://other.example",
+    });
+    assert.equal(
+      (await other(new Request("https://other.example/alice"), params("alice"))).status,
+      404,
+      "an alias verified for one origin is not reused for another",
+    );
     for (let i = 0; i < 60; i += 1) assert.equal(await alias(`scan-${i}`), 404);
     assert.equal(await alias("alice"), 307, "crawler noise does not starve a verified alias");
     mock.timers.tick(61_000);
