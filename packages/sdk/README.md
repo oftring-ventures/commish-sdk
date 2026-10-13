@@ -542,8 +542,8 @@ and mode scoped; webhook metadata requires a workspace key.
 
 Successful commands emit one JSON object on stdout. Errors emit a sanitized
 JSON object on stderr with a stable code and, when available, HTTP status,
-request ID and `retryAfter` seconds (`busy` and `rate_limited` are retryable). No
-mutation retries automatically. Retain each write's exact input
+request ID and `retryAfter` seconds. Errors from HTTP 429, 502, 503 and 504
+responses are marked `retryable`. No mutation retries automatically. Retain each write's exact input
 and idempotency identity when resolving uncertainty. `--all` follows at most
 100 pages; `--max-pages` can lower that bound. Check `complete` and retain the
 returned cursor before considering a list exhaustive. A failed later page

@@ -3,9 +3,9 @@ import { createHash } from "node:crypto";
 import test from "node:test";
 import { createSetupSession } from "../packages/sdk/bin/setup-session.mjs";
 
-function fixture(input = { operations: ["workspace.read"] }) {
+function fixture(input = { operations: ["workspace.read"] }, extra = {}) {
   const calls = [], now = Date.now(); let hash, alter = (value) => value, error;
-  const session = createSetupSession(input, { now: () => now, fetcher: async (url, options) => {
+  const session = createSetupSession(input, { ...extra, now: () => now, fetcher: async (url, options) => {
     calls.push({ url, ...options });
     if (error) throw new Error(error);
     const body = options.body && JSON.parse(options.body);
@@ -101,6 +101,15 @@ test("an interrupted run aborts the request in flight", async () => {
   await assert.rejects(session.begin(), { message: "service_unavailable" });
   assert.equal(seen.aborted, true);
   await assert.rejects(session.begin(), { message: "service_unavailable" });
+});
+test("revoking after an interrupt still reaches the server", async () => {
+  const controller = new AbortController();
+  const { session, calls } = fixture(undefined, { signal: controller.signal });
+  await session.begin();
+  controller.abort();
+  assert.equal((await session.revoke()).status, "revoked");
+  assert.equal(calls.at(-1).method, "DELETE");
+  assert.equal(calls.at(-1).signal.aborted, false);
 });
 
 async function webhookDownloadFixture(alter = response => response) {

@@ -59,7 +59,8 @@ export function createSetupSession(input, { appUrl = "https://app.commish.sh", f
           ...(begin || body ? { "content-type": "application/json" } : {}) },
         ...(begin || body ? { body: JSON.stringify(begin ? { ...expected, challengeHash: hash } : body) } : {}),
         redirect: "error", cache: "no-store",
-        signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(15_000)]) : AbortSignal.timeout(15_000),
+        // Revoking is the cleanup an interrupted run performs, so only its own timeout bounds it.
+        signal: signal && method !== "DELETE" ? AbortSignal.any([signal, AbortSignal.timeout(15_000)]) : AbortSignal.timeout(15_000),
       });
     } catch { fail("service_unavailable"); }
     // An error page from a proxy or the platform is a transport failure, never a
