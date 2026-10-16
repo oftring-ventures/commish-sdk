@@ -136,6 +136,56 @@ test("Next merge preserves merchant settings and never sends both discount switc
   assert.equal(Object.hasOwn(result, "allow_promotion_codes"), false);
 });
 
+const page = {
+  protocol: "commish-pages-v1",
+  pageId: "cpg_123456789012",
+  programId: "prg_123456789012",
+  mode: "test",
+  origin: "https://merchant.test",
+  canonicalPath: "/creators/tim",
+  rootAliasEnabled: false,
+  status: "ready",
+  revision: "00000000-0000-4000-8000-000000000001",
+  creator: { handle: "tim" },
+  content: {
+    brand: { name: "Merchant", logoUrl: null, accentColor: "#123456" },
+    headline: "Tim’s offer",
+    description: "Welcome",
+    productImageUrl: null,
+    benefits: [],
+    offer: { title: "Welcome", description: "Save on eligible products" },
+    cta: { label: "Shop", url: "https://merchant.test/shop" },
+    disclosures: ["Tim may earn a commission."],
+  },
+  couponCode: null,
+  preferredPath: "/creators/tim",
+  experimentEnabled: false,
+};
+const buyerPromotion = {
+  name: "Welcome",
+  discount: { percentOff: 20, amountOff: null, duration: "once" },
+  trial: { unit: "months", count: 2 },
+  code: "TIM20",
+};
+const response = { protocol: "commish-pages-v2", page, buyerPromotion };
+
+test("Pages v2 negotiates an offer without changing the nested v1 contract", async () => {
+  const client = new Commish({
+    secretKey: "cm_test_sk_promotions12345",
+    fetch: async (_url, options) => {
+      assert.equal(
+        new Headers(options.headers).get("x-commish-pages-protocol"),
+        "commish-pages-v2",
+      );
+      return Response.json({ data: response });
+    },
+  });
+  assert.deepEqual(
+    (await client.pages.resolveWithPromotions({ programId: page.programId, handle: "tim" })).data,
+    response,
+  );
+});
+
 test("trial-only Checkout overrides merchant code entry", () => {
   const result = applyPreparedCheckoutPromotion(
     {

@@ -1,4 +1,12 @@
 import {
+  assertCreatorPageWithPromotion,
+  type CreatorPageWithPromotion,
+} from "./page-promotions.js";
+
+export type { BuyerPromotionSummary, CreatorPageWithPromotion } from "./page-promotions.js";
+export { assertCreatorPageWithPromotion } from "./page-promotions.js";
+
+import {
   assertPreparedCheckoutPromotion,
   type CheckoutPromotionInput,
   type PreparedCheckoutPromotion,
@@ -130,6 +138,28 @@ export class Commish {
   }
 
   readonly pages = {
+    resolveWithPromotions: async (input: {
+      programId: string;
+      handle: string;
+      signal?: AbortSignal;
+    }) => {
+      const result = await this.request<{ data: CreatorPageWithPromotion }>(
+        `/pages/${publicId(input.programId, "prg")}/${pageHandle(input.handle)}`,
+        {
+          method: "GET",
+          cache: "no-store",
+          signal: input.signal,
+          headers: { "x-commish-pages-protocol": "commish-pages-v2" },
+        },
+      );
+      assertCreatorPageWithPromotion(result.data);
+      if (
+        result.data.page.programId !== input.programId ||
+        !result.data.page.canonicalPath.endsWith(`/${input.handle}`)
+      )
+        throw new CommishError("Page scope mismatch", 502, "invalid_response");
+      return result;
+    },
     resolve: async (input: { programId: string; handle: string; signal?: AbortSignal }) => {
       const result = await this.request<{ data: CreatorPage }>(
         `/pages/${publicId(input.programId, "prg")}/${pageHandle(input.handle)}`,

@@ -8,6 +8,8 @@ export type CreatorPageOptions = {
   prefix?: string;
   apiUrl?: string;
   integrationPath?: string;
+  /** Requires the buyer-promotions Checkout integration. */
+  buyerPromotions?: boolean;
 };
 export type PageOptionsSource =
   | CreatorPageOptions

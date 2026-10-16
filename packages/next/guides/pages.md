@@ -125,3 +125,11 @@ release suite or create a fixed number of test creators.
 Upgrade the paired packages in a normal reviewed dependency change and rerun those checks. To remove Pages, pause it in Commish, disable aliases and experiments independently, remove only the Pages routes/fallback rewrite/configuration you installed, and remove page measurement plumbing/cookies according to your retention policy. Keep the original attribution integration if still used. Never delete historical financial records or reuse reserved creator addresses.
 
 Import the renderer from `@commish/next/pages`, same-origin/checkout helpers from `@commish/next/pages/handlers`, and fallback routing from `@commish/next/pages/routing`. Keeping these boundaries separate supports both Next.js production bundlers without importing rendering contexts into API routes.
+
+## Optional Stripe buyer promotions
+
+When the merchant has installed `createCommishCheckout`, set
+`buyerPromotions: true` in `createCreatorPage` to request the v2 offer summary.
+The legacy v1 page contract remains the default. Native Stripe code entry applies
+discounts only; a referral-prepared Checkout applies eligible free trials.
+Automatic offers follow the captured creator attribution policy.

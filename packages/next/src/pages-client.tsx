@@ -1,5 +1,5 @@
 "use client";
-import type { CreatorPage } from "@commish/sdk";
+import type { BuyerPromotionSummary, CreatorPage } from "@commish/sdk";
 import { type MouseEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 type Visit = {
@@ -42,9 +42,11 @@ export function createCreatorPageStart(
 export function CreatorPageView({
   page,
   integrationPath,
+  buyerPromotion,
 }: {
   page: CreatorPage;
   integrationPath: string;
+  buyerPromotion?: BuyerPromotionSummary | null;
 }) {
   const surface = useRef<HTMLElement>(null);
   const id = useRef<string | null>(null);
@@ -219,11 +221,48 @@ export function CreatorPageView({
               <div className="cp-offer" style={{ borderTop: `3px solid ${brand.accentColor}` }}>
                 <h2>{page.content.offer.title}</h2>
                 <p>{page.content.offer.description}</p>
-                {page.couponCode && (
+                {(buyerPromotion === undefined || buyerPromotion === null) && page.couponCode && (
                   <p>
                     Use code <code>{page.couponCode}</code> at checkout. Check store terms for
                     eligibility.
                   </p>
+                )}
+                {buyerPromotion && (
+                  <div>
+                    <p>
+                      <strong>{buyerPromotion.name}</strong>
+                    </p>
+                    {buyerPromotion.discount && (
+                      <p>
+                        {buyerPromotion.discount.percentOff !== null
+                          ? `${buyerPromotion.discount.percentOff}% off`
+                          : `$${((buyerPromotion.discount.amountOff ?? 0) / 100).toFixed(2)} off`}{" "}
+                        eligible products. For subscriptions, this discount applies{" "}
+                        {buyerPromotion.discount.duration === "once"
+                          ? "to the first invoice only."
+                          : buyerPromotion.discount.duration === "repeating"
+                            ? "for a limited billing period."
+                            : "to every eligible invoice."}
+                      </p>
+                    )}
+                    {buyerPromotion.code && (
+                      <p>
+                        Enter <code>{buyerPromotion.code}</code> in Stripe Checkout for the
+                        discount.
+                      </p>
+                    )}
+                    {buyerPromotion.trial && (
+                      <p>
+                        {buyerPromotion.trial.count} {buyerPromotion.trial.unit} free for eligible
+                        new subscribers through a creator referral. One-time products may be charged
+                        upfront.
+                      </p>
+                    )}
+                    <p>
+                      Eligibility and final terms are confirmed at checkout. Automatic offers follow
+                      your eligible creator referral; codes apply discounts only.
+                    </p>
+                  </div>
                 )}
                 <a
                   className="cp-button"

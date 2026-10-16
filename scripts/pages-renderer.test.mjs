@@ -117,7 +117,7 @@ test("SSR escapes approved content and never records a visit or exposure", (t) =
     createElement(CreatorPageView, { page: ready, integrationPath: "/api/commish/pages" }),
   );
   assert.match(html, /&lt;script&gt;unsafe&lt;\/script&gt;/);
-  assert.match(html, /Use code/);
+  assert.match(html, /Use code <code>MAYA<\/code>/);
   assert.doesNotMatch(html, /automatically applied/);
   assert.equal(calls, 0);
   const ended = {
@@ -159,6 +159,80 @@ test("rendering distinguishes unavailable from not found", async (t) => {
     /NEXT_HTTP_ERROR_FALLBACK;404/,
   );
 });
+
+for (const buyerPromotion of [
+  null,
+  {
+    name: "New buyer offer",
+    discount: { percentOff: 20, amountOff: null, duration: "once" },
+    trial: null,
+    code: "MAYA20",
+  },
+]) {
+  test(`opt-in v2 ${buyerPromotion ? "offer replaces" : "without an offer preserves"} the legacy coupon`, async (t) => {
+    const original = globalThis.fetch;
+    t.after(() => (globalThis.fetch = original));
+    const ready = { ...page, couponCode: "MAYA" };
+    let calls = 0;
+    globalThis.fetch = async (_url, init) => {
+      calls++;
+      assert.equal(new Headers(init.headers).get("x-commish-pages-protocol"), "commish-pages-v2");
+      return Response.json({
+        data: { protocol: "commish-pages-v2", page: ready, buyerPromotion },
+      });
+    };
+    const Page = createCreatorPage({
+      secretKey: "cm_test_sk_fixture_123456789012",
+      programId: page.programId,
+      origin: page.origin,
+      buyerPromotions: true,
+    });
+    const html = renderToStaticMarkup(await Page({ params: Promise.resolve({ creator: "maya" }) }));
+    assert.match(html, /Approved offer/);
+    if (buyerPromotion) {
+      assert.match(html, /New buyer offer/);
+      assert.match(html, /<code>MAYA20<\/code>/);
+      assert.doesNotMatch(html, /Use code|<code>MAYA<\/code>/);
+    } else {
+      assert.match(html, /Use code <code>MAYA<\/code>/);
+      assert.doesNotMatch(html, /New buyer offer|<code>MAYA20<\/code>/);
+    }
+    assert.equal(calls, 1);
+  });
+}
+
+for (const [duration, period] of [
+  ["once", "to the first invoice only."],
+  ["repeating", "for a limited billing period."],
+  ["forever", "to every eligible invoice."],
+]) {
+  for (const [amount, label] of [
+    [{ percentOff: 20, amountOff: null }, "20% off"],
+    [{ percentOff: null, amountOff: 1500 }, "$15.00 off"],
+  ]) {
+    test(`SSR discloses ${duration} subscription duration for ${label}`, () => {
+      const html = renderToStaticMarkup(
+        createElement(CreatorPageView, {
+          page: { ...page, couponCode: "LEGACY" },
+          integrationPath: "/api/commish/pages",
+          buyerPromotion: {
+            name: "New buyer offer",
+            discount: { ...amount, duration },
+            trial: null,
+            code: "MAYA20",
+          },
+        }),
+      );
+      assert.ok(
+        html.includes(
+          `${label} eligible products. For subscriptions, this discount applies ${period}`,
+        ),
+      );
+      assert.match(html, /<code>MAYA20<\/code>/);
+      assert.doesNotMatch(html, /Use code|LEGACY/);
+    });
+  }
+}
 
 test("failed starts can retry while concurrent callers share one attempt", async () => {
   let calls = 0,
