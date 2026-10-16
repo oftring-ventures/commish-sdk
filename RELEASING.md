@@ -155,7 +155,10 @@ npm publish --dry-run
 npm publish
 ```
 
-Then add the trusted publisher for this repository's `publish-packages.yml` and
-`npm-publication` environment with npm publish allowed, and require 2FA with
-tokens disallowed. Until the release workflow includes the launcher, publish the
-matching launcher version the same way after each SDK release.
+`publishConfig.registry` pins these commands to the public npm registry even
+when a local npm configuration points elsewhere. Then require 2FA with tokens
+disallowed. Until `publish-packages.yml` publishes the launcher, publish the
+matching launcher version the same way after each SDK release. Add the trusted
+publisher only in the change that adds the launcher to that workflow, and
+complete its first workflow publish right away: npm expires a new trusted
+publisher that has not published within two days.
