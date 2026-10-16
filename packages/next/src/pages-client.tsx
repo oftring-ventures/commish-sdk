@@ -221,7 +221,7 @@ export function CreatorPageView({
               <div className="cp-offer" style={{ borderTop: `3px solid ${brand.accentColor}` }}>
                 <h2>{page.content.offer.title}</h2>
                 <p>{page.content.offer.description}</p>
-                {buyerPromotion === undefined && page.couponCode && (
+                {(buyerPromotion === undefined || buyerPromotion === null) && page.couponCode && (
                   <p>
                     Use code <code>{page.couponCode}</code> at checkout. Check store terms for
                     eligibility.
