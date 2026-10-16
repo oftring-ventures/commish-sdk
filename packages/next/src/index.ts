@@ -87,7 +87,6 @@ export function applyPreparedCheckoutPromotion<T extends BuyerPromotionCheckoutP
           subscription_data: {
             ...params.subscription_data,
             ...trial,
-            trial_settings: params.subscription_data?.trial_settings ?? trial.trial_settings,
           },
         }
       : {}),
