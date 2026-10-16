@@ -4,7 +4,7 @@ import { lstatSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { candidateScopes } from "./public-candidate.mjs";
-import { releaseVersion } from "./stable-release.mjs";
+import { releaseArtifacts, releaseVersion } from "./stable-release.mjs";
 import { nodeVersion } from "./toolchain.mjs";
 
 const hash = (bytes, algorithm = "sha256", encoding = "hex") =>
@@ -35,12 +35,11 @@ export function writeCiReceipt(directory, env) {
   assert.equal(manifest.hostedAccepted, false);
   assert.equal(manifest.node, `v${nodeVersion}`, "candidate built with another Node version");
   assert.deepEqual([...manifest.consumerScopes].sort(), [...candidateScopes].sort());
-  assert.equal(manifest.artifacts.length, 2);
+  assert.equal(manifest.artifacts.length, releaseArtifacts.length);
   const artifacts = manifest.artifacts.map((item, index) => {
-    const pkg = index ? "next" : "sdk";
-    assert.equal(item.name, `@commish/${pkg}`);
+    assert.equal(item.name, releaseArtifacts[index].name);
     assert.equal(item.version, releaseVersion);
-    assert.equal(item.file, `commish-${pkg}-${item.version}.tgz`);
+    assert.equal(item.file, releaseArtifacts[index].file);
     const archive = readFileSync(join(directory, item.file));
     assert.equal(archive.length, item.bytes);
     assert.equal(hash(archive, "sha512"), item.sha512, "candidate archive hash differs");

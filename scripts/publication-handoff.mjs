@@ -4,7 +4,7 @@ import { writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 import { inflateRawSync } from "node:zlib";
 import { candidateScopes } from "./public-candidate.mjs";
-import { releaseVersion } from "./stable-release.mjs";
+import { releaseArtifacts } from "./stable-release.mjs";
 
 const repository = "oftring-ventures/commish-sdk";
 const workflowPath = ".github/workflows/public-source.yml";
@@ -100,8 +100,7 @@ export function acceptCandidate(members, accepted) {
     "manifest.json",
     "ci-receipt.json",
     "SHA512SUMS",
-    `commish-sdk-${releaseVersion}.tgz`,
-    `commish-next-${releaseVersion}.tgz`,
+    ...releaseArtifacts.map((item) => item.file),
   ];
   assert.deepEqual([...members.keys()].sort(), [...files].sort(), "unexpected candidate inventory");
   const manifestBytes = members.get("manifest.json"),
@@ -113,9 +112,9 @@ export function acceptCandidate(members, accepted) {
   assert.equal(manifest.npmPublished, false);
   assert.equal(manifest.hostedAccepted, false);
   assert.deepEqual([...manifest.consumerScopes].sort(), [...candidateScopes].sort());
-  assert.equal(manifest.artifacts.length, 2);
+  assert.equal(manifest.artifacts.length, releaseArtifacts.length);
   for (const [index, item] of manifest.artifacts.entries()) {
-    assert.equal(item.file, files[index + 3]);
+    assert.equal(item.file, releaseArtifacts[index].file);
     const bytes = members.get(item.file);
     assert.equal(bytes.length, item.bytes);
     assert.equal(hash(bytes, "sha512"), item.sha512, "candidate bytes changed");
