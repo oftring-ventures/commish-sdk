@@ -148,3 +148,20 @@ For manual integration, create a server-only configuration function returning `{
 - The alias handler answers every one-segment path that is not a creator alias, and every Commish failure, with a 404 (never a 5xx). Pass `createCreatorAliasHandler(options, { notFound })` to return your own not-found response for those paths. Verified aliases and misses are remembered briefly, an alias verified within the last ten minutes keeps redirecting while Commish is unreachable, and uncached lookups are bounded per instance.
 
 Content and new eligible creators resolve at request time without a merchant rebuild. Test typed visits, consent withdrawal, root conflicts, capture failures and trusted TEST conversion/refund before enabling production. Installing the module is not end-to-end verification.
+
+## Stripe buyer promotions (opt-in)
+
+`createCommishCheckout({ commish, programId, attemptId, params, createSession })`
+prepares a native Stripe offer, calls your existing Stripe client, and confirms
+the session. Persist a cart attempt ID across retries. Derive both
+`client_reference_id` and `customer` from authenticated merchant records.
+The callback must pass the supplied `idempotencyKey` to Stripe. Preserve the
+returned expiry, discount and trial parameters. Do not preconfigure a competing
+discount or trial. Existing `withCommishStripeMetadata` behavior is unchanged.
+
+After 24 hours plus five minutes, use
+`commish.checkoutPromotions.reconcile({ attemptId: preparedAttemptId })` to
+release an unused trial reservation only after Stripe confirms abandonment.
+Native Stripe codes apply discounts and creator attribution without a cookie;
+trials require referral preparation. Enable these helpers only when the Commish
+service has buyer promotions enabled.

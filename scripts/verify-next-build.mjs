@@ -128,6 +128,7 @@ export async function verifyNextBuild(sdk, next, context, execute) {
       "unsupported server peers",
     );
   }
+  const buyerPromotions = sdk.packed.has("package/dist/promotions.js");
   const cookieHelpers = next.packed.has("package/dist/metadata.js");
   assert(!cookieHelpers || server, "cookie helpers require the framework server root");
   const capture = next.packed.has("package/dist/capture.js");
@@ -283,7 +284,7 @@ export async function verifyNextBuild(sdk, next, context, execute) {
     if (server) {
       writeFileSync(
         join(consumer, "metadata.mjs"),
-        `await (${metadataProbe.toString()})(${cookieHelpers}, ${capture});\n`,
+        `await (${metadataProbe.toString()})(${cookieHelpers}, ${capture}, ${buyerPromotions});\n`,
       );
       await run(process.execPath, ["metadata.mjs"]);
       verifyBytes();

@@ -1,4 +1,12 @@
 import {
+  assertPreparedCheckoutPromotion,
+  type CheckoutPromotionInput,
+  type PreparedCheckoutPromotion,
+} from "./promotions.js";
+
+export type { CheckoutPromotionInput, PreparedCheckoutPromotion } from "./promotions.js";
+
+import {
   customerPageQuery,
   iteratePages,
   pageQuery,
@@ -136,7 +144,35 @@ export class Commish {
       return result;
     },
   };
-
+  readonly checkoutPromotions = {
+    reconcile: (input: { attemptId: string }) =>
+      this.request<{ data: { attemptId: string; released: boolean } }>(
+        "/checkout-promotions/reconcile",
+        { method: "POST", body: JSON.stringify(input) },
+        input.attemptId,
+      ),
+    prepare: async (input: CheckoutPromotionInput) => {
+      const result = await this.request<{ data: PreparedCheckoutPromotion }>(
+        "/checkout-promotions/prepare",
+        { method: "POST", body: JSON.stringify(input) },
+        input.attemptId,
+      );
+      assertPreparedCheckoutPromotion(result.data);
+      return result;
+    },
+    confirm: async (input: { attemptId: string; sessionId: string }) => {
+      const result = await this.request<{
+        data: { attemptId: string; sessionId: string };
+      }>(
+        "/checkout-promotions/confirm",
+        { method: "POST", body: JSON.stringify(input) },
+        input.attemptId,
+      );
+      if (result.data?.attemptId !== input.attemptId || result.data?.sessionId !== input.sessionId)
+        throw new CommishError("Checkout confirmation mismatch", 502, "invalid_response");
+      return result;
+    },
+  };
   readonly conversions = {
     lookup: (externalId: string) => {
       if (typeof externalId !== "string" || !externalId || externalId.length > 255)
