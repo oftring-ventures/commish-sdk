@@ -101,6 +101,14 @@ remaining actions; do not repeat setup solely to make `integrationVerified` true
 
 ## Set up from your repository
 
+`commish init` prints a setup playbook for coding agents. A bare `commish` prints
+the same playbook, so `npx -y commish@latest` works before anything is installed.
+It comes from the same local scan as planning (`package.json` and which lockfiles
+and app directories exist) and names the install, plan, setup, wiring and verify
+commands for your package manager and framework, the business choices to collect
+and the milestones to report. It makes no network requests and writes no files;
+`--json` returns the commands alongside the Markdown.
+
 Since 0.2.1, `pnpm exec commish setup --plan --json` previews setup first.
 Planning reads local configuration and bounded package metadata, reports missing
 inputs by field, and identifies framework/package-manager hints. It makes no
@@ -515,7 +523,8 @@ need to adopt Pages; versions before 0.3.0 do not include it.
 
 ## Headless operations and agent use
 
-`commish agent --json` is the versioned workflow guide. Discovery works offline:
+`commish agent --json` is the versioned workflow guide; `commish init` is the
+repository-specific starting point for setup. Discovery works offline:
 
 ```sh
 commish api list --json
