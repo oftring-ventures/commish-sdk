@@ -91,6 +91,13 @@ const stubConsumers = (log) => ({
     log.push("next-build");
     return ["next-build-scope"];
   },
+  launcher: (sdk, launcher) => {
+    log.push("launcher");
+    assert(
+      sdk.packed.has("package/bin/init.mjs") && launcher.packed.has("package/bin/commish.mjs"),
+    );
+    return ["launcher-scope"];
+  },
 });
 // Stands in for pnpm: build writes every declared dist target, pack archives them.
 function stubRun(packages, calls, failure) {
@@ -113,7 +120,16 @@ function stubRun(packages, calls, failure) {
       for (const target of pkg.targets.filter((name) => name.startsWith("./dist/")))
         writeFileSync(join(cwd, target), `// ${target}\n`);
     }
-    if (args[0] === "pack") {
+    if (args[0] === "pack" && cwd === join(work, "launcher")) {
+      // The launcher has no build; its source files are the archive.
+      const entries = ["package.json", "LICENSE", "README.md", "bin/commish.mjs"].map((name) => [
+        `package/${name}`,
+        readFileSync(join(cwd, name)),
+        "0",
+        name.startsWith("bin/") ? "0000755" : "0000644",
+      ]);
+      writeFileSync(join(args[2], "launcher.tgz"), tar(entries));
+    } else if (args[0] === "pack") {
       const manifest = structuredClone(pkg.manifest);
       delete manifest.scripts.prepack;
       const entries = [["package/package.json", JSON.stringify(manifest)]];
@@ -731,13 +747,21 @@ test("package commands run frozen install, ordered build/typecheck/pack per pack
         "build",
         "typecheck",
         "pack",
+        "pack",
       ]);
-      assert.deepEqual(log, ["sdk-consumer", "next-browser", "next-provider", "next-build"]);
+      assert.deepEqual(log, [
+        "sdk-consumer",
+        "next-browser",
+        "next-provider",
+        "next-build",
+        "launcher",
+      ]);
       assert.deepEqual(evidence.scopes, [
         "sdk-scope",
         "next-browser-scope",
         "next-provider-scope",
         "next-build-scope",
+        "launcher-scope",
       ]);
     }
     assert(work() && !existsSync(work()), "owned working tree must be removed");
@@ -782,12 +806,13 @@ test("verification binds its receipt to the actual immutable checkout and reject
     assert.deepEqual(await verify(checkout, head, undefined, options), {
       sha: head,
       scope: "frozen-install-build-typecheck-pack-exports",
-      packages: ["@commish/sdk", "@commish/next"],
+      packages: ["@commish/sdk", "@commish/next", "commish"],
       consumerScopes: [
         "sdk-scope",
         "next-browser-scope",
         "next-provider-scope",
         "next-build-scope",
+        "launcher-scope",
       ],
       consumerChecks: false,
       publication: false,

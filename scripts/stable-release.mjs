@@ -27,7 +27,8 @@ export const archiveName = (name, version) =>
   `${name.replace(/^@/, "").replace("/", "-")}-${version}.tgz`;
 // Every published package, in upload order. The candidate writer, CI receipt, handoff
 // and preflight read names and archives from here rather than from list positions.
-export const releaseArtifacts = ["@commish/sdk", "@commish/next"].map((name) => ({
+// The `commish` launcher depends on the exact SDK version, so it uploads after it.
+export const releaseArtifacts = ["@commish/sdk", "@commish/next", "commish"].map((name) => ({
   name,
   file: archiveName(name, releaseVersion),
 }));

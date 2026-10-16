@@ -39,5 +39,6 @@ test("release artifacts list each package and its pnpm archive in upload order",
   assert.deepEqual(releaseArtifacts, [
     { name: "@commish/sdk", file: `commish-sdk-${releaseVersion}.tgz` },
     { name: "@commish/next", file: `commish-next-${releaseVersion}.tgz` },
+    { name: "commish", file: `commish-${releaseVersion}.tgz` },
   ]);
 });
