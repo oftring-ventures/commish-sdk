@@ -189,6 +189,18 @@ test("source shape fails closed on modes, orphans, toolchain drift, lockfile ori
       },
       /invalid source mode/,
     ],
+    [
+      "plain launcher entry point",
+      (f) => {
+        f.get("launcher/bin/commish.mjs").mode = "100644";
+      },
+      /invalid source mode/,
+    ],
+    [
+      "unlisted launcher file",
+      (f) => put(f, "launcher/bin/helper.mjs", ""),
+      /unexpected source path/,
+    ],
     ["orphan package", (f) => put(f, "packages/other/index.ts", ""), /orphan package source/],
     ["dot segment", (f) => put(f, "packages/sdk/../x", ""), /unsafe source path/],
     ["changed license", (f) => put(f, "LICENSE", "different"), /MIT license differs/],
