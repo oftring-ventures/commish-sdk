@@ -54,7 +54,11 @@ async function probe() {
     await assert.rejects(import(name), { code: "ERR_PACKAGE_PATH_NOT_EXPORTED" });
 }
 
-export async function metadataProbe(cookieHelpers = false, capture = false) {
+export async function metadataProbe(
+  cookieHelpers = false,
+  capture = false,
+  buyerPromotions = false,
+) {
   const { default: assert } = await import("node:assert/strict");
   const root = await import("@commish/next");
   assert.deepEqual(
@@ -62,7 +66,9 @@ export async function metadataProbe(cookieHelpers = false, capture = false) {
     [
       ...(capture ? ["COMMISH_COOKIE"] : []),
       "applyCommishStripeMetadata",
+      ...(buyerPromotions ? ["applyPreparedCheckoutPromotion"] : []),
       ...(capture ? ["createAttributionHandler"] : []),
+      ...(buyerPromotions ? ["createCommishCheckout"] : []),
       ...(cookieHelpers ? ["getCommishAttribution", "withCommishStripeMetadata"] : []),
     ],
     "Next root export names",
