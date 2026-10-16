@@ -1,0 +1,32 @@
+{
+  "name": "commish",
+  "version": "0.4.0",
+  "description": "Run the Commish developer CLI with npx commish",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/oftring-ventures/commish-sdk.git",
+    "directory": "launcher"
+  },
+  "homepage": "https://commish.sh/docs",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "files": [
+    "bin",
+    "README.md",
+    "LICENSE"
+  ],
+  "bin": {
+    "commish": "./bin/commish.mjs"
+  },
+  "dependencies": {
+    "@commish/sdk": "0.4.0"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/",
+    "tag": "latest"
+  }
+}

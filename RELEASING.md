@@ -135,3 +135,30 @@ fixtures or a successful build do not establish hosted acceptance. Preserve the
 relevant duplicate/refund, key-revocation, mode/application-isolation, failure,
 mobile-accessibility and prefetch checks in release evidence. This maintainer
 fixture size is not a customer onboarding requirement.
+
+## The `commish` launcher
+
+`launcher/` is the source of the unscoped `commish` npm package, so
+`npx -y commish@latest` runs the CLI. It stays outside the pnpm workspace and the
+paired release: the source gate allows only its four files, and
+`scripts/launcher.test.mjs` keeps its version, its exact `@commish/sdk` dependency
+and its license equal to the SDK's.
+
+npm adds a trusted publisher only to a package that already exists, so a
+maintainer account with 2FA publishes the first version once, from a clean
+checkout of the reviewed commit, after the matching `@commish/sdk` version is on
+npm:
+
+```sh
+cd launcher
+npm publish --dry-run
+npm publish
+```
+
+`publishConfig.registry` pins these commands to the public npm registry even
+when a local npm configuration points elsewhere. Then require 2FA with tokens
+disallowed. Until `publish-packages.yml` publishes the launcher, publish the
+matching launcher version the same way after each SDK release. Add the trusted
+publisher only in the change that adds the launcher to that workflow, and
+complete its first workflow publish right away: npm expires a new trusted
+publisher that has not published within two days.

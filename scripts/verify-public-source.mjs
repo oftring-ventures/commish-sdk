@@ -61,7 +61,10 @@ const allowedPaths = [
   /^packages\/(?:sdk|next)\/(?:LICENSE|README\.md|package\.json|build\.mjs|tsconfig\.build\.json)$/,
   /^packages\/(?:sdk|next)\/(?:src\/[a-z0-9-]+\.tsx?|bin\/[a-z0-9-]+\.(?:mjs|json))$/,
   /^packages\/next\/guides\/[a-z0-9-]+\.md$/,
+  // The unscoped `commish` launcher: outside the workspace and the paired release.
+  /^launcher\/(?:LICENSE|README\.md|package\.json|bin\/commish\.mjs)$/,
 ];
+const executables = /^(?:packages\/(?:sdk|next)\/bin\/init|launcher\/bin\/commish)\.mjs$/;
 const sha = (data) => createHash("sha256").update(data).digest("hex");
 const bytes = (files, name) => {
   assert(files.has(name), `missing required file ${name}`);
@@ -78,11 +81,7 @@ const defaultConsumers = {
 export function inspect(files) {
   for (const [name, file] of files) {
     assert(!name.split("/").some((part) => ["", ".", ".."].includes(part)), "unsafe source path");
-    assert.equal(
-      file.mode,
-      /^packages\/(sdk|next)\/bin\/init\.mjs$/.test(name) ? "100755" : "100644",
-      "invalid source mode",
-    );
+    assert.equal(file.mode, executables.test(name) ? "100755" : "100644", "invalid source mode");
     if (name.startsWith("packages/"))
       assert(packageNames.includes(name.split("/")[1]), "orphan package source");
     assert(

@@ -41,7 +41,7 @@ jobs:
       - run: pnpm install --frozen-lockfile --ignore-scripts --registry=https://registry.npmjs.org
       - run: pnpm build
       - name: Lint and format check
-        run: pnpm exec biome ci packages scripts biome.json package.json
+        run: pnpm exec biome ci packages scripts launcher biome.json package.json
       - name: Run every test file with coverage
         run: node --test --experimental-test-coverage --test-coverage-include='packages/*/bin/**/*.mjs' --test-coverage-include='scripts/**/*.mjs' --test-coverage-exclude='scripts/**/*.test.mjs' --test-coverage-exclude='scripts/fixtures/**' 'scripts/*.test.mjs'
       - name: Prepare exact-source candidate
