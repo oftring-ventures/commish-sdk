@@ -201,6 +201,39 @@ for (const buyerPromotion of [
   });
 }
 
+for (const [duration, period] of [
+  ["once", "to the first invoice only."],
+  ["repeating", "for a limited billing period."],
+  ["forever", "to every eligible invoice."],
+]) {
+  for (const [amount, label] of [
+    [{ percentOff: 20, amountOff: null }, "20% off"],
+    [{ percentOff: null, amountOff: 1500 }, "$15.00 off"],
+  ]) {
+    test(`SSR discloses ${duration} subscription duration for ${label}`, () => {
+      const html = renderToStaticMarkup(
+        createElement(CreatorPageView, {
+          page: { ...page, couponCode: "LEGACY" },
+          integrationPath: "/api/commish/pages",
+          buyerPromotion: {
+            name: "New buyer offer",
+            discount: { ...amount, duration },
+            trial: null,
+            code: "MAYA20",
+          },
+        }),
+      );
+      assert.ok(
+        html.includes(
+          `${label} eligible products. For subscriptions, this discount applies ${period}`,
+        ),
+      );
+      assert.match(html, /<code>MAYA20<\/code>/);
+      assert.doesNotMatch(html, /Use code|LEGACY/);
+    });
+  }
+}
+
 test("failed starts can retry while concurrent callers share one attempt", async () => {
   let calls = 0,
     release;

@@ -237,7 +237,12 @@ export function CreatorPageView({
                         {buyerPromotion.discount.percentOff !== null
                           ? `${buyerPromotion.discount.percentOff}% off`
                           : `$${((buyerPromotion.discount.amountOff ?? 0) / 100).toFixed(2)} off`}{" "}
-                        eligible products.
+                        eligible products. For subscriptions, this discount applies{" "}
+                        {buyerPromotion.discount.duration === "once"
+                          ? "to the first invoice only."
+                          : buyerPromotion.discount.duration === "repeating"
+                            ? "for a limited billing period."
+                            : "to every eligible invoice."}
                       </p>
                     )}
                     {buyerPromotion.code && (
