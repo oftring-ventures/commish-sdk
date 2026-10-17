@@ -77,11 +77,27 @@ export async function createCommishCheckout<
     // Stripe receives the merchant's full line items; Commish needs only these.
     lineItems: params.line_items.map(({ price, quantity }) => ({ price, quantity })),
   });
-  // The session carries exactly the referral Commish prepared.
+  // The session and the subscription it creates carry exactly the referral
+  // Commish prepared; a stale merchant-supplied referral is dropped from both.
   const metadata = { ...params.metadata };
   delete metadata.commish_attribution;
+  const subscription = params.subscription_data?.metadata && {
+    ...params.subscription_data.metadata,
+  };
+  delete subscription?.commish_attribution;
   const next = applyPreparedCheckoutPromotion(
-    applyCommishStripeMetadata(attributionId ? params : { ...params, metadata }, attributionId),
+    applyCommishStripeMetadata(
+      attributionId
+        ? params
+        : {
+            ...params,
+            metadata,
+            ...(subscription
+              ? { subscription_data: { ...params.subscription_data, metadata: subscription } }
+              : {}),
+          },
+      attributionId,
+    ),
     prepared,
   );
   try {

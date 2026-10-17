@@ -203,12 +203,18 @@ test("checkout ignores a malformed cookie and stale merchant referral metadata",
     params: {
       ...params,
       metadata: { merchant: "kept", commish_attribution: "atr_stalereferral1" },
+      subscription_data: {
+        metadata: { plan: "kept", commish_attribution: "atr_stalereferral1" },
+      },
     },
     createSession,
   });
   assert.equal(commish.checkoutPromotions.prepare.mock.calls[0].arguments[0].attributionId, null);
-  assert.deepEqual(createSession.mock.calls[0].arguments[0].metadata, {
+  const [session] = createSession.mock.calls[0].arguments;
+  assert.deepEqual(session.metadata, {
     merchant: "kept",
     ...prepared.parameters.metadata,
   });
+  // The subscription must not carry the stale referral into renewals.
+  assert.deepEqual(session.subscription_data?.metadata, { plan: "kept" });
 });
