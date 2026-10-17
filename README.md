@@ -25,6 +25,9 @@ React >=19.2.8 <20. Other frameworks can use the core SDK directly.
 
 ## Start in TEST
 
+With a coding agent, start with `npx -y commish@latest`: it prints a setup
+playbook for the repository it runs in.
+
 ```sh
 pnpm exec commish setup --plan --json
 ```

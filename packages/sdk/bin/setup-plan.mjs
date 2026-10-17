@@ -40,7 +40,7 @@ function entry(root, path, directory = false) {
   }
 }
 
-function inspectRepository(root) {
+export function inspectRepository(root) {
   const warnings = [];
   let manifest = {};
   try {
