@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { applyPreparedCheckoutPromotion } from "../packages/next/dist/index.js";
-import { Commish } from "../packages/sdk/dist/index.js";
+import { assertCreatorPageWithPromotion, Commish } from "../packages/sdk/dist/index.js";
 
 const attemptId = "00000000-0000-4000-8000-000000000001";
 const prepared = {
@@ -186,6 +186,33 @@ test("Pages v2 negotiates an offer without changing the nested v1 contract", asy
     response,
   );
 });
+
+test("Pages v2 accepts negotiated offers around the unchanged v1 page", () => {
+  assert.doesNotThrow(() => assertCreatorPageWithPromotion(response));
+  assert.doesNotThrow(() => assertCreatorPageWithPromotion({ ...response, buyerPromotion: null }));
+});
+
+for (const [name, value] of [
+  ["a v1 protocol", { ...response, protocol: "commish-pages-v1" }],
+  ["a page field outside v1", { ...response, page: { ...page, unknown: "not part of v1" } }],
+  [
+    "a provider identifier",
+    { ...response, buyerPromotion: { ...buyerPromotion, promotionCodeId: "promo_private" } },
+  ],
+  [
+    "a percentage over 100",
+    {
+      ...response,
+      buyerPromotion: {
+        ...buyerPromotion,
+        discount: { ...buyerPromotion.discount, percentOff: 101 },
+      },
+    },
+  ],
+])
+  test(`Pages v2 rejects ${name} at the public boundary`, () => {
+    assert.throws(() => assertCreatorPageWithPromotion(value));
+  });
 
 test("trial-only Checkout overrides merchant code entry", () => {
   const result = applyPreparedCheckoutPromotion(
