@@ -21,3 +21,13 @@ const manifest = JSON.parse(
   readFileSync(new URL("../packages/sdk/package.json", import.meta.url), "utf8"),
 );
 export const releaseVersion = stableReleaseVersion(manifest.version);
+
+// The archive name pnpm pack gives a package: `@commish/sdk` → `commish-sdk-<version>.tgz`.
+export const archiveName = (name, version) =>
+  `${name.replace(/^@/, "").replace("/", "-")}-${version}.tgz`;
+// Every published package, in upload order. The candidate writer, CI receipt, handoff
+// and preflight read names and archives from here rather than from list positions.
+export const releaseArtifacts = ["@commish/sdk", "@commish/next"].map((name) => ({
+  name,
+  file: archiveName(name, releaseVersion),
+}));

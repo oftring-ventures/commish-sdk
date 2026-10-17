@@ -75,7 +75,7 @@ export async function executePublication(
   if (publish) requirePublicationApproval(approved, env);
   const directory = mkdtempSync(join(tmpdir(), "commish-publication-"));
   try {
-    // acceptHandoff has verified the exact five-file inventory and API ZIP digest.
+    // acceptHandoff has verified the exact candidate inventory and API ZIP digest.
     for (const [name, bytes] of readZipMembers(fetched.zip))
       writeFileSync(join(directory, name), bytes, { flag: "wx", mode: 0o600 });
     const candidate = readPublicationCandidate(directory, approved);
@@ -87,7 +87,7 @@ export async function executePublication(
         "--json",
         ...publicRegistryArgs,
       ]);
-    // Both versions must pass before the first upload; unknown lookup is not absence.
+    // Every version must pass before the first upload; unknown lookup is not absence.
     const plan = publicationPlan(candidate, candidate.artifacts.map(lookup), { publish, env });
     const uploaded = [];
     for (const command of plan) {
@@ -110,7 +110,7 @@ export async function executePublication(
         assert.equal(
           JSON.parse(observed.stdout),
           command.integrity,
-          "published integrity differs; stop the pair",
+          "published integrity differs; stop the release",
         );
       }
       assert(succeeded(result), "publication command failed or was uncertain; no automatic retry");
