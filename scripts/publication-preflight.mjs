@@ -4,7 +4,7 @@ import { lstatSync, readdirSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { peerAllows } from "./package-shape.mjs";
 import { candidateScopes } from "./public-candidate.mjs";
-import { releaseVersion } from "./stable-release.mjs";
+import { releaseArtifacts, releaseVersion } from "./stable-release.mjs";
 import { nodeVersion } from "./toolchain.mjs";
 import { archiveFiles } from "./verify-public-source.mjs";
 
@@ -27,8 +27,7 @@ export function readPublicationCandidate(directory, approved) {
     "manifest.json",
     "ci-receipt.json",
     "SHA512SUMS",
-    `commish-sdk-${releaseVersion}.tgz`,
-    `commish-next-${releaseVersion}.tgz`,
+    ...releaseArtifacts.map((item) => item.file),
   ];
   assert.deepEqual(readdirSync(directory).sort(), [...files].sort());
   for (const file of files)
@@ -46,11 +45,11 @@ export function readPublicationCandidate(directory, approved) {
   assert.equal(manifest.hostedAccepted, false);
   assert.equal(manifest.node, `v${nodeVersion}`, "candidate built with another Node version");
   assert.deepEqual([...manifest.consumerScopes].sort(), [...candidateScopes].sort());
-  assert.equal(manifest.artifacts.length, 2);
+  assert.equal(manifest.artifacts.length, releaseArtifacts.length);
   for (const [index, item] of manifest.artifacts.entries()) {
-    assert.equal(item.name, `@commish/${index ? "next" : "sdk"}`);
+    assert.equal(item.name, releaseArtifacts[index].name);
     assert.equal(item.version, releaseVersion);
-    assert.equal(item.file, files[index + 3]);
+    assert.equal(item.file, releaseArtifacts[index].file);
     const bytes = read(item.file);
     assert.equal(bytes.length, item.bytes);
     assert.equal(hash(bytes, "sha512"), item.sha512, "candidate bytes changed");
@@ -70,16 +69,29 @@ export function readPublicationCandidate(directory, approved) {
     assert.equal(metadata.version, item.version);
     assert.equal(metadata.license, "MIT");
     assert.equal(metadata.repository.url, `git+https://github.com/${repository}.git`);
-    assert.deepEqual(metadata.publishConfig, { access: "public", tag: "latest" });
+    // The launcher's only dependency is the SDK it runs; its registry pin covers manual publishes.
+    const launcher = item.name === "commish";
+    assert.deepEqual(
+      metadata.publishConfig,
+      launcher
+        ? { access: "public", registry: "https://registry.npmjs.org/", tag: "latest" }
+        : { access: "public", tag: "latest" },
+    );
     for (const key of [
       "private",
       "scripts",
-      "dependencies",
+      ...(launcher ? [] : ["dependencies"]),
       "devDependencies",
       "optionalDependencies",
     ])
       assert(!Object.hasOwn(metadata, key), "unexpected publication metadata");
-    if (index)
+    if (launcher)
+      assert.deepEqual(
+        metadata.dependencies,
+        { "@commish/sdk": item.version },
+        "published launcher must pin the released SDK",
+      );
+    if (item.name === "@commish/next")
       assert(
         peerAllows(metadata.peerDependencies["@commish/sdk"], item.version),
         "published Next peer must allow the released SDK",
@@ -163,7 +175,7 @@ export function isMissingRegistryVersion(result) {
 export function publicationPlan(candidate, registryResults, { publish = false, env = {} } = {}) {
   assert.equal(typeof publish, "boolean");
   if (publish) requirePublicationApproval(candidate, env);
-  assert.equal(registryResults.length, 2);
+  assert.equal(registryResults.length, candidate.artifacts.length);
   const pending = candidate.artifacts.filter((item, index) => {
     const result = registryResults[index];
     if (result.status === 0 && !result.signal && !result.error) {

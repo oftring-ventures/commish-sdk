@@ -1,7 +1,12 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
-import { releaseVersion, stableReleaseVersion } from "./stable-release.mjs";
+import {
+  archiveName,
+  releaseArtifacts,
+  releaseVersion,
+  stableReleaseVersion,
+} from "./stable-release.mjs";
 
 test("stable releases have one exact semantic version without a prerelease tag", () => {
   const manifest = JSON.parse(
@@ -26,4 +31,14 @@ test("stable releases have one exact semantic version without a prerelease tag",
     "9007199254740992.0.0",
   ])
     assert.throws(() => stableReleaseVersion(version));
+});
+
+test("release artifacts list each package and its pnpm archive in upload order", () => {
+  assert.equal(archiveName("@commish/next", "1.2.3"), "commish-next-1.2.3.tgz");
+  assert.equal(archiveName("commish", "1.2.3"), "commish-1.2.3.tgz");
+  assert.deepEqual(releaseArtifacts, [
+    { name: "@commish/sdk", file: `commish-sdk-${releaseVersion}.tgz` },
+    { name: "@commish/next", file: `commish-next-${releaseVersion}.tgz` },
+    { name: "commish", file: `commish-${releaseVersion}.tgz` },
+  ]);
 });

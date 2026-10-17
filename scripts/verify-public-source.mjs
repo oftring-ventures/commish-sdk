@@ -14,6 +14,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { gunzipSync } from "node:zlib";
 import {
+  inspectLauncherManifest,
   inspectLockfile,
   inspectPackageManifest,
   inspectRootManifest,
@@ -23,6 +24,7 @@ import {
 import { candidateDirectory, normalizePackage, writeCandidate } from "./public-candidate.mjs";
 import { licenseHash, publicPackageManifests } from "./public-package-manifest.mjs";
 import { nodeVersion, pnpmVersion } from "./toolchain.mjs";
+import { verifyLauncherConsumer } from "./verify-launcher-consumer.mjs";
 import {
   verifyNextBrowserConsumer,
   verifyNextProviderConsumer,
@@ -61,7 +63,7 @@ const allowedPaths = [
   /^packages\/(?:sdk|next)\/(?:LICENSE|README\.md|package\.json|build\.mjs|tsconfig\.build\.json)$/,
   /^packages\/(?:sdk|next)\/(?:src\/[a-z0-9-]+\.tsx?|bin\/[a-z0-9-]+\.(?:mjs|json))$/,
   /^packages\/next\/guides\/[a-z0-9-]+\.md$/,
-  // The unscoped `commish` launcher: outside the workspace and the paired release.
+  // The unscoped `commish` launcher: outside the workspace, released after the pair.
   /^launcher\/(?:LICENSE|README\.md|package\.json|bin\/commish\.mjs)$/,
 ];
 const executables = /^(?:packages\/(?:sdk|next)\/bin\/init|launcher\/bin\/commish)\.mjs$/;
@@ -76,6 +78,7 @@ const defaultConsumers = {
   nextBrowser: verifyNextBrowserConsumer,
   nextProvider: verifyNextProviderConsumer,
   nextBuild: verifyNextBuild,
+  launcher: verifyLauncherConsumer,
 };
 
 export function inspect(files) {
@@ -99,6 +102,16 @@ export function inspect(files) {
   inspectRootManifest(json(files, "package.json"), pnpmVersion);
   inspectWorkspace(bytes(files, "pnpm-workspace.yaml").toString());
   inspectLockfile(bytes(files, "pnpm-lock.yaml").toString());
+  inspectLauncherManifest(
+    json(files, "launcher/package.json"),
+    json(files, "packages/sdk/package.json"),
+  );
+  assert.equal(sha(bytes(files, "launcher/LICENSE")), licenseHash, "package MIT license differs");
+  bytes(files, "launcher/README.md");
+  assert(
+    bytes(files, "launcher/bin/commish.mjs").toString().startsWith("#!/usr/bin/env node\n"),
+    "entry point must start with the node shebang",
+  );
   return packageNames.map((pkg) => {
     const dir = `packages/${pkg}`;
     for (const name of [
@@ -245,6 +258,39 @@ export async function verifyPackages(
         );
       }
     }
+    // The launcher has no build: pack its source, then install it with the verified SDK.
+    const launcherCwd = join(work, "launcher"),
+      launcherDestination = join(work, "packed", "launcher");
+    mkdirSync(launcherDestination, { recursive: true });
+    run("pnpm", ["pack", "--pack-destination", launcherDestination], launcherCwd);
+    const launcherArchives = readdirSync(launcherDestination);
+    assert.equal(launcherArchives.length, 1, "expected one package archive");
+    let launcher = { archive: readFileSync(join(launcherDestination, launcherArchives[0])) };
+    launcher.packed = archiveFiles(launcher.archive);
+    const launcherManifest = JSON.parse(bytes(files, "launcher/package.json"));
+    const packedLauncher = JSON.parse(bytes(launcher.packed, "package/package.json"));
+    for (const field of ["name", "version", "bin", "dependencies"])
+      assert.deepEqual(packedLauncher[field], launcherManifest[field], "launcher manifest changed");
+    const entry = launcher.packed.get("package/bin/commish.mjs");
+    assert(
+      entry?.data.equals(bytes(files, "launcher/bin/commish.mjs")),
+      "declared target is missing or changed in archive",
+    );
+    assert.equal(entry.mode & 0o777, 0o755, "invalid packed target mode");
+    if (releaseManifests) {
+      launcher = normalizePackage(
+        files,
+        "launcher",
+        releaseManifests[artifacts.length],
+        launcher.packed,
+        work,
+        run,
+        archiveFiles,
+      );
+      artifacts.push(launcher);
+    }
+    assert(sdkArchive, "launcher consumer requires the verified SDK");
+    evidence.scopes.push(...consumers.launcher(sdkArchive, launcher));
     for (const [name, file] of files)
       assert(
         readFileSync(join(work, name)).equals(file.data),
@@ -324,7 +370,7 @@ export async function verify(
   return {
     sha: head,
     scope: "frozen-install-build-typecheck-pack-exports",
-    packages: packages.map(({ manifest }) => manifest.name),
+    packages: [...packages.map(({ manifest }) => manifest.name), "commish"],
     consumerScopes: evidence.scopes,
     ...(evidence.typeCompiler ? { typeCompiler: evidence.typeCompiler } : {}),
     consumerChecks: false,

@@ -18,13 +18,13 @@ pnpm test
 them); CI runs the same check and
 reports test coverage for the CLI and release scripts.
 
-The complete source pair targets the stable version declared in both package
-manifests, which `scripts/stable-release.mjs` reads, on npm's `latest` tag.
-Package stability is independent of TEST/LIVE mode and workspace eligibility.
-Both packages include MIT LICENSE
-and setup documentation, and Next requires the same SDK minor version. Release candidate
-preparation and hosted acceptance remain separate steps; use an accepted artifact
-receipt before installing the pair.
+The complete release, the SDK and Next pair plus the `commish` launcher, targets the
+stable version declared in the SDK manifest, which `scripts/stable-release.mjs` reads,
+on npm's `latest` tag. Package stability is independent of TEST/LIVE mode and
+workspace eligibility. Every package includes MIT LICENSE and documentation, Next
+requires the same SDK minor version, and the launcher pins the exact SDK version.
+Release candidate preparation and hosted acceptance remain separate steps; use an
+accepted artifact receipt before installing the release.
 
 To prepare a new local candidate from a reviewed clean commit, pass a new absolute
 output directory whose parent exists outside the checkout:
@@ -33,8 +33,8 @@ output directory whose parent exists outside the checkout:
 EXPECTED_SHA="$(git rev-parse HEAD)" node scripts/verify-public-source.mjs /absolute/new-candidate
 ```
 
-The command builds and normalizes both packages, runs the existing installed
-consumers against those exact archives, then writes two tarballs, `SHA512SUMS`
+The command builds and normalizes the pair and packs the launcher, runs the installed
+consumers against those exact archives, then writes three tarballs, `SHA512SUMS`
 and a manifest with source, archive/member hashes and consumer scopes. It refuses
 existing outputs. A failed write may leave partial files without a valid receipt;
 use a fresh directory after investigating. No npm or hosted acceptance is implied.
@@ -45,15 +45,15 @@ Its additional `ci-receipt.json` binds the manifest and archives to the reported
 repository, run, workflow revision and actual checked-out source. Pull-request
 trigger and workflow SHAs can differ from that source; all three are recorded.
 Before accepting a handoff, verify the successful run, source and artifact identity
-against GitHub, then compare both downloaded tarballs byte-for-byte with an
+against GitHub, then compare every downloaded tarball byte-for-byte with an
 independent macOS candidate built from the same source. The receipt alone is not
 publication authority. Candidate CI has no publication credentials or write permissions.
 
 The publication preflight library reads only a candidate whose source, manifest
 and CI receipt hashes match a separately accepted handoff. It checks every archive
-and member, and preflights both exact registry versions before planning either
+and member, and preflights every exact registry version before planning any
 upload. Identical existing versions are skipped; different bytes or unavailable
-lookups stop the pair. Plans default to npm dry-run and execute no commands.
+lookups stop the release. Plans default to npm dry-run and execute no commands.
 A real publication plan additionally requires the public `v<version>` tag/workflow identity,
 separate exact-candidate approval and a hosted acceptance evidence hash. Protected
 environment configuration, GitHub run/artifact verification and execution remain
@@ -68,17 +68,17 @@ the preflight library consumes. It needs only a read token and performs no publi
 
 The protected `Publish approved packages` workflow requires an immutable release
 tag `v<version>` matching the manifest version `scripts/stable-release.mjs` reads, by manual dispatch.
-Prerelease versions and mismatched source, pair or tag identities are rejected.
+Prerelease versions and mismatched source, artifact or tag identities are rejected.
 Its executor defaults to dry-run outside
-that workflow and never retries an upload automatically. Both exact registry
-versions are preflighted before uploading SDK then Next; existing identical versions
-are skipped. npm's publish-time malware scan hides a new version for minutes, so
+that workflow and never retries an upload automatically. Every exact registry
+version is preflighted before uploading the SDK, then Next, then the launcher, which
+depends on the SDK; existing identical versions are skipped. npm's publish-time malware scan hides a new version for minutes, so
 after a successful upload the executor polls its registry integrity every 30 seconds
 for up to 30 minutes. Only a clean E404 means "not yet visible"; different integrity,
-any other lookup failure or the deadline stops the pair. A failed/uncertain upload gets
-one readback and stops. A stopped run may have published one package that the scan
+any other lookup failure or the deadline stops the release. A failed/uncertain upload
+gets one readback and stops. A stopped run may have published packages that the scan
 still hides: wait out the scan window before reading an E404 as unpublished, then
-inspect both registry versions before authorizing another attempt.
+inspect every registry version before authorizing another attempt.
 
 Before dispatch, the release owner must complete this handoff:
 
@@ -86,7 +86,7 @@ Before dispatch, the release owner must complete this handoff:
    Independently compare its Linux and macOS archives. The candidate, release tag,
    and workflow revision must share one SHA; an older pre-workflow candidate cannot
    be published by this workflow.
-2. Record approved hosted TEST acceptance, then explicitly authorize these two
+2. Record approved hosted TEST acceptance, then explicitly authorize these three
    archives. Configure the GitHub `npm-publication` environment with the required
    reviewer and the founder-approved single-owner manual approval model, plus a
    deployment rule allowing release tags (`v*`). Release tags are immutable through
@@ -118,8 +118,9 @@ Before dispatch, the release owner must complete this handoff:
    stale `beta` dist-tag from both packages (`npm dist-tag rm <package> beta`)
    once nothing depends on it; `latest` is the only supported tag.
 
-For each subsequent stable release, update both package manifests (the SDK
-manifest declares the release version and the Next manifest must match it),
+For each subsequent stable release, update the three package manifests (the SDK
+manifest declares the release version; the Next manifest, the launcher version and
+its exact `@commish/sdk` dependency must match it),
 exact consumer fixtures, the CHANGELOG entry and documentation together. Preserve
 the separate candidate approval, hosted evidence and registry verification gates.
 
@@ -139,26 +140,15 @@ fixture size is not a customer onboarding requirement.
 ## The `commish` launcher
 
 `launcher/` is the source of the unscoped `commish` npm package, so
-`npx -y commish@latest` runs the CLI. It stays outside the pnpm workspace and the
-paired release: the source gate allows only its four files, and
-`scripts/launcher.test.mjs` keeps its version, its exact `@commish/sdk` dependency
-and its license equal to the SDK's.
+`npx -y commish@latest` runs the CLI. It stays outside the pnpm workspace, because the
+frozen lockfile cannot resolve an exact dependency on an SDK version that is not
+published yet, but it is part of every release. The candidate packs it after the
+pair, installs it offline against the candidate SDK archive and runs its `--version`;
+the workflow uploads it last. `scripts/package-shape.mjs` keeps its version and its
+exact `@commish/sdk` dependency equal to the release.
 
-npm adds a trusted publisher only to a package that already exists, so a
-maintainer account with 2FA publishes the first version once, from a clean
-checkout of the reviewed commit, after the matching `@commish/sdk` version is on
-npm:
-
-```sh
-cd launcher
-npm publish --dry-run
-npm publish
-```
-
-`publishConfig.registry` pins these commands to the public npm registry even
-when a local npm configuration points elsewhere. Then require 2FA with tokens
-disallowed. Until `publish-packages.yml` publishes the launcher, publish the
-matching launcher version the same way after each SDK release. Add the trusted
-publisher only in the change that adds the launcher to that workflow, and
-complete its first workflow publish right away: npm expires a new trusted
-publisher that has not published within two days.
+Version 0.4.0 was published by hand, so its bytes differ from a normalized candidate
+archive: the first workflow release of the launcher must be a new version. Add the
+`commish` trusted publisher with the values in step 4 immediately before that
+dispatch, because npm expires a trusted publisher that has not published within two
+days. `publishConfig.registry` keeps any manual publish on the public registry.

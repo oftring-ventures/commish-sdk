@@ -10,7 +10,7 @@ import {
 } from "node:fs";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { peerAllows } from "./package-shape.mjs";
-import { releaseVersion } from "./stable-release.mjs";
+import { archiveName, releaseArtifacts, releaseVersion } from "./stable-release.mjs";
 
 const digest = (bytes) => createHash("sha512").update(bytes).digest();
 export const candidateScopes = [
@@ -32,6 +32,7 @@ export const candidateScopes = [
   "next-attribution-capture-request-external",
   "next-provider-installed-hook-wiring",
   "next-cli-installed-setup",
+  "launcher-cli-installed-version",
 ];
 
 export function portablePackageArchive(bytes) {
@@ -77,13 +78,14 @@ export function normalizePackage(files, dir, manifest, original, work, run, pars
       .map((name) => `package/${name.slice(dir.length + 1)}`),
   ].sort();
   assert.deepEqual([...original.keys()].sort(), wanted, "unexpected release member inventory");
-  const stage = join(work, "release-stage", manifest.name.slice(9)),
-    destination = `${stage}-packed`;
+  const stage = join(work, "release-stage", basename(dir)),
+    destination = `${stage}-packed`,
+    executables = Object.values(manifest.bin ?? {}).map((target) => `package/${target.slice(2)}`);
   mkdirSync(stage, { recursive: true });
   mkdirSync(destination);
   const expected = new Map();
   for (const name of wanted) {
-    const mode = name === "package/bin/init.mjs" ? 0o755 : 0o644;
+    const mode = executables.includes(name) ? 0o755 : 0o644;
     assert.equal(original.get(name).mode & 0o777, mode);
     // Pinned pnpm pack serializes package.json without a trailing newline.
     const data =
@@ -105,7 +107,7 @@ export function normalizePackage(files, dir, manifest, original, work, run, pars
     expected.set(name, { data, mode });
   }
   run("pnpm", ["pack", "--pack-destination", destination], stage);
-  const name = `commish-${manifest.name.slice(9)}-${manifest.version}.tgz`;
+  const name = archiveName(manifest.name, manifest.version);
   assert.deepEqual(readdirSync(destination), [name], "unexpected normalized archive");
   const archive = portablePackageArchive(readFileSync(join(destination, name))),
     packed = parseArchive(archive);
@@ -124,11 +126,15 @@ export function writeCandidate(root, output, source, artifacts, scopes, manifest
     [...candidateScopes].sort(),
     "incomplete candidate consumer evidence",
   );
-  assert.equal(artifacts.length, 2, "candidate requires the exact pair");
+  assert.equal(
+    artifacts.length,
+    releaseArtifacts.length,
+    "candidate requires the exact release artifacts",
+  );
   const records = artifacts.map(({ archive }, index) => {
     const packed = parseArchive(archive);
     const manifest = JSON.parse(packed.get("package/package.json").data),
-      name = `@commish/${index ? "next" : "sdk"}`;
+      { name, file } = releaseArtifacts[index];
     assert.equal(manifest.name, name);
     assert.equal(manifest.version, releaseVersion);
     assert.deepEqual(
@@ -136,16 +142,22 @@ export function writeCandidate(root, output, source, artifacts, scopes, manifest
       manifests[index],
       "candidate manifest differs from normalized source",
     );
-    if (index)
+    if (name === "@commish/next")
       assert(
         peerAllows(manifest.peerDependencies["@commish/sdk"], manifest.version),
         "candidate Next peer must allow the released SDK",
+      );
+    if (name === "commish")
+      assert.deepEqual(
+        manifest.dependencies,
+        { "@commish/sdk": manifest.version },
+        "candidate launcher must pin the released SDK",
       );
     const hash = digest(archive);
     return {
       name,
       version: manifest.version,
-      file: `commish-${name.slice(9)}-${manifest.version}.tgz`,
+      file,
       bytes: archive.length,
       sha512: hash.toString("hex"),
       integrity: `sha512-${hash.toString("base64")}`,
@@ -178,7 +190,7 @@ export function writeCandidate(root, output, source, artifacts, scopes, manifest
     records.map((a) => `${a.sha512}  ${a.file}\n`).join(""),
     { flag: "wx" },
   );
-  // Record acceptance only after both archives and their checksums have been written.
+  // Record acceptance only after every archive and its checksum has been written.
   writeFileSync(join(output, "manifest.json"), JSON.stringify(manifest, null, 2) + "\n", {
     flag: "wx",
   });
