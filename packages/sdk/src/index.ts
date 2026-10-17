@@ -10,6 +10,7 @@ import {
   assertPreparedCheckoutPromotion,
   type CheckoutPromotionInput,
   type PreparedCheckoutPromotion,
+  promotionAttemptId,
 } from "./promotions.js";
 
 export type { CheckoutPromotionInput, PreparedCheckoutPromotion } from "./promotions.js";
@@ -64,6 +65,8 @@ export class CommishError extends Error {
     readonly status: number,
     readonly code: string,
     readonly requestId?: string,
+    /** Structured error details, such as an expired attempt's ID. */
+    readonly details?: Record<string, unknown>,
   ) {
     super(message);
     this.name = "CommishError";
@@ -119,13 +122,18 @@ export class Commish {
               message?: string;
               code?: string;
               request_id?: string;
+              details?: unknown;
             })
           : undefined;
+      const details = error?.details;
       throw new CommishError(
         error?.message ?? "Commish request failed",
         response.status,
         error?.code ?? "request_failed",
         error?.request_id ?? response.headers.get("x-request-id") ?? undefined,
+        details && typeof details === "object" && !Array.isArray(details)
+          ? (details as Record<string, unknown>)
+          : undefined,
       );
     }
     if (!body || typeof body !== "object")
@@ -175,30 +183,37 @@ export class Commish {
     },
   };
   readonly checkoutPromotions = {
-    reconcile: (input: { attemptId: string }) =>
-      this.request<{ data: { attemptId: string; released: boolean } }>(
+    reconcile: async (input: { attemptId: string }) => {
+      const attemptId = promotionAttemptId(input.attemptId);
+      const result = await this.request<{ data: { attemptId: string; released: boolean } }>(
         "/checkout-promotions/reconcile",
-        { method: "POST", body: JSON.stringify(input) },
-        input.attemptId,
-      ),
+        { method: "POST", body: JSON.stringify({ attemptId }) },
+        attemptId,
+      );
+      // A stale or foreign success must not be mistaken for a release.
+      if (result.data?.attemptId !== attemptId || result.data?.released !== true)
+        throw new CommishError("Checkout reconciliation mismatch", 502, "invalid_response");
+      return result;
+    },
     prepare: async (input: CheckoutPromotionInput) => {
       const result = await this.request<{ data: PreparedCheckoutPromotion }>(
         "/checkout-promotions/prepare",
         { method: "POST", body: JSON.stringify(input) },
         input.attemptId,
       );
-      assertPreparedCheckoutPromotion(result.data);
+      assertPreparedCheckoutPromotion(result.data, input);
       return result;
     },
     confirm: async (input: { attemptId: string; sessionId: string }) => {
+      const attemptId = promotionAttemptId(input.attemptId);
       const result = await this.request<{
         data: { attemptId: string; sessionId: string };
       }>(
         "/checkout-promotions/confirm",
-        { method: "POST", body: JSON.stringify(input) },
-        input.attemptId,
+        { method: "POST", body: JSON.stringify({ attemptId, sessionId: input.sessionId }) },
+        attemptId,
       );
-      if (result.data?.attemptId !== input.attemptId || result.data?.sessionId !== input.sessionId)
+      if (result.data?.attemptId !== attemptId || result.data?.sessionId !== input.sessionId)
         throw new CommishError("Checkout confirmation mismatch", 502, "invalid_response");
       return result;
     },

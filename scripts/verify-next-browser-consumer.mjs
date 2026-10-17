@@ -65,6 +65,7 @@ export async function metadataProbe(
     Object.keys(root),
     [
       ...(capture ? ["COMMISH_COOKIE"] : []),
+      ...(buyerPromotions ? ["CommishCheckoutError"] : []),
       "applyCommishStripeMetadata",
       ...(buyerPromotions ? ["applyPreparedCheckoutPromotion"] : []),
       ...(capture ? ["createAttributionHandler"] : []),

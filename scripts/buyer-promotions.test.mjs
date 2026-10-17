@@ -1,11 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { applyPreparedCheckoutPromotion } from "../packages/next/dist/index.js";
-import { Commish } from "../packages/sdk/dist/index.js";
+import { assertCreatorPageWithPromotion, Commish } from "../packages/sdk/dist/index.js";
 
 const attemptId = "00000000-0000-4000-8000-000000000001";
 const prepared = {
   attemptId,
+  checkoutAttemptId: "cart:one",
   stripeIdempotencyKey: `commish:checkout:${attemptId}`,
   promotionName: "Welcome",
   parameters: {
@@ -186,6 +187,33 @@ test("Pages v2 negotiates an offer without changing the nested v1 contract", asy
   );
 });
 
+test("Pages v2 accepts negotiated offers around the unchanged v1 page", () => {
+  assert.doesNotThrow(() => assertCreatorPageWithPromotion(response));
+  assert.doesNotThrow(() => assertCreatorPageWithPromotion({ ...response, buyerPromotion: null }));
+});
+
+for (const [name, value] of [
+  ["a v1 protocol", { ...response, protocol: "commish-pages-v1" }],
+  ["a page field outside v1", { ...response, page: { ...page, unknown: "not part of v1" } }],
+  [
+    "a provider identifier",
+    { ...response, buyerPromotion: { ...buyerPromotion, promotionCodeId: "promo_private" } },
+  ],
+  [
+    "a percentage over 100",
+    {
+      ...response,
+      buyerPromotion: {
+        ...buyerPromotion,
+        discount: { ...buyerPromotion.discount, percentOff: 101 },
+      },
+    },
+  ],
+])
+  test(`Pages v2 rejects ${name} at the public boundary`, () => {
+    assert.throws(() => assertCreatorPageWithPromotion(value));
+  });
+
 test("trial-only Checkout overrides merchant code entry", () => {
   const result = applyPreparedCheckoutPromotion(
     {
@@ -209,4 +237,177 @@ test("trial-only Checkout overrides merchant code entry", () => {
   );
   assert.equal(result.allow_promotion_codes, false);
   assert.equal(result.subscription_data.trial_period_days, 2);
+});
+
+const sdk = (respond) => {
+  const calls = [];
+  const client = new Commish({
+    secretKey: "cm_test_sk_promotions12345",
+    fetch: async (url, options) => {
+      calls.push({ url, options });
+      return respond();
+    },
+  });
+  return { calls, client };
+};
+const request = {
+  programId: "prg_123456789012",
+  attemptId: " cart:one ",
+  attributionId: null,
+  mode: "subscription",
+  customerId: "buyer",
+  stripeCustomerId: "cus_buyer",
+  lineItems: [{ price: "price_plan", quantity: 1 }],
+};
+const preparing = (parameters, input = request, response = prepared) =>
+  sdk(() => Response.json({ data: { ...response, parameters } })).client.checkoutPromotions.prepare(
+    input,
+  );
+const cancellingTrial = {
+  trial_period_days: 2,
+  trial_settings: { end_behavior: { missing_payment_method: "cancel" } },
+};
+const trialOnly = {
+  expires_at: prepared.parameters.expires_at,
+  metadata: prepared.parameters.metadata,
+  allow_promotion_codes: false,
+  subscription_data: cancellingTrial,
+};
+
+test("server client accepts one native trial duration and rejects ambiguous durations", async () => {
+  assert.deepEqual((await preparing(trialOnly)).data.parameters, trialOnly);
+  for (const subscription_data of [
+    { ...cancellingTrial, trial_end: 1800000000 },
+    { ...cancellingTrial, trial_period_days: 1 },
+  ])
+    await assert.rejects(
+      () => preparing({ ...trialOnly, subscription_data }),
+      /Invalid checkout promotion response/,
+    );
+});
+
+for (const [name, parameters] of [
+  ["both discount switches", { ...prepared.parameters, allow_promotion_codes: true }],
+  ["a missing expiry", { ...prepared.parameters, expires_at: undefined }],
+  [
+    "another attempt's metadata",
+    { ...prepared.parameters, metadata: { commish_promotion_attempt: "other" } },
+  ],
+])
+  test(`server client rejects a patch with ${name}`, async () => {
+    await assert.rejects(() => preparing(parameters), /Invalid checkout promotion response/);
+  });
+
+test("server client rejects code entry beside a trial without a fixed discount", async () => {
+  for (const allow_promotion_codes of [true, undefined])
+    await assert.rejects(
+      () => preparing({ ...trialOnly, allow_promotion_codes }),
+      /Invalid checkout promotion response/,
+    );
+  const discounted = { ...prepared.parameters, subscription_data: cancellingTrial };
+  assert.deepEqual((await preparing(discounted)).data.parameters, discounted);
+});
+
+// Hex letters make lowercasing observable; an all-digit UUID would hide it.
+const lettered = "00000000-0000-4000-8000-00000000abcd";
+test("confirmation sends and compares the normalized attempt UUID", async () => {
+  const sessionId = "cs_test_session";
+  const { calls, client } = sdk(() => Response.json({ data: { attemptId: lettered, sessionId } }));
+  assert.deepEqual(
+    await client.checkoutPromotions.confirm({
+      attemptId: ` ${lettered.toUpperCase()} `,
+      sessionId,
+    }),
+    { data: { attemptId: lettered, sessionId } },
+  );
+  assert.deepEqual(JSON.parse(calls[0].options.body), { attemptId: lettered, sessionId });
+  assert.equal(new Headers(calls[0].options.headers).get("idempotency-key"), lettered);
+  await assert.rejects(
+    () => client.checkoutPromotions.confirm({ attemptId: "cart-1", sessionId }),
+    TypeError,
+  );
+  await assert.rejects(
+    () => client.checkoutPromotions.reconcile({ attemptId: "cart-1" }),
+    TypeError,
+  );
+  assert.equal(calls.length, 1);
+});
+
+for (const data of [
+  { attemptId: lettered, released: false },
+  { attemptId: "00000000-0000-4000-8000-000000000002", released: true },
+  {},
+])
+  test(`reconciliation rejects a response for another state: ${JSON.stringify(data)}`, async () => {
+    await assert.rejects(
+      () =>
+        sdk(() => Response.json({ data })).client.checkoutPromotions.reconcile({
+          attemptId: lettered,
+        }),
+      { name: "CommishError", code: "invalid_response" },
+    );
+  });
+
+test("reconciliation accepts the released requested attempt", async () => {
+  const { calls, client } = sdk(() =>
+    Response.json({ data: { attemptId: lettered, released: true } }),
+  );
+  assert.deepEqual(
+    await client.checkoutPromotions.reconcile({ attemptId: lettered.toUpperCase() }),
+    { data: { attemptId: lettered, released: true } },
+  );
+  assert.deepEqual(JSON.parse(calls[0].options.body), { attemptId: lettered });
+  assert.equal(new Headers(calls[0].options.headers).get("idempotency-key"), lettered);
+});
+
+test("an expired attempt's ID is exposed for reconciliation", async () => {
+  const expired = (details) =>
+    sdk(() =>
+      Response.json(
+        {
+          error: {
+            code: "checkout_attempt_expired",
+            message: "Expired",
+            request_id: "req_1",
+            details,
+          },
+        },
+        { status: 409 },
+      ),
+    ).client.checkoutPromotions.prepare({
+      programId: "prg_123456789012",
+      attemptId: "cart-1",
+      attributionId: null,
+      mode: "payment",
+      customerId: "buyer",
+      lineItems: [{ price: "price_hardware", quantity: 1 }],
+    });
+  await assert.rejects(() => expired({ attemptId }), {
+    name: "CommishError",
+    status: 409,
+    code: "checkout_attempt_expired",
+    requestId: "req_1",
+    details: { attemptId },
+  });
+  for (const details of [[attemptId], "attempt", undefined])
+    await assert.rejects(
+      () => expired(details),
+      (error) => error.code === "checkout_attempt_expired" && error.details === undefined,
+    );
+});
+
+test("server client binds a prepared response to its request", async () => {
+  const trial = { ...prepared.parameters, subscription_data: cancellingTrial };
+  assert.deepEqual((await preparing(trial)).data.parameters, trial);
+  for (const input of [
+    { ...request, attemptId: "cart:two" },
+    { ...request, mode: "payment" },
+    { ...request, stripeCustomerId: undefined },
+  ])
+    await assert.rejects(() => preparing(trial, input), /Invalid checkout promotion response/);
+  for (const checkoutAttemptId of [undefined, 1])
+    await assert.rejects(
+      () => preparing(prepared.parameters, request, { ...prepared, checkoutAttemptId }),
+      /Invalid checkout promotion response/,
+    );
 });

@@ -9,6 +9,8 @@ export type CheckoutPromotionInput = {
 };
 export type PreparedCheckoutPromotion = {
   attemptId: string;
+  /** Echo of the request's cart attempt key. */
+  checkoutAttemptId: string;
   stripeIdempotencyKey: string;
   promotionName: string | null;
   parameters: {
@@ -23,8 +25,20 @@ export type PreparedCheckoutPromotion = {
     metadata: { commish_promotion_attempt: string };
   };
 };
+const uuid = /^[a-f\d]{8}-[a-f\d]{4}-[a-f\d]{4}-[a-f\d]{4}-[a-f\d]{12}$/;
+/** Commish returns attempt UUIDs in lowercase; send and compare that form. */
+export function promotionAttemptId(value: string): string {
+  const id = typeof value === "string" ? value.trim().toLowerCase() : "";
+  if (!uuid.test(id)) throw new TypeError("Use the prepared Commish checkout attempt ID");
+  return id;
+}
+/**
+ * Validates a prepare response; with the request, also that it answers that
+ * cart attempt and grants a trial only to a subscription with a customer.
+ */
 export function assertPreparedCheckoutPromotion(
   value: unknown,
+  input?: CheckoutPromotionInput,
 ): asserts value is PreparedCheckoutPromotion {
   const record = (v: unknown): v is Record<string, unknown> =>
     !!v && typeof v === "object" && !Array.isArray(v);
@@ -35,9 +49,17 @@ export function assertPreparedCheckoutPromotion(
   };
   if (
     !record(value) ||
-    !only(value, ["attemptId", "stripeIdempotencyKey", "promotionName", "parameters"]) ||
+    !only(value, [
+      "attemptId",
+      "checkoutAttemptId",
+      "stripeIdempotencyKey",
+      "promotionName",
+      "parameters",
+    ]) ||
     typeof value.attemptId !== "string" ||
-    !/^[a-f\d]{8}-[a-f\d]{4}-[a-f\d]{4}-[a-f\d]{4}-[a-f\d]{12}$/.test(value.attemptId) ||
+    !uuid.test(value.attemptId) ||
+    typeof value.checkoutAttemptId !== "string" ||
+    (input && value.checkoutAttemptId !== input.attemptId.trim()) ||
     value.stripeIdempotencyKey !== `commish:checkout:${value.attemptId}` ||
     (value.promotionName !== null && typeof value.promotionName !== "string") ||
     !record(value.parameters)
@@ -74,7 +96,10 @@ export function assertPreparedCheckoutPromotion(
     return invalid();
   if (p.subscription_data !== undefined) {
     const s = p.subscription_data;
+    if (input && (input.mode !== "subscription" || !input.stripeCustomerId)) return invalid();
+    // Native code entry cannot exclude discounts the trial would consume.
     if (
+      (p.discounts === undefined && p.allow_promotion_codes !== false) ||
       !record(s) ||
       !only(s, ["trial_end", "trial_period_days", "trial_settings"]) ||
       (s.trial_end !== undefined) === (s.trial_period_days !== undefined) ||
