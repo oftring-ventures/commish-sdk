@@ -201,7 +201,7 @@ export class Commish {
         { method: "POST", body: JSON.stringify(input) },
         input.attemptId,
       );
-      assertPreparedCheckoutPromotion(result.data);
+      assertPreparedCheckoutPromotion(result.data, input);
       return result;
     },
     confirm: async (input: { attemptId: string; sessionId: string }) => {

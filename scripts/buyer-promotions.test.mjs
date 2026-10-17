@@ -6,6 +6,7 @@ import { Commish } from "../packages/sdk/dist/index.js";
 const attemptId = "00000000-0000-4000-8000-000000000001";
 const prepared = {
   attemptId,
+  checkoutAttemptId: "cart:one",
   stripeIdempotencyKey: `commish:checkout:${attemptId}`,
   promotionName: "Welcome",
   parameters: {
@@ -222,9 +223,18 @@ const sdk = (respond) => {
   });
   return { calls, client };
 };
-const preparing = (parameters) =>
-  sdk(() => Response.json({ data: { ...prepared, parameters } })).client.checkoutPromotions.prepare(
-    { attemptId: "cart:one" },
+const request = {
+  programId: "prg_123456789012",
+  attemptId: " cart:one ",
+  attributionId: null,
+  mode: "subscription",
+  customerId: "buyer",
+  stripeCustomerId: "cus_buyer",
+  lineItems: [{ price: "price_plan", quantity: 1 }],
+};
+const preparing = (parameters, input = request, response = prepared) =>
+  sdk(() => Response.json({ data: { ...response, parameters } })).client.checkoutPromotions.prepare(
+    input,
   );
 const cancellingTrial = {
   trial_period_days: 2,
@@ -356,5 +366,21 @@ test("an expired attempt's ID is exposed for reconciliation", async () => {
     await assert.rejects(
       () => expired(details),
       (error) => error.code === "checkout_attempt_expired" && error.details === undefined,
+    );
+});
+
+test("server client binds a prepared response to its request", async () => {
+  const trial = { ...prepared.parameters, subscription_data: cancellingTrial };
+  assert.deepEqual((await preparing(trial)).data.parameters, trial);
+  for (const input of [
+    { ...request, attemptId: "cart:two" },
+    { ...request, mode: "payment" },
+    { ...request, stripeCustomerId: undefined },
+  ])
+    await assert.rejects(() => preparing(trial, input), /Invalid checkout promotion response/);
+  for (const checkoutAttemptId of [undefined, 1])
+    await assert.rejects(
+      () => preparing(prepared.parameters, request, { ...prepared, checkoutAttemptId }),
+      /Invalid checkout promotion response/,
     );
 });

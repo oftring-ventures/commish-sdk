@@ -24,6 +24,7 @@ const cancellingTrial = (duration) => ({
 });
 const prepared = {
   attemptId,
+  checkoutAttemptId: "cart-1",
   stripeIdempotencyKey: `commish:checkout:${attemptId}`,
   promotionName: "Welcome",
   parameters: {
