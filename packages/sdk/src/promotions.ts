@@ -23,6 +23,13 @@ export type PreparedCheckoutPromotion = {
     metadata: { commish_promotion_attempt: string };
   };
 };
+const uuid = /^[a-f\d]{8}-[a-f\d]{4}-[a-f\d]{4}-[a-f\d]{4}-[a-f\d]{12}$/;
+/** Commish returns attempt UUIDs in lowercase; send and compare that form. */
+export function promotionAttemptId(value: string): string {
+  const id = typeof value === "string" ? value.trim().toLowerCase() : "";
+  if (!uuid.test(id)) throw new TypeError("Use the prepared Commish checkout attempt ID");
+  return id;
+}
 export function assertPreparedCheckoutPromotion(
   value: unknown,
 ): asserts value is PreparedCheckoutPromotion {
@@ -37,7 +44,7 @@ export function assertPreparedCheckoutPromotion(
     !record(value) ||
     !only(value, ["attemptId", "stripeIdempotencyKey", "promotionName", "parameters"]) ||
     typeof value.attemptId !== "string" ||
-    !/^[a-f\d]{8}-[a-f\d]{4}-[a-f\d]{4}-[a-f\d]{4}-[a-f\d]{12}$/.test(value.attemptId) ||
+    !uuid.test(value.attemptId) ||
     value.stripeIdempotencyKey !== `commish:checkout:${value.attemptId}` ||
     (value.promotionName !== null && typeof value.promotionName !== "string") ||
     !record(value.parameters)
@@ -74,7 +81,9 @@ export function assertPreparedCheckoutPromotion(
     return invalid();
   if (p.subscription_data !== undefined) {
     const s = p.subscription_data;
+    // Native code entry cannot exclude discounts the trial would consume.
     if (
+      (p.discounts === undefined && p.allow_promotion_codes !== false) ||
       !record(s) ||
       !only(s, ["trial_end", "trial_period_days", "trial_settings"]) ||
       (s.trial_end !== undefined) === (s.trial_period_days !== undefined) ||

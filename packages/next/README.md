@@ -159,9 +159,13 @@ The callback must pass the supplied `idempotencyKey` to Stripe. Preserve the
 returned expiry, discount and trial parameters. Do not preconfigure a competing
 discount or trial. Existing `withCommishStripeMetadata` behavior is unchanged.
 
-After 24 hours plus five minutes, use
-`commish.checkoutPromotions.reconcile({ attemptId: preparedAttemptId })` to
-release an unused trial reservation only after Stripe confirms abandonment.
+If Stripe Checkout creation or confirmation fails after preparation, the
+helper throws `CommishCheckoutError` with the prepared `attemptId`; store it
+with the cart. After 24 hours plus five minutes, use
+`commish.checkoutPromotions.reconcile({ attemptId })` to release an unused trial
+reservation only after Stripe confirms abandonment. Retrying `prepare` with the
+same cart attempt returns that ID too, or a `checkout_attempt_expired` error
+whose `details.attemptId` names it.
 Native Stripe codes apply discounts and creator attribution without a cookie;
 trials require referral preparation. Enable these helpers only when the Commish
 service has buyer promotions enabled.
