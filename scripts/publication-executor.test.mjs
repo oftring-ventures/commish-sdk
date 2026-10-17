@@ -8,6 +8,7 @@ import test from "node:test";
 import { gzipSync } from "node:zlib";
 import { candidateScopes } from "./public-candidate.mjs";
 import { executePublication, registryVisibility, stopDiagnostic } from "./publication-executor.mjs";
+import { releaseArtifacts } from "./stable-release.mjs";
 
 const hash = (data, algorithm = "sha256", encoding = "hex") =>
   createHash(algorithm).update(data).digest(encoding);
@@ -47,14 +48,18 @@ function zip(files) {
 }
 function fixture() {
   const files = new Map();
-  const artifacts = ["sdk", "next"].map((pkg) => {
+  const artifacts = releaseArtifacts.map(({ name, file }) => {
     const metadata = {
-      name: `@commish/${pkg}`,
+      name,
       version: "0.4.0",
       license: "MIT",
       repository: { url: `git+https://github.com/${repository}.git` },
-      publishConfig: { access: "public", tag: "latest" },
-      ...(pkg === "next" ? { peerDependencies: { "@commish/sdk": "0.4.0" } } : {}),
+      publishConfig:
+        name === "commish"
+          ? { access: "public", registry: "https://registry.npmjs.org/", tag: "latest" }
+          : { access: "public", tag: "latest" },
+      ...(name === "@commish/next" ? { peerDependencies: { "@commish/sdk": "0.4.0" } } : {}),
+      ...(name === "commish" ? { dependencies: { "@commish/sdk": "0.4.0" } } : {}),
     };
     const data = Buffer.from(JSON.stringify(metadata)),
       header = Buffer.alloc(512);
@@ -74,7 +79,6 @@ function fixture() {
       Buffer.concat([header, data, Buffer.alloc(((512 - (data.length % 512)) % 512) + 1024)]),
     );
     bytes[9] = 255;
-    const file = `commish-${pkg}-0.4.0.tgz`;
     files.set(file, bytes);
     return {
       name: metadata.name,
@@ -215,29 +219,30 @@ function fixture() {
 }
 const kinds = (calls) => calls.map((a) => a[0]);
 const uploads = (calls) => calls.filter((a) => a[0] === "publish");
+const names = releaseArtifacts.map((a) => a.name);
+// One registry lookup per package precedes the first upload.
+const lookups = names.map(() => "view");
 
-test("default execution verifies real candidate bytes and dry-runs SDK before Next without publication", async () => {
+test("default execution verifies real candidate bytes and dry-runs each package in release order without publication", async () => {
   const f = fixture();
   const receipt = await executePublication(f.options, f.deps);
   assert.equal(receipt.mode, "dry-run");
   assert.equal(receipt.registryIntegrityVerified, false);
+  assert.deepEqual(kinds(f.calls), [...lookups, ...names.map(() => "publish")]);
   assert.deepEqual(
-    f.calls.map((a) => a[0]),
-    ["view", "view", "publish", "publish"],
+    uploads(f.calls).map((a) => a[1].split("/").pop()),
+    f.artifacts.map((a) => a.file),
   );
-  assert(f.calls.slice(2).every((a) => a.includes("--dry-run") && a.includes("--ignore-scripts")));
+  assert(uploads(f.calls).every((a) => a.includes("--dry-run") && a.includes("--ignore-scripts")));
   assert.equal(f.registry.size, 0);
   assert(!existsSync(f.directory()));
 });
 
-test("publication checks the pair first, uploads in order and reads each exact registry integrity", async () => {
+test("publication checks every package first, uploads in order and reads each exact registry integrity", async () => {
   const f = fixture();
   const receipt = await executePublication({ ...f.options, publish: true }, f.deps);
-  assert.deepEqual(
-    f.calls.map((a) => a[0]),
-    ["view", "view", "publish", "view", "publish", "view"],
-  );
-  assert.deepEqual(receipt.executed, ["@commish/sdk", "@commish/next"]);
+  assert.deepEqual(kinds(f.calls), [...lookups, ...names.flatMap(() => ["publish", "view"])]);
+  assert.deepEqual(receipt.executed, names);
   assert(receipt.registryIntegrityVerified);
   assert(
     f.calls
@@ -283,7 +288,7 @@ test("identical existing versions resume; mismatch or unavailable lookup stops b
   f.registry.set(`${sdk.name}@${sdk.version}`, sdk.integrity);
   const receipt = await executePublication({ ...f.options, publish: true }, f.deps);
   assert.deepEqual(receipt.skipped, ["@commish/sdk"]);
-  assert.deepEqual(receipt.executed, ["@commish/next"]);
+  assert.deepEqual(receipt.executed, names.slice(1));
   for (const answer of [
     { status: 0, stdout: '"sha512-wrong"' },
     { status: 1, stderr: "unavailable" },
@@ -293,7 +298,7 @@ test("identical existing versions resume; mismatch or unavailable lookup stops b
     await assert.rejects(
       executePublication(g.options, { ...g.deps, run: () => (++count === 1 ? missing : answer) }),
     );
-    assert.equal(count, 2);
+    assert.equal(count, names.length);
   }
 });
 
@@ -305,20 +310,19 @@ test("a confirmed upload polls through scan-time E404 until its exact integrity 
     const receipt = await executePublication({ ...f.options, publish: true }, f.deps);
     const readbacks = Array(hide + 1).fill("view");
     assert.deepEqual(kinds(f.calls), [
-      "view",
-      "view",
-      "publish",
-      ...readbacks,
-      "publish",
-      ...readbacks,
+      ...lookups,
+      ...names.flatMap(() => ["publish", ...readbacks]),
     ]);
     assert.deepEqual(
       uploads(f.calls).map((a) => a[1].split("/").pop()),
       f.artifacts.map((a) => a.file),
     );
-    assert.deepEqual(receipt.executed, ["@commish/sdk", "@commish/next"]);
+    assert.deepEqual(receipt.executed, names);
     assert(receipt.registryIntegrityVerified);
-    assert.deepEqual(f.clock.sleeps, Array(2 * hide).fill(registryVisibility.intervalMs));
+    assert.deepEqual(
+      f.clock.sleeps,
+      Array(names.length * hide).fill(registryVisibility.intervalMs),
+    );
     assert.deepEqual(
       f.notices,
       f.artifacts.map(
@@ -352,12 +356,7 @@ test("different integrity, other lookup failures and the deadline stop polling b
         executePublication({ ...f.options, publish: true }, { ...f.deps, run }),
         answer.status === 0 ? /published integrity differs/ : /publication outcome unconfirmed/,
       );
-      assert.deepEqual(kinds(f.calls), [
-        "view",
-        "view",
-        "publish",
-        ...Array(waits + 1).fill("view"),
-      ]);
+      assert.deepEqual(kinds(f.calls), [...lookups, "publish", ...Array(waits + 1).fill("view")]);
       assert.equal(f.clock.sleeps.length, waits);
       assert(!existsSync(f.directory()));
     }
@@ -373,11 +372,11 @@ test("different integrity, other lookup failures and the deadline stop polling b
     assert(!existsSync(f.directory()));
     assert(f.clock.sleeps.every((ms) => ms > 0 && ms <= registryVisibility.intervalMs));
     // Lookup time counts against the deadline; with these durations the final readback starts exactly at it.
-    assert.equal(f.clock.now, 2 * lookupMs + registryVisibility.timeoutMs + lookupMs);
+    assert.equal(f.clock.now, names.length * lookupMs + registryVisibility.timeoutMs + lookupMs);
     if (!lookupMs)
       assert.equal(
         f.calls.length,
-        3 + registryVisibility.timeoutMs / registryVisibility.intervalMs + 1,
+        names.length + 1 + registryVisibility.timeoutMs / registryVisibility.intervalMs + 1,
       );
   }
 });
@@ -400,7 +399,7 @@ test("failed or uncertain uploads get one readback and stop without polling, ret
         executePublication({ ...f.options, publish: true }, { ...f.deps, run }),
         hide ? /publication outcome unconfirmed/ : /publication command failed or was uncertain/,
       );
-      assert.deepEqual(kinds(f.calls), ["view", "view", "publish", "view"]);
+      assert.deepEqual(kinds(f.calls), [...lookups, "publish", "view"]);
       assert.equal(f.clock.sleeps.length, 0);
       assert.equal(f.notices.length, 0);
       assert(!existsSync(f.directory()));

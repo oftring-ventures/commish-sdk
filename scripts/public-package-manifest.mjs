@@ -1,17 +1,17 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { inspectPackageManifest, packageNames } from "./package-shape.mjs";
+import { inspectLauncherManifest, inspectPackageManifest, packageNames } from "./package-shape.mjs";
 
 export const licenseHash = "03f0077d06d3281e364be7f1cbb440d6996c65d3a6a19a73de41a7c6d02be702";
 
-// Only the complete, reviewed pair is normalized for release: the shipped manifest
-// carries the validated public fields and drops build configuration.
+// Only the complete, reviewed release is normalized: each shipped manifest carries
+// the validated public fields and drops build configuration, in release order.
 export function publicPackageManifests(files) {
   const read = (name) => {
     assert(files.has(name), `missing release source: ${name}`);
     return files.get(name).data;
   };
-  return packageNames.map((pkg) => {
+  const pair = packageNames.map((pkg) => {
     const root = `packages/${pkg}`,
       manifest = JSON.parse(read(`${root}/package.json`));
     const has = (stem) =>
@@ -76,4 +76,23 @@ export function publicPackageManifests(files) {
       publishConfig,
     };
   });
+  const launcher = JSON.parse(read("launcher/package.json"));
+  inspectLauncherManifest(launcher, pair[0]);
+  assert(read("launcher/README.md").length > 0, "missing release documentation");
+  assert.equal(
+    createHash("sha256").update(read("launcher/LICENSE")).digest("hex"),
+    licenseHash,
+    "release MIT license differs",
+  );
+  assert(
+    read("launcher/bin/commish.mjs").toString().startsWith("#!/usr/bin/env node\n"),
+    "entry point must start with the node shebang",
+  );
+  assert.equal(
+    files.get("launcher/bin/commish.mjs").mode,
+    "100755",
+    "entry point must be executable",
+  );
+  const { files: _files, ...shipped } = launcher;
+  return [...pair, shipped];
 }

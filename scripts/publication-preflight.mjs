@@ -69,15 +69,28 @@ export function readPublicationCandidate(directory, approved) {
     assert.equal(metadata.version, item.version);
     assert.equal(metadata.license, "MIT");
     assert.equal(metadata.repository.url, `git+https://github.com/${repository}.git`);
-    assert.deepEqual(metadata.publishConfig, { access: "public", tag: "latest" });
+    // The launcher's only dependency is the SDK it runs; its registry pin covers manual publishes.
+    const launcher = item.name === "commish";
+    assert.deepEqual(
+      metadata.publishConfig,
+      launcher
+        ? { access: "public", registry: "https://registry.npmjs.org/", tag: "latest" }
+        : { access: "public", tag: "latest" },
+    );
     for (const key of [
       "private",
       "scripts",
-      "dependencies",
+      ...(launcher ? [] : ["dependencies"]),
       "devDependencies",
       "optionalDependencies",
     ])
       assert(!Object.hasOwn(metadata, key), "unexpected publication metadata");
+    if (launcher)
+      assert.deepEqual(
+        metadata.dependencies,
+        { "@commish/sdk": item.version },
+        "published launcher must pin the released SDK",
+      );
     if (item.name === "@commish/next")
       assert(
         peerAllows(metadata.peerDependencies["@commish/sdk"], item.version),

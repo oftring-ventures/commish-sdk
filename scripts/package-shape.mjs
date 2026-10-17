@@ -212,6 +212,62 @@ export function inspectPackageManifest(pkg, manifest, has) {
   return { targets: [...targets, ...Object.values(bin)] };
 }
 
+// The unscoped `commish` launcher only runs the CLI of the SDK release it pins. It
+// stays outside the workspace: the frozen lockfile cannot resolve an exact registry
+// dependency on an SDK version that is not published yet.
+const launcherFields = [
+  "name",
+  "version",
+  "description",
+  "license",
+  "repository",
+  "homepage",
+  "type",
+  "engines",
+  "files",
+  "bin",
+  "dependencies",
+  "publishConfig",
+];
+export function inspectLauncherManifest(manifest, sdk) {
+  assert(record(manifest), "invalid launcher manifest");
+  assert.deepEqual(Object.keys(manifest).sort(), [...launcherFields].sort(), "launcher fields");
+  assert.equal(manifest.name, "commish", "unexpected launcher name");
+  assert.equal(manifest.version, releaseVersion, "launcher version differs from the release");
+  assert.equal(manifest.type, "module", "packages are ESM only");
+  assert(manifest.description.trim(), "missing release description");
+  assert.equal(manifest.license, "MIT", "release license differs");
+  assert.equal(manifest.homepage, "https://commish.sh/docs", "unexpected launcher homepage");
+  assert.deepEqual(
+    manifest.repository,
+    {
+      type: "git",
+      url: "git+https://github.com/oftring-ventures/commish-sdk.git",
+      directory: "launcher",
+    },
+    "unsupported repository metadata",
+  );
+  assert.deepEqual(manifest.engines, sdk.engines, "launcher engines differ from the SDK");
+  assert.deepEqual(manifest.bin, { commish: "./bin/commish.mjs" }, "unexpected launcher bin");
+  assert.deepEqual(
+    manifest.dependencies,
+    { "@commish/sdk": releaseVersion },
+    "the launcher must pin the released SDK",
+  );
+  assert.deepEqual(
+    [...manifest.files].sort(),
+    ["LICENSE", "README.md", "bin"],
+    "unsupported files list",
+  );
+  // The registry pin keeps a manual publish off a mirror; the workflow pins it as well.
+  assert.deepEqual(
+    manifest.publishConfig,
+    { access: "public", registry: "https://registry.npmjs.org/", tag: "latest" },
+    "unsupported publish configuration",
+  );
+  return { targets: ["./bin/commish.mjs"] };
+}
+
 const rootFields = ["name", "private", "packageManager", "engines", "scripts", "devDependencies"];
 export function inspectRootManifest(manifest, pnpmVersion) {
   assert(record(manifest), "invalid root manifest");

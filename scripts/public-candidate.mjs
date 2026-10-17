@@ -32,6 +32,7 @@ export const candidateScopes = [
   "next-attribution-capture-request-external",
   "next-provider-installed-hook-wiring",
   "next-cli-installed-setup",
+  "launcher-cli-installed-version",
 ];
 
 export function portablePackageArchive(bytes) {
@@ -145,6 +146,12 @@ export function writeCandidate(root, output, source, artifacts, scopes, manifest
       assert(
         peerAllows(manifest.peerDependencies["@commish/sdk"], manifest.version),
         "candidate Next peer must allow the released SDK",
+      );
+    if (name === "commish")
+      assert.deepEqual(
+        manifest.dependencies,
+        { "@commish/sdk": manifest.version },
+        "candidate launcher must pin the released SDK",
       );
     const hash = digest(archive);
     return {

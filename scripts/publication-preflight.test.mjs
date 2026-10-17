@@ -12,22 +12,32 @@ import {
   readPublicationCandidate,
   requirePublicationApproval,
 } from "./publication-preflight.mjs";
+import { releaseArtifacts } from "./stable-release.mjs";
 
 const hash = (data, algorithm = "sha256", encoding = "hex") =>
   createHash(algorithm).update(data).digest(encoding);
 const missing = { status: 1, stdout: JSON.stringify({ error: { code: "E404" } }) };
-function fixture(run) {
+const allMissing = releaseArtifacts.map(() => missing);
+const launcherPublishConfig = {
+  access: "public",
+  registry: "https://registry.npmjs.org/",
+  tag: "latest",
+};
+function fixture(run, adjust = () => {}) {
   const directory = mkdtempSync(join(tmpdir(), "commish-publication-test-")),
     source = "a".repeat(40);
-  const artifacts = ["sdk", "next"].map((pkg) => {
+  const artifacts = releaseArtifacts.map(({ name, file }) => {
     const metadata = {
-      name: `@commish/${pkg}`,
+      name,
       version: "0.4.0",
       license: "MIT",
       repository: { url: "git+https://github.com/oftring-ventures/commish-sdk.git" },
-      publishConfig: { access: "public", tag: "latest" },
-      ...(pkg === "next" ? { peerDependencies: { "@commish/sdk": "0.4.0" } } : {}),
+      publishConfig:
+        name === "commish" ? launcherPublishConfig : { access: "public", tag: "latest" },
+      ...(name === "@commish/next" ? { peerDependencies: { "@commish/sdk": "0.4.0" } } : {}),
+      ...(name === "commish" ? { dependencies: { "@commish/sdk": "0.4.0" } } : {}),
     };
+    adjust(metadata);
     const payload = Buffer.from(JSON.stringify(metadata)),
       header = Buffer.alloc(512);
     header.write("package/package.json");
@@ -46,7 +56,6 @@ function fixture(run) {
       Buffer.concat([header, payload, Buffer.alloc(((512 - (payload.length % 512)) % 512) + 1024)]),
     );
     bytes[9] = 255;
-    const file = `commish-${pkg}-${metadata.version}.tgz`;
     writeFileSync(join(directory, file), bytes);
     return {
       name: metadata.name,
@@ -123,13 +132,13 @@ function fixture(run) {
   }
 }
 
-test("accepted candidate binds pair, every member and CI receipt; plans default to dry-run", () =>
+test("accepted candidate binds every package, member and CI receipt; plans default to dry-run", () =>
   fixture(({ directory, approved }) => {
     const candidate = readPublicationCandidate(directory, approved),
-      plan = publicationPlan(candidate, [missing, missing]);
+      plan = publicationPlan(candidate, allMissing);
     assert.deepEqual(
       plan.map((p) => p.name),
-      ["@commish/sdk", "@commish/next"],
+      ["@commish/sdk", "@commish/next", "commish"],
     );
     for (const item of plan)
       assert.deepEqual(item.argv.slice(2), [
@@ -140,7 +149,7 @@ test("accepted candidate binds pair, every member and CI receipt; plans default 
         "--registry=https://registry.npmjs.org",
         "--@commish:registry=https://registry.npmjs.org",
       ]);
-    assert.throws(() => publicationPlan(candidate, [missing, missing], { publish: true }));
+    assert.throws(() => publicationPlan(candidate, allMissing, { publish: true }));
   }));
 
 test("changed approval, archive, receipt, inventory, checksums and symlinks are rejected", () => {
@@ -198,33 +207,62 @@ test("publication requires each exact protected identity and separate acceptance
         }),
       );
     }
-    const plan = publicationPlan(candidate, [missing, missing], { publish: true, env });
+    const plan = publicationPlan(candidate, allMissing, { publish: true, env });
     assert(plan.every((p) => p.argv.includes("--provenance") && !p.argv.includes("--dry-run")));
   }));
 
-test("whole-pair registry preflight refuses mismatch and resumes only identical existing versions", () =>
+test("whole-release registry preflight refuses mismatch and resumes only identical existing versions", () =>
   fixture(({ directory, approved, env }) => {
     const candidate = readPublicationCandidate(directory, approved),
       same = candidate.artifacts.map((a) => ({ status: 0, stdout: JSON.stringify(a.integrity) }));
-    assert.deepEqual(publicationPlan(candidate, same, { publish: true, env }), []);
-    assert.deepEqual(
-      publicationPlan(candidate, [same[0], missing], { publish: true, env }).map((p) => p.name),
-      ["@commish/next"],
-    );
-    assert.deepEqual(
-      publicationPlan(candidate, [missing, same[1]], { publish: true, env }).map((p) => p.name),
-      ["@commish/sdk"],
-    );
+    const pending = (results) =>
+      publicationPlan(candidate, results, { publish: true, env }).map((p) => p.name);
+    assert.deepEqual(pending(same), []);
+    assert.deepEqual(pending([same[0], missing, same[2]]), ["@commish/next"]);
+    assert.deepEqual(pending([missing, same[1], same[2]]), ["@commish/sdk"]);
+    assert.deepEqual(pending([same[0], same[1], missing]), ["commish"]);
     for (const bad of [
       { status: 0, stdout: '"sha512-different"' },
       { status: 0, stdout: "bad JSON" },
       { status: 1, stderr: "network unavailable" },
       { ...same[1], signal: "SIGTERM" },
     ])
-      assert.throws(() => publicationPlan(candidate, [missing, bad], { publish: true, env }));
-    assert.throws(() => publicationPlan(candidate, [missing]));
+      for (const index of releaseArtifacts.keys())
+        assert.throws(() =>
+          publicationPlan(candidate, allMissing.with(index, bad), { publish: true, env }),
+        );
+    assert.throws(() => publicationPlan(candidate, [missing, missing]));
   }));
 
+test("the launcher must pin the released SDK and keep its registry pin", () => {
+  for (const change of [
+    (metadata) => {
+      metadata.dependencies["@commish/sdk"] = "0.3.0";
+    },
+    (metadata) => {
+      metadata.dependencies.extra = "1.0.0";
+    },
+    (metadata) => {
+      delete metadata.publishConfig.registry;
+    },
+    (metadata) => {
+      delete metadata.dependencies;
+    },
+  ])
+    fixture(
+      ({ directory, approved }) =>
+        assert.throws(() => readPublicationCandidate(directory, approved)),
+      (metadata) => {
+        if (metadata.name === "commish") change(metadata);
+      },
+    );
+  fixture(
+    ({ directory, approved }) => assert.throws(() => readPublicationCandidate(directory, approved)),
+    (metadata) => {
+      if (metadata.name === "@commish/sdk") metadata.dependencies = { "@commish/sdk": "0.4.0" };
+    },
+  );
+});
 test("registry absence requires structured E404 without process failure or contradictory errors", () => {
   assert(isMissingRegistryVersion(missing));
   assert(isMissingRegistryVersion({ status: 1, stderr: missing.stdout }));

@@ -22,6 +22,7 @@ import {
   portablePackageArchive,
   writeCandidate,
 } from "./public-candidate.mjs";
+import { releaseArtifacts } from "./stable-release.mjs";
 import { archiveFiles } from "./verify-public-source.mjs";
 
 function tar(files) {
@@ -150,10 +151,11 @@ test("candidate receipt binds exact archive bytes and refuses incomplete evidenc
   fixture((work, root) => {
     const source = "a".repeat(40),
       output = join(work, "candidate");
-    const manifests = ["sdk", "next"].map((pkg) => ({
-      name: `@commish/${pkg}`,
+    const manifests = releaseArtifacts.map(({ name }) => ({
+      name,
       version: "0.4.0",
-      ...(pkg === "next" ? { peerDependencies: { "@commish/sdk": "0.4.0" } } : {}),
+      ...(name === "@commish/next" ? { peerDependencies: { "@commish/sdk": "0.4.0" } } : {}),
+      ...(name === "commish" ? { dependencies: { "@commish/sdk": "0.4.0" } } : {}),
     }));
     const artifacts = manifests.map((m) => ({
       archive: tar([["package/package.json", JSON.stringify(m)]]),
@@ -165,13 +167,30 @@ test("candidate receipt binds exact archive bytes and refuses incomplete evidenc
     assert.throws(() => write(source, [...artifacts].reverse()));
     assert.throws(() => write(source, artifacts, candidateScopes.slice(1)));
     assert.throws(() => write(source, artifacts, [...candidateScopes, candidateScopes[0]]));
-    assert.throws(() => write(source, [{ archive: Buffer.from("bad") }, artifacts[1]]));
+    assert.throws(() => write(source, artifacts.with(0, { archive: Buffer.from("bad") })));
+    const unpinned = { ...manifests[2], dependencies: { "@commish/sdk": "0.3.0" } };
+    assert.throws(
+      () =>
+        writeCandidate(
+          root,
+          output,
+          source,
+          artifacts.with(2, { archive: tar([["package/package.json", JSON.stringify(unpinned)]]) }),
+          candidateScopes,
+          manifests.with(2, unpinned),
+          archiveFiles,
+        ),
+      /launcher must pin the released SDK/,
+    );
     assert(!existsSync(output));
     const receipt = write();
     assert.equal(receipt.source, source);
     assert.equal(receipt.npmPublished, false);
     assert.equal(receipt.hostedAccepted, false);
-    assert.equal(readdirSync(output).length, 4);
+    assert.deepEqual(
+      readdirSync(output).sort(),
+      ["SHA512SUMS", "manifest.json", ...releaseArtifacts.map((a) => a.file)].sort(),
+    );
     for (const item of receipt.artifacts) {
       const bytes = readFileSync(join(output, item.file));
       assert.equal(item.sha512, createHash("sha512").update(bytes).digest("hex"));

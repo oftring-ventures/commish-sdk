@@ -6,6 +6,7 @@ import { join } from "node:path";
 import test from "node:test";
 import { writeCiReceipt } from "./candidate-ci-receipt.mjs";
 import { candidateScopes } from "./public-candidate.mjs";
+import { releaseArtifacts, releaseVersion } from "./stable-release.mjs";
 
 function fixture(run) {
   const directory = mkdtempSync(join(tmpdir(), "commish-ci-receipt-")),
@@ -32,14 +33,13 @@ function fixture(run) {
     hostedAccepted: false,
     node: "v24.15.0",
     consumerScopes: candidateScopes,
-    artifacts: ["sdk", "next"].map((pkg) => {
-      const archive = Buffer.from(`${pkg} already verified archive`),
+    artifacts: releaseArtifacts.map(({ name, file }) => {
+      const archive = Buffer.from(`${name} already verified archive`),
         digest = createHash("sha512").update(archive).digest();
-      const file = `commish-${pkg}-0.4.0.tgz`;
       writeFileSync(join(directory, file), archive);
       return {
-        name: `@commish/${pkg}`,
-        version: "0.4.0",
+        name,
+        version: releaseVersion,
         file,
         bytes: archive.length,
         sha512: digest.toString("hex"),
