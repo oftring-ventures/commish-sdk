@@ -54,7 +54,7 @@ and CI receipt hashes match a separately accepted handoff. It checks every archi
 and member, and preflights every exact registry version before planning any
 upload. Identical existing versions are skipped; different bytes or unavailable
 lookups stop the release. Plans default to npm dry-run and execute no commands.
-A real publication plan additionally requires the public `v<version>` tag/workflow identity,
+A real staging plan additionally requires the public `v<version>` tag/workflow identity,
 separate exact-candidate approval and a hosted acceptance evidence hash. Protected
 environment configuration, GitHub run/artifact verification and execution remain
 responsibilities of the publishing workflow; a plan alone authorizes no registry write.
@@ -66,19 +66,26 @@ artifact is unexpired and its bytes match the API digest, and that the candidate
 inside binds that exact run, source and manifest. It then writes the approval digests
 the preflight library consumes. It needs only a read token and performs no publication.
 
-The protected `Publish approved packages` workflow requires an immutable release
-tag `v<version>` matching the manifest version `scripts/stable-release.mjs` reads, by manual dispatch.
-Prerelease versions and mismatched source, artifact or tag identities are rejected.
-Its executor defaults to dry-run outside
-that workflow and never retries an upload automatically. Every exact registry
-version is preflighted before uploading the SDK, then Next, then the launcher, which
-depends on the SDK; existing identical versions are skipped. npm's publish-time malware scan hides a new version for minutes, so
-after a successful upload the executor polls its registry integrity every 30 seconds
-for up to 30 minutes. Only a clean E404 means "not yet visible"; different integrity,
-any other lookup failure or the deadline stops the release. A failed/uncertain upload
-gets one readback and stops. A stopped run may have published packages that the scan
-still hides: wait out the scan window before reading an E404 as unpublished, then
-inspect every registry version before authorizing another attempt.
+The protected `Stage approved packages` workflow requires an immutable release
+tag `v<version>` matching the manifest version, by manual dispatch. Prerelease
+versions and mismatched source, artifact or tag identities are rejected. The
+workflow installs npm 11.21.0 from the public registry; staged publishing requires
+npm 11.15.0 or later. The executor rejects another CLI version.
+
+The executor defaults to `npm stage publish --dry-run`. Its only upload mode is
+`--stage`; `--publish` is rejected. It preflights every public registry version,
+stages the SDK, Next and launcher archives in order, and verifies each CLI receipt's
+package, version and integrity against the approved archive. It records the unique
+stage IDs and stops at `awaiting-maintainer-approval`. It never runs `npm stage
+approve`, publishes directly, or interprets a staged upload as public availability.
+
+Staging does not wait for a public registry version: a maintainer must first approve
+it with npm 2FA. The workflow retains its receipt even after a partial failure,
+including any package whose upload outcome is uncertain. Never automatically retry
+an upload. On failure, inspect npm's staged packages and the public registry before
+another dispatch. An E404 from `npm view` does not distinguish an absent version
+from a staged version or a published version hidden by npm's malware scan. Existing
+stages reserve their package version; never reject or replace one merely to retry.
 
 Before dispatch, the release owner must complete this handoff:
 
@@ -97,26 +104,36 @@ Before dispatch, the release owner must complete this handoff:
    `COMMISH_NPM_APPROVED_SOURCE`, `COMMISH_NPM_APPROVED_MANIFEST_SHA256`,
    `COMMISH_NPM_APPROVED_CI_RECEIPT_SHA256`, and
    `COMMISH_NPM_HOSTED_ACCEPTANCE_SHA256`. Never derive approval inside the job.
-4. For the first release only, npm requires each package to exist before it can
-   accept a trusted-publisher binding. After explicit publication authorization,
-   authenticate the release owner with npm and bootstrap-publish the two approved
-   archives in SDK-then-Next order. Verify each registry integrity before continuing.
-   Then configure each package's GitHub Actions trusted publisher with organization
-   `oftring-ventures`, repository `commish-sdk`, workflow `publish-packages.yml`,
-   environment `npm-publication`, and direct `npm publish` permission. Restrict
-   traditional package publishing to require 2FA and disallow tokens. Later releases
-   use GitHub OIDC and need no npm token. See
-   [npm trusted publishing](https://docs.npmjs.com/trusted-publishers/).
-5. Dispatch on the tag with the accepted candidate run and artifact IDs; review the
-   protected job. Retain its integrity receipt and run clean external installations
-   of the exact package versions. The manually bootstrapped first version has registry
-   integrity evidence but no GitHub OIDC provenance; provenance begins with the first
-   version uploaded by the trusted publisher. A registry integrity receipt does not
-   establish hosted/live acceptance or release readiness.
-6. Publish a GitHub Release for the tag from the CHANGELOG entry
-   (`gh release create v<version> --verify-tag --notes-file <notes>`). Remove the
-   stale `beta` dist-tag from both packages (`npm dist-tag rm <package> beta`)
-   once nothing depends on it; `latest` is the only supported tag.
+4. Configure **all three** npm packages with a GitHub Actions trusted publisher:
+   organization `oftring-ventures`, repository `commish-sdk`, workflow
+   `publish-packages.yml`, environment `npm-publication`. Leave **Allow npm publish**
+   and **Allow npm dist-tag** unchecked; only staging is allowed. Require 2FA and
+   disallow bypass tokens for traditional publishing. Do not introduce npm write
+   tokens into CI. All packages already exist; bootstrap publishing is unnecessary.
+5. Dispatch on the tag with the accepted candidate run and artifact IDs, then approve
+   the protected GitHub job. Retain the `npm-staging-*` receipt. This approval allows
+   staging only; it is separate from the maintainer's subsequent npm approval.
+6. As the authenticated npm maintainer, inspect each stage with `npm stage view
+   <stage-id> --json` and `npm stage download <stage-id>`. Verify package name,
+   version, `latest` tag and the downloaded tarball's SHA-512 against the accepted
+   candidate. Preserve that readback evidence. The CLI upload receipt alone does
+   not establish server-side bytes. Never approve an uncertain or mismatched stage.
+7. The maintainer approves each verified stage in npm with 2FA, SDK first, then Next,
+   then launcher. Wait for each exact public registry integrity before approving its
+   dependent package. npm's malware scan may hide an approved version for minutes;
+   a clean E404 is pending visibility, not authorization to upload again. After
+   approval, verify integrity and OIDC provenance for all three versions, then run
+   clean external installations of the exact versions. Do not call staging success
+   release completion.
+8. Publish a GitHub Release for the tag from the CHANGELOG entry
+   (`gh release create v<version> --verify-tag --notes-file <notes>`). Remove stale
+   `beta` dist-tags only once nothing depends on them. Staging uses the immutable
+   `latest` tag; the trusted publishers have no separate dist-tag mutation access.
+
+See [npm staged publishing](https://docs.npmjs.com/staged-publishing/) and
+[trusted publishing](https://docs.npmjs.com/trusted-publishers/). A new publisher
+binding expires if its first successful publish does not occur within two days;
+configure it shortly before the release and complete the maintainer approval.
 
 For each subsequent stable release, update the three package manifests (the SDK
 manifest declares the release version; the Next manifest, the launcher version and
@@ -148,7 +165,6 @@ the workflow uploads it last. `scripts/package-shape.mjs` keeps its version and 
 exact `@commish/sdk` dependency equal to the release.
 
 Version 0.4.0 was published by hand, so its bytes differ from a normalized candidate
-archive: the first workflow release of the launcher must be a new version. Add the
-`commish` trusted publisher with the values in step 4 immediately before that
-dispatch, because npm expires a trusted publisher that has not published within two
-days. `publishConfig.registry` keeps any manual publish on the public registry.
+archive: the first workflow release of the launcher must be a new version. Configure
+its stage-only publisher with the same restrictions as the SDK and Next packages.
+`publishConfig.registry` keeps registry operations on the public registry.

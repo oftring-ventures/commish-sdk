@@ -7,7 +7,7 @@ import { dirname, join } from "node:path";
 import test from "node:test";
 import { gzipSync } from "node:zlib";
 import { candidateScopes } from "./public-candidate.mjs";
-import { executePublication, registryVisibility, stopDiagnostic } from "./publication-executor.mjs";
+import { executePublication, stagingNpmVersion, stopDiagnostic } from "./publication-executor.mjs";
 import { releaseArtifacts } from "./stable-release.mjs";
 
 const hash = (data, algorithm = "sha256", encoding = "hex") =>
@@ -15,7 +15,6 @@ const hash = (data, algorithm = "sha256", encoding = "hex") =>
 const source = "a".repeat(40),
   repository = "oftring-ventures/commish-sdk";
 const missing = { status: 1, stdout: '{"error":{"code":"E404"}}' };
-const ok = { status: 0, stdout: "" };
 function zip(files) {
   const parts = [],
     central = [];
@@ -164,97 +163,86 @@ function fixture() {
     COMMISH_NPM_HOSTED_ACCEPTANCE_SHA256: "b".repeat(64),
   };
   const calls = [],
-    registry = new Map(),
-    scanning = new Map(),
-    clock = { now: 0, sleeps: [] },
-    notices = [];
+    registry = new Map();
   let directory;
-  const f = { hide: 0, lookupMs: 0 };
   const run = (args) => {
     calls.push(args);
-    if (args[0] === "view") {
-      clock.now += f.lookupMs;
-      // npm's publish-time scan answers E404 for a version it has already accepted.
-      if (scanning.get(args[1]) > 0) {
-        scanning.set(args[1], scanning.get(args[1]) - 1);
-        return missing;
-      }
+    if (args[0] === "--version") return { status: 0, stdout: stagingNpmVersion };
+    if (args[0] === "view")
       return registry.has(args[1])
         ? { status: 0, stdout: JSON.stringify(registry.get(args[1])) }
         : missing;
-    }
-    directory = dirname(args[1]);
-    if (!args.includes("--dry-run")) {
-      const item = artifacts.find((a) => args[1].endsWith(a.file)),
-        key = `${item.name}@${item.version}`;
-      registry.set(key, item.integrity);
-      scanning.set(key, f.hide);
-    }
-    return ok;
+    assert.deepEqual(args.slice(0, 2), ["stage", "publish"]);
+    directory = dirname(args[2]);
+    const index = artifacts.findIndex((a) => args[2].endsWith(a.file)),
+      item = artifacts[index];
+    return {
+      status: 0,
+      stdout: JSON.stringify({
+        [item.name]: {
+          name: item.name,
+          version: item.version,
+          integrity: item.integrity,
+          ...(!args.includes("--dry-run")
+            ? { stageId: `00000000-0000-4000-8000-00000000000${index}` }
+            : {}),
+        },
+      }),
+    };
   };
-  // A real wait sleeps at most 2 * 60 times; a runaway poll fails here instead of hanging the suite.
-  const sleep = async (ms) => {
-    assert(clock.sleeps.push(ms) <= 1_000, "runaway registry poll");
-    clock.now += ms;
-  };
-  return Object.assign(f, {
+  const checkpoints = [];
+  return {
     artifacts,
     evidence,
     env,
     calls,
     registry,
-    clock,
-    notices,
+    checkpoints,
     directory: () => directory,
     run,
     options: { runId: "42", artifactId: "7", env },
-    deps: {
-      evidence: async () => evidence,
-      run,
-      sleep,
-      now: () => clock.now,
-      notify: (message) => notices.push(message),
-    },
-  });
+    deps: { evidence: async () => evidence, run, checkpoint: (value) => checkpoints.push(value) },
+  };
 }
-const kinds = (calls) => calls.map((a) => a[0]);
-const uploads = (calls) => calls.filter((a) => a[0] === "publish");
+const uploads = (calls) => calls.filter((a) => a[0] === "stage");
 const names = releaseArtifacts.map((a) => a.name);
-// One registry lookup per package precedes the first upload.
-const lookups = names.map(() => "view");
 
-test("default execution verifies real candidate bytes and dry-runs each package in release order without publication", async () => {
+test("dry-run validates CLI output and exact archive bytes without staging", async () => {
   const f = fixture();
   const receipt = await executePublication(f.options, f.deps);
-  assert.equal(receipt.mode, "dry-run");
-  assert.equal(receipt.registryIntegrityVerified, false);
-  assert.deepEqual(kinds(f.calls), [...lookups, ...names.map(() => "publish")]);
+  assert.equal(receipt.status, "dry-run-complete");
+  assert.equal(receipt.npmPublished, false);
+  assert.deepEqual(receipt.staged, []);
+  assert.deepEqual(receipt.executed, names);
+  assert(uploads(f.calls).every((a) => a.includes("--dry-run") && a.includes("--ignore-scripts")));
   assert.deepEqual(
-    uploads(f.calls).map((a) => a[1].split("/").pop()),
+    uploads(f.calls).map((a) => a[2].split("/").pop()),
     f.artifacts.map((a) => a.file),
   );
-  assert(uploads(f.calls).every((a) => a.includes("--dry-run") && a.includes("--ignore-scripts")));
-  assert.equal(f.registry.size, 0);
   assert(!existsSync(f.directory()));
 });
 
-test("publication checks every package first, uploads in order and reads each exact registry integrity", async () => {
+test("stage-only execution records each stage ID and stops at human approval without public polling", async () => {
   const f = fixture();
-  const receipt = await executePublication({ ...f.options, publish: true }, f.deps);
-  assert.deepEqual(kinds(f.calls), [...lookups, ...names.flatMap(() => ["publish", "view"])]);
-  assert.deepEqual(receipt.executed, names);
-  assert(receipt.registryIntegrityVerified);
-  assert(
-    f.calls
-      .filter((a) => a[0] === "publish")
-      .every((a) => a.includes("--provenance") && !a.includes("--dry-run")),
+  const receipt = await executePublication({ ...f.options, stage: true }, f.deps);
+  assert.deepEqual(
+    f.calls.map((a) => a[0]),
+    ["--version", ...names.map(() => "view"), ...names.map(() => "stage")],
   );
-  assert.deepEqual(f.clock.sleeps, []);
-  assert.deepEqual(f.notices, []);
+  assert.deepEqual(
+    receipt.staged.map((a) => a.name),
+    names,
+  );
+  assert(receipt.staged.every((a) => a.stageId && a.tag === "latest"));
+  assert.equal(receipt.status, "awaiting-maintainer-approval");
+  assert.equal(receipt.npmPublished, false);
+  assert.equal(receipt.registryIntegrityVerified, false);
+  assert.equal(receipt.hostedAcceptanceSha256, f.env.COMMISH_NPM_HOSTED_ACCEPTANCE_SHA256);
+  assert.equal(f.checkpoints.at(-1).unconfirmed, null);
   assert(!existsSync(f.directory()));
 });
 
-test("unapproved source, artifact and workflow evidence never reach npm", async () => {
+test("unapproved candidate, workflow or hosted evidence never reach npm", async () => {
   for (const mutate of [
     (f) => {
       f.env.COMMISH_NPM_APPROVED_SOURCE = "b".repeat(40);
@@ -277,228 +265,193 @@ test("unapproved source, artifact and workflow evidence never reach npm", async 
   ]) {
     const f = fixture();
     mutate(f);
-    await assert.rejects(executePublication({ ...f.options, publish: true }, f.deps));
+    await assert.rejects(executePublication({ ...f.options, stage: true }, f.deps));
     assert.equal(f.calls.length, 0);
   }
 });
 
-test("identical existing versions resume; mismatch or unavailable lookup stops before uploads", async () => {
-  const f = fixture(),
-    sdk = f.artifacts[0];
-  f.registry.set(`${sdk.name}@${sdk.version}`, sdk.integrity);
-  const receipt = await executePublication({ ...f.options, publish: true }, f.deps);
-  assert.deepEqual(receipt.skipped, ["@commish/sdk"]);
-  assert.deepEqual(receipt.executed, names.slice(1));
+test("wrong npm version or any unavailable/conflicting registry lookup stops before staging", async () => {
+  const f = fixture();
+  await assert.rejects(
+    executePublication(f.options, { ...f.deps, run: () => ({ status: 0, stdout: "11.12.1" }) }),
+    /toolchain/,
+  );
   for (const answer of [
     { status: 0, stdout: '"sha512-wrong"' },
     { status: 1, stderr: "unavailable" },
   ]) {
     const g = fixture();
-    let count = 0;
+    let lookups = 0;
     await assert.rejects(
-      executePublication(g.options, { ...g.deps, run: () => (++count === 1 ? missing : answer) }),
+      executePublication(g.options, {
+        ...g.deps,
+        run: (args) => (args[0] === "view" ? (++lookups === 2 ? answer : missing) : g.run(args)),
+      }),
     );
-    assert.equal(count, names.length);
+    assert.equal(lookups, names.length);
+    assert.equal(uploads(g.calls).length, 0);
   }
 });
 
-test("a confirmed upload polls through scan-time E404 until its exact integrity is visible", async () => {
-  const maxWaits = registryVisibility.timeoutMs / registryVisibility.intervalMs;
-  for (const hide of [3, maxWaits]) {
+test("identical public versions are skipped, including an already-complete release", async () => {
+  for (const count of [1, names.length]) {
     const f = fixture();
-    f.hide = hide;
-    const receipt = await executePublication({ ...f.options, publish: true }, f.deps);
-    const readbacks = Array(hide + 1).fill("view");
-    assert.deepEqual(kinds(f.calls), [
-      ...lookups,
-      ...names.flatMap(() => ["publish", ...readbacks]),
-    ]);
-    assert.deepEqual(
-      uploads(f.calls).map((a) => a[1].split("/").pop()),
-      f.artifacts.map((a) => a.file),
+    for (const item of f.artifacts.slice(0, count))
+      f.registry.set(`${item.name}@${item.version}`, item.integrity);
+    const receipt = await executePublication({ ...f.options, stage: true }, f.deps);
+    assert.deepEqual(receipt.skipped, names.slice(0, count));
+    assert.deepEqual(receipt.executed, names.slice(count));
+    assert.equal(
+      receipt.status,
+      count === names.length ? "already-published" : "awaiting-maintainer-approval",
     );
-    assert.deepEqual(receipt.executed, names);
-    assert(receipt.registryIntegrityVerified);
-    assert.deepEqual(
-      f.clock.sleeps,
-      Array(names.length * hide).fill(registryVisibility.intervalMs),
-    );
-    assert.deepEqual(
-      f.notices,
-      f.artifacts.map(
-        (a) => `${a.name}@${a.version} is not visible yet; waiting for npm's publish-time scan.`,
-      ),
-    );
-    assert(!existsSync(f.directory()));
   }
 });
 
-test("different integrity, other lookup failures and the deadline stop polling before the second upload", async () => {
-  const answers = [
-    { status: 0, stdout: '"sha512-wrong"' },
-    { status: 1, stderr: "unavailable" },
-    { status: 1, stdout: missing.stdout, stderr: '{"error":{"code":"E500"}}' },
-    { status: null, signal: "SIGTERM", stdout: missing.stdout },
-    { status: 1, stdout: missing.stdout, error: new Error("spawnSync npm ETIMEDOUT") },
-  ];
-  for (const answer of answers)
-    for (const waits of [0, 2]) {
-      const f = fixture();
-      f.hide = Infinity;
-      // The first or third readback after the SDK upload answers with something other than a clean E404.
-      const run = (args) => {
-        const result = f.run(args);
-        return args[0] === "view" && uploads(f.calls).length && f.clock.sleeps.length === waits
-          ? answer
-          : result;
-      };
-      await assert.rejects(
-        executePublication({ ...f.options, publish: true }, { ...f.deps, run }),
-        answer.status === 0 ? /published integrity differs/ : /publication outcome unconfirmed/,
-      );
-      assert.deepEqual(kinds(f.calls), [...lookups, "publish", ...Array(waits + 1).fill("view")]);
-      assert.equal(f.clock.sleeps.length, waits);
-      assert(!existsSync(f.directory()));
-    }
-  for (const lookupMs of [0, 7_000]) {
-    const f = fixture();
-    f.hide = Infinity;
-    f.lookupMs = lookupMs;
-    await assert.rejects(
-      executePublication({ ...f.options, publish: true }, f.deps),
-      /not visible before the deadline/,
-    );
-    assert.equal(uploads(f.calls).length, 1);
-    assert(!existsSync(f.directory()));
-    assert(f.clock.sleeps.every((ms) => ms > 0 && ms <= registryVisibility.intervalMs));
-    // Lookup time counts against the deadline; with these durations the final readback starts exactly at it.
-    assert.equal(f.clock.now, names.length * lookupMs + registryVisibility.timeoutMs + lookupMs);
-    if (!lookupMs)
-      assert.equal(
-        f.calls.length,
-        names.length + 1 + registryVisibility.timeoutMs / registryVisibility.intervalMs + 1,
-      );
-  }
-});
-
-test("failed or uncertain uploads get one readback and stop without polling, retry or second upload", async () => {
+test("failed, uncertain and malformed staging outcomes retain partial progress and never retry", async () => {
   const outcomes = [
-    { status: 1, stderr: "npm error code E403" },
+    { status: 1, stderr: "E409 staged version already exists" },
     { status: null, signal: "SIGTERM" },
-    { status: 0, error: new Error("spawnSync npm ETIMEDOUT") },
+    { status: 0, error: new Error("timeout") },
+    { status: 0, stdout: "invalid JSON" },
   ];
-  for (const outcome of outcomes)
-    for (const hide of [0, 1]) {
-      const f = fixture();
-      f.hide = hide;
-      const run = (args) => {
-        const result = f.run(args);
-        return args[0] === "publish" ? outcome : result;
-      };
-      await assert.rejects(
-        executePublication({ ...f.options, publish: true }, { ...f.deps, run }),
-        hide ? /publication outcome unconfirmed/ : /publication command failed or was uncertain/,
-      );
-      assert.deepEqual(kinds(f.calls), [...lookups, "publish", "view"]);
-      assert.equal(f.clock.sleeps.length, 0);
-      assert.equal(f.notices.length, 0);
-      assert(!existsSync(f.directory()));
-    }
+  for (const outcome of outcomes) {
+    const f = fixture();
+    const run = (args) => {
+      const result = f.run(args);
+      return args[0] === "stage" && uploads(f.calls).length === 2 ? outcome : result;
+    };
+    await assert.rejects(executePublication({ ...f.options, stage: true }, { ...f.deps, run }));
+    const last = f.checkpoints.at(-1);
+    assert.equal(last.status, "stopped");
+    assert.deepEqual(
+      last.staged.map((a) => a.name),
+      names.slice(0, 1),
+    );
+    assert.equal(last.unconfirmed.name, names[1]);
+    assert.equal(uploads(f.calls).length, 2);
+    assert(!existsSync(f.directory()));
+  }
 });
 
-test("candidate tampering between uploads is detected and temporary files are removed", async () => {
+test("staging receipts must bind package, version, archive integrity and a unique stage ID", async () => {
+  for (const change of [
+    (r) => {
+      r.name = "wrong";
+    },
+    (r) => {
+      r.version = "9.9.9";
+    },
+    (r) => {
+      r.integrity = "wrong";
+    },
+    (r) => {
+      delete r.stageId;
+    },
+    (r) => {
+      r.stageId = "unsafe/path";
+    },
+  ]) {
+    const f = fixture();
+    const run = (args) => {
+      const result = f.run(args);
+      if (args[0] === "stage") {
+        const d = JSON.parse(result.stdout);
+        change(d[names[0]]);
+        result.stdout = JSON.stringify(d);
+      }
+      return result;
+    };
+    await assert.rejects(executePublication({ ...f.options, stage: true }, { ...f.deps, run }));
+    assert.equal(uploads(f.calls).length, 1);
+  }
   const f = fixture();
   const run = (args) => {
     const result = f.run(args);
-    if (args[0] === "publish") writeFileSync(join(f.directory(), f.artifacts[1].file), "changed");
+    if (args[0] === "stage") {
+      const d = JSON.parse(result.stdout);
+      Object.values(d)[0].stageId = "00000000-0000-4000-8000-000000000000";
+      result.stdout = JSON.stringify(d);
+    }
     return result;
   };
   await assert.rejects(
-    executePublication(f.options, { ...f.deps, run }),
-    /candidate bytes changed|strictly equal/,
+    executePublication({ ...f.options, stage: true }, { ...f.deps, run }),
+    /id reused/,
   );
-  assert.equal(f.calls.filter((a) => a[0] === "publish").length, 1);
+  assert.equal(uploads(f.calls).length, 2);
+});
+
+test("candidate tampering between stages is detected and temporary files are removed", async () => {
+  const f = fixture();
+  const run = (args) => {
+    const result = f.run(args);
+    if (args[0] === "stage") writeFileSync(join(f.directory(), f.artifacts[1].file), "changed");
+    return result;
+  };
+  await assert.rejects(executePublication(f.options, { ...f.deps, run }));
+  assert.equal(uploads(f.calls).length, 1);
   assert(!existsSync(f.directory()));
 });
 
-test("every npm invocation overrides inherited scoped registry configuration", async () => {
+test("every registry command overrides inherited scoped registry configuration", async () => {
   const f = fixture();
-  await executePublication({ ...f.options, publish: true }, f.deps);
+  await executePublication({ ...f.options, stage: true }, f.deps);
   const directory = mkdtempSync(join(tmpdir(), "commish-registry-config-"));
   try {
     writeFileSync(
       join(directory, ".npmrc"),
       "@commish:registry=https://untrusted.invalid\nregistry=https://untrusted.invalid\n",
     );
-    for (const args of f.calls) {
+    for (const args of f.calls.filter((a) => a[0] !== "--version")) {
       const registries = args.filter(
-        (arg) => arg.startsWith("--registry=") || arg.startsWith("--@commish:registry="),
+        (a) => a.startsWith("--registry=") || a.startsWith("--@commish:registry="),
       );
       assert.deepEqual(registries, [
         "--registry=https://registry.npmjs.org",
         "--@commish:registry=https://registry.npmjs.org",
       ]);
-      // npm config is local-only; this verifies npm's real scoped configuration precedence.
-      const result = spawnSync("npm", ["config", "get", "@commish:registry", ...registries], {
+      const r = spawnSync("npm", ["config", "get", "@commish:registry", ...registries], {
         cwd: directory,
         encoding: "utf8",
-        timeout: 10_000,
+        timeout: 10000,
         env: {
           ...process.env,
           npm_config_userconfig: join(directory, ".npmrc"),
           npm_config_registry: "https://untrusted.invalid",
         },
       });
-      assert.equal(result.status, 0);
-      assert.equal(result.stdout.trim(), "https://registry.npmjs.org");
+      assert.equal(r.status, 0);
+      assert.equal(r.stdout.trim(), "https://registry.npmjs.org");
     }
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }
 });
 
-test("stop diagnostics show only error codes and author-written assertion messages", async () => {
+test("CLI rejects direct publishing and diagnostics never disclose subprocess secrets", async () => {
   const secret = "npm_SECRETVALUE0123456789";
-  const cli = (args, env) =>
-    spawnSync(
-      process.execPath,
-      [new URL("./publication-executor.mjs", import.meta.url).pathname, ...args],
-      {
-        encoding: "utf8",
-        timeout: 10_000,
-        env: { PATH: process.env.PATH, GITHUB_TOKEN: secret, ...env },
-      },
-    );
-  const tail =
-    ". Inspect the accepted evidence and registry before retrying; no automatic retry occurred.\n";
-  let result = cli(["42", "7", "--retry"]);
-  assert.equal(result.status, 1);
-  assert.equal(result.stdout, "");
-  assert.equal(result.stderr, `Publication stopped (ERR_ASSERTION: unexpected arguments)${tail}`);
-  // A generated assertion message would quote the environment value.
-  result = cli(["42", "7"], { COMMISH_NPM_APPROVED_SOURCE: secret });
-  assert.equal(result.status, 1);
-  assert.equal(result.stderr, `Publication stopped (ERR_ASSERTION)${tail}`);
-  for (const [answer, shown] of [
-    [{ status: 0, stdout: `//registry.npmjs.org/:_authToken=${secret}` }, "unknown"],
-    [
-      { status: 0, stdout: JSON.stringify(secret) },
-      "ERR_ASSERTION: registry version has different bytes",
-    ],
-    [
-      { status: 1, stdout: secret, stderr: secret },
-      "ERR_ASSERTION: registry lookup unavailable; refuse publication",
-    ],
-  ]) {
-    const f = fixture();
-    let error;
-    await executePublication(f.options, { ...f.deps, run: () => answer }).catch((caught) => {
-      error = caught;
-    });
-    assert.equal(stopDiagnostic(error), `Publication stopped (${shown})${tail.trimEnd()}`);
-  }
-  assert.equal(
-    stopDiagnostic(Object.assign(new Error(secret), { code: secret.toLowerCase() })),
-    `Publication stopped (unknown)${tail.trimEnd()}`,
+  const r = spawnSync(
+    process.execPath,
+    [new URL("./publication-executor.mjs", import.meta.url).pathname, "42", "7", "--publish"],
+    { encoding: "utf8", timeout: 10000, env: { PATH: process.env.PATH, GITHUB_TOKEN: secret } },
   );
+  assert.equal(r.status, 1);
+  assert.equal(r.stdout, "");
+  assert.match(r.stderr, /unexpected arguments/);
+  assert(!r.stderr.includes(secret));
+  const f = fixture();
+  let caught;
+  await executePublication(
+    { ...f.options, stage: true },
+    {
+      ...f.deps,
+      run: (args) =>
+        args[0] === "stage" ? { status: 1, stdout: secret, stderr: secret } : f.run(args),
+    },
+  ).catch((e) => {
+    caught = e;
+  });
+  assert(!stopDiagnostic(caught).includes(secret));
+  assert.match(stopDiagnostic(caught), /no automatic retry/);
 });
