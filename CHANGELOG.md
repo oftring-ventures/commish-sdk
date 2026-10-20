@@ -1,7 +1,36 @@
 # Changelog
 
-Notable changes to `@commish/sdk` and `@commish/next`, which release together
-with one version. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
+Notable changes to `@commish/sdk`, `@commish/next`, and `commish`, which release
+together with one version. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
+
+## 0.5.0 - 2026-10-20
+
+### Added
+
+- The server SDK's `checkoutPromotions` client prepares, confirms and reconciles
+  buyer-promotion Checkout attempts, validates responses against their requests,
+  and exposes structured API error details through `CommishError.details`.
+- Next.js checkout helpers apply prepared discounts and trials, preserve the
+  trial cancellation policy, and report the prepared attempt ID through
+  `CommishCheckoutError` when checkout creation or confirmation fails.
+- Optional Creator Pages v2 displays eligible buyer offers while retaining
+  legacy coupon display when no buyer offer applies. Promotion availability
+  remains controlled by the service and program configuration.
+- `commish init`, also the default bare `commish` command, prints a repository
+  setup playbook with install, plan, setup, wiring and verification steps. It
+  reads repository metadata without making network requests or writing files.
+
+### Fixed
+
+- Checkout creation removes stale merchant-supplied referral attribution from
+  both Session and subscription metadata when the visitor has no valid referral,
+  preventing later renewals from inheriting an unrelated creator.
+
+### Changed
+
+- The unscoped `commish` launcher is now qualified and published alongside the
+  SDK and Next package, and pins `@commish/sdk@0.5.0` exactly. `@commish/next`
+  accepts the matching SDK minor version (`~0.5.0`).
 
 ## 0.4.0 - 2026-10-13
 

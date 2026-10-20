@@ -3,7 +3,7 @@
 Experimental measurement requires same-origin browser Web Locks to establish one visitor identity across concurrent tabs. Unsupported browsers or bounded identity failures receive the standard page without new experimental measurement; consent-authorized attribution and shopping remain available.
 
 Pages is an optional module available from SDK/Next 0.3.0. Install matching
-package versions and keep your lockfile. This guide describes 0.4.0; check npm
+package versions and keep your lockfile. This guide describes 0.5.0; check npm
 for published availability. Earlier versions do not include these exports.
 Installing Pages does not enable LIVE activity, publish a creator's page or grant
 visitor consent. Your workspace administrator configures the brand content; each
@@ -17,7 +17,7 @@ Pages is not a checkout or discount engine. The button goes to your existing sho
 
 ## Install
 
-Use Node 22 or later, `@commish/sdk` and `@commish/next` from the same minor version (0.4.x), Next >=16.3.8 <17, and React >=19.2.8 <20. Existing non-Pages integrations remain optional and unchanged.
+Use Node 22 or later, `@commish/sdk` and `@commish/next` from the same minor version (0.5.x), Next >=16.3.8 <17, and React >=19.2.8 <20. Existing non-Pages integrations remain optional and unchanged.
 
 ```sh
 pnpm exec commish-next pages init --dry-run --json

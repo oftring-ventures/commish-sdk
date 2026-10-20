@@ -51,15 +51,15 @@ function fixture() {
   const artifacts = releaseArtifacts.map(({ name, file }) => {
     const metadata = {
       name,
-      version: "0.4.0",
+      version: "0.5.0",
       license: "MIT",
       repository: { url: `git+https://github.com/${repository}.git` },
       publishConfig:
         name === "commish"
           ? { access: "public", registry: "https://registry.npmjs.org/", tag: "latest" }
           : { access: "public", tag: "latest" },
-      ...(name === "@commish/next" ? { peerDependencies: { "@commish/sdk": "0.4.0" } } : {}),
-      ...(name === "commish" ? { dependencies: { "@commish/sdk": "0.4.0" } } : {}),
+      ...(name === "@commish/next" ? { peerDependencies: { "@commish/sdk": "0.5.0" } } : {}),
+      ...(name === "commish" ? { dependencies: { "@commish/sdk": "0.5.0" } } : {}),
     };
     const data = Buffer.from(JSON.stringify(metadata)),
       header = Buffer.alloc(512);
@@ -156,8 +156,8 @@ function fixture() {
     COMMISH_NPM_ENVIRONMENT: "npm-publication",
     GITHUB_SHA: source,
     GITHUB_WORKFLOW_SHA: source,
-    GITHUB_REF: "refs/tags/v0.4.0",
-    GITHUB_WORKFLOW_REF: `${repository}/.github/workflows/publish-packages.yml@refs/tags/v0.4.0`,
+    GITHUB_REF: "refs/tags/v0.5.0",
+    GITHUB_WORKFLOW_REF: `${repository}/.github/workflows/publish-packages.yml@refs/tags/v0.5.0`,
     COMMISH_NPM_APPROVED_SOURCE: source,
     COMMISH_NPM_APPROVED_MANIFEST_SHA256: ci.manifestSha256,
     COMMISH_NPM_APPROVED_CI_RECEIPT_SHA256: hash(files.get("ci-receipt.json")),

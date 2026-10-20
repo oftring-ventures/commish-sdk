@@ -123,7 +123,7 @@ test("CI receipt rejects changed bytes, checksums, extra files and symlinked can
 test("CI receipts retain existing branch, tag and merge-queue push coverage", () => {
   for (const [event, ref] of [
     ["push", "heads/topic"],
-    ["push", "tags/v0.4.0"],
+    ["push", "tags/v0.5.0"],
     ["merge_group", "heads/gh-readonly-queue/main/pr-35"],
   ])
     fixture((directory, env) => {

@@ -189,7 +189,7 @@ test("the launcher manifest pins the released SDK and nothing else", () => {
       m.name = "@commish/cli";
     },
     (m) => {
-      m.dependencies["@commish/sdk"] = "^0.4.0";
+      m.dependencies["@commish/sdk"] = "^0.5.0";
     },
     (m) => {
       m.dependencies.chalk = "5.0.0";

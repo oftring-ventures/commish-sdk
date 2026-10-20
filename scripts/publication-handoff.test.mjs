@@ -53,7 +53,7 @@ function zip(entries, { deflate = false } = {}) {
 
 function candidate(mutate = () => {}) {
   const artifacts = releaseArtifacts.map(({ name, file }) => {
-    const payload = Buffer.from(JSON.stringify({ name, version: "0.4.0" })),
+    const payload = Buffer.from(JSON.stringify({ name, version: "0.5.0" })),
       header = Buffer.alloc(512);
     header.write("package/package.json");
     header.write("0000644", 100);
@@ -64,7 +64,7 @@ function candidate(mutate = () => {}) {
     bytes[9] = 255;
     return {
       name,
-      version: "0.4.0",
+      version: "0.5.0",
       file,
       bytes,
       sha512: hash(bytes, "sha512"),
@@ -177,7 +177,7 @@ test("an accepted run, ancestor of main, with a bound retained candidate yields 
   );
   assert.deepEqual(
     handoff.artifacts.map((item) => item.file),
-    ["commish-sdk-0.4.0.tgz", "commish-next-0.4.0.tgz", "commish-0.4.0.tgz"],
+    ["commish-sdk-0.5.0.tgz", "commish-next-0.5.0.tgz", "commish-0.5.0.tgz"],
   );
   assert.equal(
     verifyMainAncestry({ status: "identical", merge_base_commit: { sha: source } }, source),
@@ -213,13 +213,13 @@ test("every unaccepted, unbound or tampered input is refused", () => {
     evidence.artifact.digest = `sha256:${"0".repeat(64)}`;
   }, /bytes differ from the API digest/);
   refuse(({ files }) => {
-    files.get("commish-sdk-0.4.0.tgz")[20] ^= 1;
+    files.get("commish-sdk-0.5.0.tgz")[20] ^= 1;
   }, /candidate bytes changed/);
   refuse(({ files }) => {
-    files.get("commish-0.4.0.tgz")[20] ^= 1;
+    files.get("commish-0.5.0.tgz")[20] ^= 1;
   }, /candidate bytes changed/);
   refuse(({ files }) => {
-    files.delete("commish-0.4.0.tgz");
+    files.delete("commish-0.5.0.tgz");
   }, /unexpected candidate inventory/);
   refuse(({ files }) => {
     files.delete("SHA512SUMS");
