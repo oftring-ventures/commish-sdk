@@ -2,15 +2,15 @@
 
 Next.js App Router integration for Commish referral capture, Checkout metadata
 and optional creator Pages. Supports permanent TEST and LIVE environments and is
-MIT licensed. Use Node 22 or later with the same SDK minor version (`~0.4.0`) and a
+MIT licensed. Use Node 22 or later with the same SDK minor version (`~0.5.0`) and a
 supported Next version. The CLI runs on macOS, Linux and WSL; native Windows is not
 supported.
 
 ```sh
-pnpm add --save-exact @commish/sdk@0.4.0 @commish/next@0.4.0
+pnpm add --save-exact @commish/sdk@0.5.0 @commish/next@0.5.0
 ```
 
-This guide describes 0.4.0; check [npm](https://www.npmjs.com/package/@commish/next)
+This guide describes 0.5.0; check [npm](https://www.npmjs.com/package/@commish/next)
 for published availability. Pages first appears in 0.3.0. See the
 [Pages integration guide](guides/pages.md) and [agent guide](guides/agents.md).
 
@@ -114,7 +114,7 @@ verify a referral, simulated purchase, conversion and webhook delivery. A packag
 install or successful configuration check does not prove those steps worked.
 Your own workspace administrator authorizes setup; each participant accepts their
 own terms and Page publication choice. See the SDK
-[authorization boundaries](https://github.com/oftring-ventures/commish-sdk/blob/v0.4.0/packages/sdk/README.md#authorization-boundaries).
+[authorization boundaries](https://github.com/oftring-ventures/commish-sdk/blob/v0.5.0/packages/sdk/README.md#authorization-boundaries).
 
 ## Provision TEST or LIVE credentials from the CLI
 

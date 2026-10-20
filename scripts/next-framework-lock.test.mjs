@@ -88,16 +88,16 @@ const artifact = (name, manifest) => ({
 });
 const sdk = artifact("sdk", {
   name: "@commish/sdk",
-  version: "0.4.0",
+  version: "0.5.0",
   engines: { node: ">=22" },
   bin: { commish: "./bin/init.mjs" },
 });
 const next = artifact("next", {
   name: "@commish/next",
-  version: "0.4.0",
+  version: "0.5.0",
   engines: { node: ">=22" },
   bin: { "commish-next": "./bin/init.mjs" },
-  peerDependencies: { react: ">=19.2.8 <20", "@commish/sdk": "~0.4.0", next: ">=16.3.8 <17" },
+  peerDependencies: { react: ">=19.2.8 <20", "@commish/sdk": "~0.5.0", next: ">=16.3.8 <17" },
 });
 
 test("the framework fixture lock projects only the Next package's closure", () => {
@@ -134,7 +134,7 @@ test("the framework fixture lock projects only the Next package's closure", () =
   );
   assert.equal(
     locks.pairWorkspace,
-    `${locks.workspace}minimumReleaseAgeExclude:\n  - '@commish/sdk@0.4.0'\n  - '@commish/next@0.4.0'\n`,
+    `${locks.workspace}minimumReleaseAgeExclude:\n  - '@commish/sdk@0.5.0'\n  - '@commish/next@0.5.0'\n`,
   );
   // The pair records carry the archives' engines and the peers in sorted, pnpm-quoted form.
   assert(
@@ -142,7 +142,7 @@ test("the framework fixture lock projects only the Next package's closure", () =
   );
   assert(
     locks.paired.includes(
-      "    version: 0.4.0\n    engines: {node: '>=22'}\n    hasBin: true\n    peerDependencies:\n      '@commish/sdk': ~0.4.0\n      next: '>=16.3.8 <17'\n      react: '>=19.2.8 <20'\n",
+      "    version: 0.5.0\n    engines: {node: '>=22'}\n    hasBin: true\n    peerDependencies:\n      '@commish/sdk': ~0.5.0\n      next: '>=16.3.8 <17'\n      react: '>=19.2.8 <20'\n",
     ),
   );
   assert(
@@ -156,7 +156,7 @@ test("unsupported lockfiles and unresolved dependencies are refused", () => {
   for (const text of [
     "invalid",
     sourceLock.replace("\n  packages/next:\n", "\n  packages/other:\n"),
-    sourceLock.replace("        version: link:../sdk\n", "        version: 0.4.0\n"),
+    sourceLock.replace("        version: link:../sdk\n", "        version: 0.5.0\n"),
     sourceLock.replace("\n  react@19.2.8: {}\n", "\n"),
     sourceLock.replace("lockfileVersion: '9.0'", "lockfileVersion: '6.0'"),
   ])

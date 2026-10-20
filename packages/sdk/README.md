@@ -39,14 +39,14 @@ completed attributed TEST conversion. Run `commish --help` for available command
 
 ## Install and configure
 
-Install `@commish/sdk@0.4.0` from npm and keep the consumer lockfile. Next.js
-applications can additionally install the matching `@commish/next@0.4.0` package.
+Install `@commish/sdk@0.5.0` from npm and keep the consumer lockfile. Next.js
+applications can additionally install the matching `@commish/next@0.5.0` package.
 No Commish checkout or database credentials are required. This guide describes
-0.4.0; check [npm](https://www.npmjs.com/package/@commish/sdk) for published
+0.5.0; check [npm](https://www.npmjs.com/package/@commish/sdk) for published
 availability, or use the documentation on your installed version's release tag.
 
 ```sh
-pnpm add --save-exact @commish/sdk@0.4.0
+pnpm add --save-exact @commish/sdk@0.5.0
 ```
 
 Obtain a mode-matched secret key scoped to the verified application, a publishable
@@ -517,7 +517,7 @@ private Commish contracts, database or domain modules are not supported.
 Version 0.3.0 adds server-only `commish.pages.resolve({ programId, handle })`.
 It returns a versioned page description using an application-scoped key. Pages
 require configured brand content and the creator's separate publication choice.
-See the [Next Pages guide](https://github.com/oftring-ventures/commish-sdk/blob/v0.4.0/packages/next/guides/pages.md)
+See the [Next Pages guide](https://github.com/oftring-ventures/commish-sdk/blob/v0.5.0/packages/next/guides/pages.md)
 for rendering, routing and visitor consent. Existing referral integrations do not
 need to adopt Pages; versions before 0.3.0 do not include it.
 
