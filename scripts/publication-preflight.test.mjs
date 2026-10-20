@@ -141,15 +141,16 @@ test("accepted candidate binds every package, member and CI receipt; plans defau
       ["@commish/sdk", "@commish/next", "commish"],
     );
     for (const item of plan)
-      assert.deepEqual(item.argv.slice(2), [
+      assert.deepEqual(item.argv.slice(3), [
         "--ignore-scripts",
         "--access=public",
         "--tag=latest",
+        "--json",
         "--dry-run",
         "--registry=https://registry.npmjs.org",
         "--@commish:registry=https://registry.npmjs.org",
       ]);
-    assert.throws(() => publicationPlan(candidate, allMissing, { publish: true }));
+    assert.throws(() => publicationPlan(candidate, allMissing, { stage: true }));
   }));
 
 test("changed approval, archive, receipt, inventory, checksums and symlinks are rejected", () => {
@@ -207,7 +208,7 @@ test("publication requires each exact protected identity and separate acceptance
         }),
       );
     }
-    const plan = publicationPlan(candidate, allMissing, { publish: true, env });
+    const plan = publicationPlan(candidate, allMissing, { stage: true, env });
     assert(plan.every((p) => p.argv.includes("--provenance") && !p.argv.includes("--dry-run")));
   }));
 
@@ -216,7 +217,7 @@ test("whole-release registry preflight refuses mismatch and resumes only identic
     const candidate = readPublicationCandidate(directory, approved),
       same = candidate.artifacts.map((a) => ({ status: 0, stdout: JSON.stringify(a.integrity) }));
     const pending = (results) =>
-      publicationPlan(candidate, results, { publish: true, env }).map((p) => p.name);
+      publicationPlan(candidate, results, { stage: true, env }).map((p) => p.name);
     assert.deepEqual(pending(same), []);
     assert.deepEqual(pending([same[0], missing, same[2]]), ["@commish/next"]);
     assert.deepEqual(pending([missing, same[1], same[2]]), ["@commish/sdk"]);
@@ -229,7 +230,7 @@ test("whole-release registry preflight refuses mismatch and resumes only identic
     ])
       for (const index of releaseArtifacts.keys())
         assert.throws(() =>
-          publicationPlan(candidate, allMissing.with(index, bad), { publish: true, env }),
+          publicationPlan(candidate, allMissing.with(index, bad), { stage: true, env }),
         );
     assert.throws(() => publicationPlan(candidate, [missing, missing]));
   }));

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
-import { npmTimeoutMs, registryVisibility } from "./publication-executor.mjs";
+import { npmTimeoutMs, stagingNpmVersion } from "./publication-executor.mjs";
 import { releaseArtifacts } from "./stable-release.mjs";
 
 const workflow = readFileSync(
@@ -25,7 +25,7 @@ test("publication requires manual release-tag dispatch and the protected environ
   assert.match(workflow, /jobs:\n  publish:/);
 });
 
-test("only the publication job receives OIDC; no package install or token fallback runs", () => {
+test("only the staging job receives OIDC and installs only its pinned CLI", () => {
   const [beforeJobs, jobs] = workflow.split("jobs:\n");
   assert.doesNotMatch(beforeJobs, /id-token|write/);
   assert.match(
@@ -34,8 +34,12 @@ test("only the publication job receives OIDC; no package install or token fallba
   );
   assert.doesNotMatch(
     workflow,
-    /NODE_AUTH_TOKEN|NPM_TOKEN|secrets\.|registry-url:|npm install|pnpm install|npm publish|contents: write/,
+    /NODE_AUTH_TOKEN|NPM_TOKEN|secrets\.|registry-url:|pnpm install|npm publish|npm stage approve|contents: write/,
   );
+  const installs = workflow.split("\n").filter((line) => line.includes("npm install"));
+  assert.deepEqual(installs, [
+    `        run: npm install --global --ignore-scripts --registry=https://registry.npmjs.org npm@${stagingNpmVersion}`,
+  ]);
   assert.match(workflow, /persist-credentials: false/);
   assert.match(workflow, /node-version-file: \.node-version/);
   for (const match of workflow.matchAll(/uses: ([^\n]+)/g))
@@ -57,29 +61,27 @@ test("approval is independent of artifact inputs and shell receives IDs through 
   assert(workflow.includes("CANDIDATE_RUN_ID: ${{ inputs.candidate_run_id }}"));
   assert(workflow.includes("CANDIDATE_ARTIFACT_ID: ${{ inputs.candidate_artifact_id }}"));
   const commands = workflow.split("\n").filter((line) => line.trimStart().startsWith("run:"));
-  assert.equal(commands.length, 1);
-  assert(!commands[0].includes("${{"));
+  assert.equal(commands.length, 2);
+  assert(commands.every((line) => !line.includes("${{")));
   assert(
-    commands[0].includes(
-      'node scripts/publication-executor.mjs "$CANDIDATE_RUN_ID" "$CANDIDATE_ARTIFACT_ID" --publish',
+    commands[1].includes(
+      'node scripts/publication-executor.mjs "$CANDIDATE_RUN_ID" "$CANDIDATE_ARTIFACT_ID" --stage',
     ),
   );
   assert.match(workflow, /path: \$\{\{ runner.temp \}\}\/publication-receipt.json/);
+  assert.match(workflow, /if: always\(\)\n        uses: actions\/upload-artifact/);
 });
 
-test("the publication job outlasts every upload with full registry visibility waits", () => {
+test("the staging job outlasts every preflight and upload", () => {
   const minutes = workflow.match(
     /\n  publish:\n(?:    .*\n)*?    timeout-minutes: ([1-9][0-9]*)\n/,
   )?.[1];
-  // One preflight lookup per package, then per package the upload, the visibility deadline and
-  // its final readback.
+  // One toolchain check, one preflight lookup and one stage upload per package,
+  // plus setup and artifact retrieval time.
   const count = releaseArtifacts.length;
-  const required =
-    count * npmTimeoutMs +
-    count * (npmTimeoutMs + registryVisibility.timeoutMs + npmTimeoutMs) +
-    5 * 60_000;
+  const required = (1 + 2 * count) * npmTimeoutMs + 5 * 60_000;
   assert(
     Number(minutes) * 60_000 >= required,
-    "publication job timeout cannot fit every visibility wait",
+    "staging job timeout cannot fit every preflight and upload",
   );
 });

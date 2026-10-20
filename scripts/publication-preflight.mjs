@@ -172,9 +172,9 @@ export function isMissingRegistryVersion(result) {
 }
 
 // Pure plan only: the caller must API-verify the accepted run and recheck bytes before executing.
-export function publicationPlan(candidate, registryResults, { publish = false, env = {} } = {}) {
-  assert.equal(typeof publish, "boolean");
-  if (publish) requirePublicationApproval(candidate, env);
+export function publicationPlan(candidate, registryResults, { stage = false, env = {} } = {}) {
+  assert.equal(typeof stage, "boolean");
+  if (stage) requirePublicationApproval(candidate, env);
   assert.equal(registryResults.length, candidate.artifacts.length);
   const pending = candidate.artifacts.filter((item, index) => {
     const result = registryResults[index];
@@ -193,12 +193,14 @@ export function publicationPlan(candidate, registryResults, { publish = false, e
     name: item.name,
     integrity: item.integrity,
     argv: [
+      "stage",
       "publish",
       join(candidate.directory, item.file),
       "--ignore-scripts",
       "--access=public",
       "--tag=latest",
-      publish ? "--provenance" : "--dry-run",
+      "--json",
+      stage ? "--provenance" : "--dry-run",
       ...publicRegistryArgs,
     ],
   }));
