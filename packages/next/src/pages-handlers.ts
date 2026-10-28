@@ -104,6 +104,7 @@ export async function withdrawCreatorPageMeasurement(
 
 export function createCreatorPageHandlers(configuration: CreatorPageHandlerOptions) {
   return {
+    // biome-ignore lint/correctness/noComponentHookFactories: a route handler, not a component; the merchant's route module calls this factory once
     POST: async (request: Request): Promise<Response> => {
       const { NextResponse } = await import("next/server.js");
       const headers = { "cache-control": "private, no-store" };

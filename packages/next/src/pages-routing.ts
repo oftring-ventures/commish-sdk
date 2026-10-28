@@ -154,6 +154,7 @@ export function createCreatorAliasHandler(
   source: PageOptionsSource,
   handlerOptions: CreatorAliasHandlerOptions = {},
 ) {
+  // biome-ignore lint/correctness/noComponentHookFactories: a route handler, not a component; the merchant's route module calls this factory once
   return async function GET(request: Request, context: { params: Promise<{ creator: string }> }) {
     const headers = { "cache-control": "private, no-store" };
     if (!["GET", "HEAD"].includes(request.method))
