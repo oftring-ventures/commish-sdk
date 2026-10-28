@@ -6,6 +6,7 @@ export function createAttributionHandler(options: {
   apiUrl?: string;
   secretKey?: string;
 }): (request: Request) => Promise<Response> {
+  // biome-ignore lint/correctness/noComponentHookFactories: a route handler, not a component; the merchant's route module calls this factory once
   return async function POST(request: Request) {
     // Loaded per request so the root module stays importable wherever the
     // cookie helpers are: only the handler needs the server response builder

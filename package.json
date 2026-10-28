@@ -12,6 +12,6 @@
     "format": "biome check --write packages scripts launcher biome.json package.json"
   },
   "devDependencies": {
-    "@biomejs/biome": "2.5.15"
+    "@biomejs/biome": "2.6.2"
   }
 }

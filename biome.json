@@ -1,5 +1,5 @@
 {
-  "$schema": "https://biomejs.dev/schemas/2.5.15/schema.json",
+  "$schema": "https://biomejs.dev/schemas/2.6.2/schema.json",
   "vcs": {
     "enabled": true,
     "clientKind": "git",
@@ -17,6 +17,11 @@
     "formatter": {
       "quoteStyle": "double",
       "trailingCommas": "all"
+    }
+  },
+  "markdown": {
+    "formatter": {
+      "enabled": false
     }
   },
   "linter": {
@@ -41,6 +46,16 @@
         "rules": {
           "suspicious": {
             "noTemplateCurlyInString": "off"
+          }
+        }
+      }
+    },
+    {
+      "includes": ["scripts/verify-pages-artifact.mjs"],
+      "linter": {
+        "rules": {
+          "performance": {
+            "useDomNodeTextContent": "off"
           }
         }
       }

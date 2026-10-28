@@ -18,6 +18,7 @@ export {
 
 /** One dynamic route covers current and future participating creators. */
 export function createCreatorPage(source: PageOptionsSource) {
+  // biome-ignore lint/correctness/noComponentHookFactories: the page module calls this factory once at module scope, so the component identity is stable
   return async function Page({ params }: { params: Promise<{ creator: string }> }) {
     let options: CreatorPageOptions;
     let page: CreatorPage;
