@@ -257,7 +257,7 @@ console.log(program.data.status, membership.data.status);
 ```
 
 Workspace-wide delivery diagnostics require a separately provisioned workspace
-server credential: choose **Workspace server credential** in Dashboard → Developers
+server credential: choose **Business server credential** in Dashboard → Developers
 → API keys. Application integration keys receive `workspace_key_required` (403);
 use a separate `Commish` instance with the workspace credential for these reads.
 
