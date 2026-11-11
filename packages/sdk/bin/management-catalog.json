@@ -9,6 +9,12 @@
     "writeMaximumSeconds": 600,
     "sessionReadMaximumSeconds": 3600,
     "automationMaximumSeconds": 2592000,
+    "onboarding": {
+      "modes": ["test"],
+      "maximumSeconds": 86400,
+      "excludedScopes": ["invitations.write"],
+      "browserSessionRequired": false
+    },
     "tokenStorage": "hash_only"
   },
   "grantInput": {
@@ -40,7 +46,7 @@
       },
       "kind": {
         "type": "string",
-        "enum": ["session", "automation"]
+        "enum": ["session", "automation", "onboarding"]
       },
       "scopes": {
         "minItems": 1,

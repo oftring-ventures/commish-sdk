@@ -16,6 +16,7 @@ export function managementUrl(value, env) {
     "/api/management/v1",
   );
 }
+const onboarding = catalog.authorization.onboarding;
 const record = (value) => value !== null && typeof value === "object" && !Array.isArray(value);
 export function validateManagementGrant(value, token, expected) {
   const hash = tokenHash(token),
@@ -30,7 +31,7 @@ export function validateManagementGrant(value, token, expected) {
     value.pairingCode !== `${hash.slice(0, 4)}-${hash.slice(4, 8)}`.toUpperCase() ||
     !/^wrk_[A-Za-z0-9_-]{12,}$/.test(value.workspaceId) ||
     (value.applicationId !== null && !/^app_[A-Za-z0-9_-]{12,}$/.test(value.applicationId)) ||
-    !["session", "automation"].includes(value.kind) ||
+    !["session", "automation", "onboarding"].includes(value.kind) ||
     !["pending", "authorized", "denied", "revoked", "expired"].includes(value.status) ||
     !Array.isArray(value.scopes) ||
     !value.scopes.length ||
@@ -51,6 +52,10 @@ export function validateManagementGrant(value, token, expected) {
   if (
     (value.kind === "automation" && writes) ||
     (value.kind === "session" && value.expiresIn > (writes ? 600 : 3600)) ||
+    (value.kind === "onboarding" &&
+      (value.mode !== "test" ||
+        value.expiresIn > onboarding.maximumSeconds ||
+        value.scopes.some((scope) => onboarding.excludedScopes.includes(scope)))) ||
     (value.applicationId !== null && value.scopes.some((scope) => scope.startsWith("webhooks.")))
   )
     fail("invalid_response");
