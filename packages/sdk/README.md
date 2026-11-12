@@ -67,10 +67,11 @@ founder, platform operator or a maintainer's release-acceptance process.
 | Call integration APIs from your application or CLI | Mode-matched integration key; no browser approval per request. The key's scope and current workspace eligibility still apply. |
 | Provision through `commish setup` | Browser sign-in/signup, email verification, authenticator verification and approval of workspace, mode, scopes and proposed business choices. Approved setup authority lasts at most ten minutes. |
 | Manage resources through `commish auth login` | Separate browser-approved management grant; integration keys cannot authorize management. Interactive reads last up to one hour and writes up to ten minutes. |
+| Finish installing and testing in Test | An onboarding grant (`commish auth login --onboarding`): Test only, up to one day, approved once with an authenticator check. It writes without the browser session staying signed in, never sends invitations, and ends on expiry, revocation, a password change, account suspension or loss of manager access. |
 | Run read-only management automation | Explicitly approved read scopes, up to 30 days. It survives sign-out but remains subject to expiry, revocation, account suspension and manager access. |
 | Connect Stripe or accept creator terms/Page publication | The relevant account holder completes provider consent or their own participation/publication choice. CLI approval does not make those choices for them. |
 
-Longer-lived management writes are not supported. `--non-interactive` removes
+Longer-lived management writes exist only in Test, through an onboarding grant. `--non-interactive` removes
 terminal prompts; it does not bypass browser authentication or consent.
 `--no-open` lets an agent present the approval link instead of opening it.
 Session management grants also require the approving browser session to remain
@@ -582,6 +583,22 @@ its mode remain bound to the request. Write sessions last at most ten minutes;
 read sessions at most one hour; explicit read-only automation at most thirty
 days. Automation survives sign-out, but expiry, revocation, account suspension
 or loss of workspace manager access removes its authority.
+
+Installing an integration usually outlasts a ten-minute write session: the
+ownership proof has to be deployed and the first referral rehearsed. For that
+work request an onboarding grant instead:
+
+```sh
+commish auth login --workspace wrk_123456789012 --workspace-scope --onboarding \
+  --scopes resources.read,diagnostics.read,programs.write,terms.write,destinations.write \
+  --no-open --non-interactive --json
+```
+
+It works in Test only, lasts up to one day (`--expires-in` shortens it) and
+cannot hold `invitations.write`. Each command keeps its own verification
+policy, so Test credential and webhook changes still need the approving
+authenticator check to be under an hour old. Live writes always use a write
+session.
 
 The returned `authorizationFile` is owner-only and ignored under `.commish/`.
 Pass that path to subsequent commands; do not copy its contents into prompts or

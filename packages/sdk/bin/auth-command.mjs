@@ -24,6 +24,7 @@ export const authHelp = () => ({
     "--scopes <comma-separated scopes>",
     "--mode test|live",
     "--automation",
+    "--onboarding",
     "--expires-in <seconds>",
     "--auth-file <path>",
     "--wait <seconds>",
@@ -34,6 +35,11 @@ export const authHelp = () => ({
   ],
   scopes: [...new Set(Object.values(managementCatalog.operations).map((op) => op.scope))],
   automationReadOnly: true,
+  onboarding: {
+    ...managementCatalog.authorization.onboarding,
+    purpose:
+      "Finish installing and testing in Test after the write session's ten minutes: writes without the browser session, never invitations.",
+  },
   privateStorage:
     ".commish/management/<request-id>/authorization.json (owner-only and git-ignored)",
   authorization:
@@ -72,7 +78,7 @@ export async function executeAuth(
       "wait",
       "management-url",
     ],
-    ["workspace-scope", "automation", "json", "help", "no-open", "non-interactive"],
+    ["workspace-scope", "automation", "onboarding", "json", "help", "no-open", "non-interactive"],
   );
   if (v.help || !p.length) return authHelp();
   if (p.length !== 1 || !["login", "status", "revoke"].includes(p[0])) fail("invalid_arguments");
@@ -89,6 +95,7 @@ export async function executeAuth(
         "wait",
         "workspace-scope",
         "automation",
+        "onboarding",
       ].some((key) => v[key] !== undefined)
     )
       fail("invalid_arguments");
@@ -108,9 +115,15 @@ export async function executeAuth(
     path = authFile;
   if (authFile) {
     if (
-      ["workspace", "application", "scopes", "expires-in", "workspace-scope", "automation"].some(
-        (key) => v[key] !== undefined,
-      )
+      [
+        "workspace",
+        "application",
+        "scopes",
+        "expires-in",
+        "workspace-scope",
+        "automation",
+        "onboarding",
+      ].some((key) => v[key] !== undefined)
     )
       fail("invalid_arguments");
     state = readManagementAuthorization(root, authFile);
@@ -121,8 +134,10 @@ export async function executeAuth(
       fail("authorization_context_mismatch");
   } else {
     const scopes = v.scopes?.split(","),
-      kind = v.automation ? "automation" : "session";
+      kind = v.onboarding ? "onboarding" : v.automation ? "automation" : "session",
+      onboarding = managementCatalog.authorization.onboarding;
     if (
+      (v.onboarding && v.automation) ||
       !/^wrk_[A-Za-z0-9_-]{12,}$/.test(v.workspace ?? "") ||
       Boolean(v.application) === Boolean(v["workspace-scope"]) ||
       (v.application && !/^app_[A-Za-z0-9_-]{12,}$/.test(v.application)) ||
@@ -133,12 +148,23 @@ export async function executeAuth(
     )
       fail("invalid_arguments");
     const writes = scopes.some((scope) => !scope.endsWith(".read"));
-    const expires = v["expires-in"] ?? String(kind === "automation" ? 86400 : writes ? 600 : 3600);
+    const maximum =
+      kind === "onboarding"
+        ? onboarding.maximumSeconds
+        : kind === "automation"
+          ? 2_592_000
+          : writes
+            ? 600
+            : 3600;
+    const expires = v["expires-in"] ?? String(kind === "session" ? maximum : 86400);
     if (
       !/^[1-9][0-9]{1,6}$/.test(expires) ||
       Number(expires) < 60 ||
-      Number(expires) > (kind === "automation" ? 2_592_000 : writes ? 600 : 3600) ||
+      Number(expires) > maximum ||
       (kind === "automation" && writes) ||
+      (kind === "onboarding" &&
+        (!onboarding.modes.includes(mode) ||
+          scopes.some((scope) => onboarding.excludedScopes.includes(scope)))) ||
       (v.application && scopes.some((scope) => scope.startsWith("webhooks.")))
     )
       fail("invalid_arguments");

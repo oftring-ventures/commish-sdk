@@ -125,6 +125,78 @@ test("authorization persists privately before begin, sends only the hash, and re
     /authorization_context_mismatch/,
   );
 });
+test("onboarding requests Test writes for a day and refuses anything wider before network", async (t) => {
+  const root = directory(t);
+  const scopes = "programs.write,destinations.write,diagnostics.read";
+  let sent;
+  const fetcher = async (_url, init) => {
+    sent = JSON.parse(init.body);
+    return respond(grantFor(sent, "pending"));
+  };
+  const result = await executeAuth(
+    [
+      "login",
+      "--workspace",
+      proposal.workspaceId,
+      "--workspace-scope",
+      "--scopes",
+      scopes,
+      "--onboarding",
+      "--wait",
+      "0",
+    ],
+    { root, env: {}, fetcher, notify: () => {} },
+  );
+  assert.equal(result.status, "pending");
+  assert.equal(result.grant.kind, "onboarding");
+  assert.deepEqual(
+    {
+      kind: sent.kind,
+      mode: sent.mode,
+      expiresIn: sent.expiresIn,
+      applicationId: sent.applicationId,
+    },
+    { kind: "onboarding", mode: "test", expiresIn: 86400, applicationId: null },
+  );
+  for (const args of [
+    ["--scopes", scopes, "--onboarding", "--automation"],
+    ["--scopes", scopes, "--onboarding", "--mode", "live"],
+    ["--scopes", scopes, "--onboarding", "--expires-in", "86401"],
+    ["--scopes", "programs.write,invitations.write", "--onboarding"],
+  ])
+    await assert.rejects(
+      executeAuth(["login", "--workspace", proposal.workspaceId, "--workspace-scope", ...args], {
+        root,
+        env: {},
+        fetcher: noRequest,
+      }),
+      /invalid_arguments/,
+    );
+  // A server receipt that widens onboarding is never accepted.
+  for (const change of [{ mode: "live" }, { expiresIn: 86401 }, { scopes: ["invitations.write"] }])
+    await assert.rejects(
+      executeAuth(
+        [
+          "login",
+          "--workspace",
+          proposal.workspaceId,
+          "--workspace-scope",
+          "--scopes",
+          scopes,
+          "--onboarding",
+          "--wait",
+          "0",
+        ],
+        {
+          root: directory(t),
+          env: {},
+          fetcher: async (_url, init) =>
+            respond({ ...grantFor(JSON.parse(init.body), "pending"), ...change }),
+        },
+      ),
+      /invalid_response|authorization_context_mismatch/,
+    );
+});
 test("automation writes, implicit LIVE and app-scoped workspace webhooks fail before network", async (t) => {
   const root = directory(t);
   for (const args of [
