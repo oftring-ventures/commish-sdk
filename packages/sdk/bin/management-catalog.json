@@ -201,6 +201,28 @@
       },
       "response": "application/json"
     },
+    "programs.rehearse": {
+      "method": "POST",
+      "path": "/api/management/v1/programs.rehearse",
+      "scope": "programs.write",
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "programId": {
+            "type": "string",
+            "pattern": "^prg_[A-Za-z0-9_-]{12,}$"
+          },
+          "handle": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9_-]{2,39}$"
+          }
+        },
+        "required": ["programId"],
+        "additionalProperties": false
+      },
+      "response": "application/json"
+    },
     "terms.list": {
       "method": "GET",
       "path": "/api/management/v1/terms.list",
