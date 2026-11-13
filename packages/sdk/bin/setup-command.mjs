@@ -50,6 +50,8 @@ const guidance = (code) =>
       "Restore the recorded credential file or revoke the existing key before starting separate setup.",
     live_access_required:
       "Complete the workspace's existing LIVE eligibility steps before retrying.",
+    access_denied:
+      "A workspace owner or admin must approve. To ask for setup without onboarding access, rerun with --no-onboarding.",
     service_unavailable:
       "Retry the same command; saved resources and credential material will be reused.",
   })[code] ?? "Review the setup configuration and rerun the same command.";
@@ -62,7 +64,7 @@ function progressText(event) {
         : "")
     );
   if (event.status === "onboarding_unavailable")
-    return "This server does not grant onboarding access with setup; continuing without it.";
+    return "Setup could not request onboarding access; continuing without it.";
   if (event.status === "authorized")
     return `Authorized ${event.mode.toUpperCase()} workspace ${event.workspaceId}.`;
   if (event.status === "publish_required")
@@ -73,6 +75,27 @@ function progressText(event) {
     return `Open ${event.approvalUrl ?? event.url} to continue.`;
   return `Waiting for setup${event.code ? ` (${event.code})` : ""}…`;
 }
+// Only an authorized grant is offered for use; anything else is checked first.
+function onboardingText(onboarding) {
+  if (!onboarding.authorizationFile)
+    return `Onboarding access could not be stored (${onboarding.code}); continuing without it.\n`;
+  const file = onboarding.authorizationFile;
+  return (
+    `Onboarding access (${onboarding.status}): ${file}\n` +
+    (onboarding.status === "authorized"
+      ? "Use it with commish manage and commish doctor (--auth-file) instead of approving again.\n"
+      : `Check it with commish auth status --auth-file ${file} --mode test before using it.\n`)
+  );
+}
+// The receipt names the stored file and its state; nothing else of the grant.
+const onboardingReceipt = (value) =>
+  value && typeof value === "object"
+    ? Object.fromEntries(
+        ["authorizationFile", "scopes", "status", "expiresAt", "code"]
+          .filter((name) => value[name] !== undefined)
+          .map((name) => [name, value[name]]),
+      )
+    : null;
 function resultText(result) {
   if (result.status === "plan")
     return (
@@ -91,14 +114,20 @@ function resultText(result) {
     );
   if (["input_required", "invalid_config"].includes(result.status))
     return `Setup ${result.status.replaceAll("_", " ")}: ${result.fields.join(", ")}.\nProvide these in commish.setup.json or explicit flags; see commish setup --help.`;
-  if (result.status === "error") return `Setup failed: ${result.code}. ${result.guidance}`;
+  if (result.status === "error")
+    return (
+      `Setup failed: ${result.code}. ${result.guidance}` +
+      (result.onboarding
+        ? `\n${onboardingText(result.onboarding)}` +
+          (result.onboarding.authorizationFile
+            ? `Revoke it with commish auth revoke --auth-file ${result.onboarding.authorizationFile} --mode test if it is not needed.`
+            : "")
+        : "")
+    );
   return (
     `Setup ${result.status.replaceAll("_", " ")} (${result.mode.toUpperCase()}).\nWorkspace: ${result.workspaceId}\nApplication: ${result.applicationId}\nProgram: ${result.programId}\nCredentials file: ${result.credentialsFile}\n` +
     (result.webhookFile ? `Webhook secret file: ${result.webhookFile}\n` : "") +
-    (result.onboarding
-      ? `Onboarding access (${result.onboarding.status}): ${result.onboarding.authorizationFile}\n` +
-        "Use it with commish manage and commish doctor (--auth-file) instead of approving again.\n"
-      : "") +
+    (result.onboarding ? onboardingText(result.onboarding) : "") +
     `Remaining steps: ${result.readiness.actions.join(", ") || "complete integration acceptance"}.\nIntegration remains unverified. Rerun this command to resume.`
   );
 }
@@ -145,7 +174,14 @@ export async function runSetupCommand(
       : codes.has(error?.message)
         ? error.message
         : "service_unavailable";
-    finish({ status: "error", code, guidance: guidance(code), integrationVerified: false });
+    const onboarding = onboardingReceipt(error?.onboarding);
+    finish({
+      status: "error",
+      code,
+      guidance: guidance(code),
+      ...(onboarding ? { onboarding } : {}),
+      integrationVerified: false,
+    });
     return code === "setup_interrupted" ? 130 : 1;
   } finally {
     signals.removeListener("SIGINT", stop);

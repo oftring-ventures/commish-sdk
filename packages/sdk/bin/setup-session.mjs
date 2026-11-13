@@ -45,6 +45,12 @@ const sameOperations = (value, requested) =>
   value.length === requested.length &&
   value.every((item) => operations.has(item)) &&
   [...value].sort().every((item, index) => item === [...requested].sort()[index]);
+// Element by element, so a joined string never matches separate scopes.
+const sameScopes = (value, requested) =>
+  Array.isArray(value) &&
+  value.length === requested.length &&
+  value.every((item) => typeof item === "string") &&
+  [...value].sort().every((item, index) => item === [...requested].sort()[index]);
 
 export function validateSetupWorkspace(value) {
   if (
@@ -266,8 +272,7 @@ export function createSetupSession(
           ? !keys(result.onboarding, ["requestId", "scopes", "expiresIn"]) ||
             result.onboarding.requestId !== onboarding.challengeHash ||
             result.onboarding.expiresIn !== onboarding.expiresIn ||
-            !Array.isArray(result.onboarding.scopes) ||
-            [...result.onboarding.scopes].sort().join() !== [...onboarding.scopes].sort().join()
+            !sameScopes(result.onboarding.scopes, onboarding.scopes)
           : result.onboarding !== undefined)
       )
         fail("invalid_response");

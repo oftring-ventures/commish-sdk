@@ -361,6 +361,11 @@ test("a reviewed Test request sends only the onboarding grant's hash and require
     (value) => ({ ...value, onboarding: { ...value.onboarding, scopes: ["programs.write"] } }),
     (value) => ({ ...value, onboarding: { ...value.onboarding, expiresIn: 3600 } }),
     (value) => ({ ...value, onboarding: { ...value.onboarding, token: "leak" } }),
+    // One joined string is not the two scopes that were asked for.
+    (value) => ({
+      ...value,
+      onboarding: { ...value.onboarding, scopes: [[...onboarding.scopes].sort().join()] },
+    }),
   ]) {
     const altered = fixture(input);
     altered.change(tamper);

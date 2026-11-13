@@ -324,3 +324,69 @@ test("a server without the single consent is provisioned as before, without the 
     /invalid_request/,
   );
 });
+test("a failure after the grant is stored names it, so it can be used or revoked", async () => {
+  const linked = (f) => async (input, flags) => {
+    f.authorizations.push({ input, flags });
+    return {
+      session: f.session,
+      receipt: { workspaceId: "wrk_123456789012", expiresAt: "2026-10-03T12:10:00.000Z" },
+      onboarding: { scopes: ["programs.write"], expiresIn: 86400 },
+    };
+  };
+  // Provisioning refuses after the grant is stored.
+  const f = fixture();
+  f.dependencies.authorize = linked(f);
+  f.dependencies.provision = async () => {
+    throw new Error("setup_conflict");
+  };
+  const failure = await runSetup("/repo", config, options, {
+    ...f.dependencies,
+    onboarding: grants([]),
+  }).catch((error) => error);
+  assert.equal(failure.message, "setup_conflict");
+  assert.equal(failure.onboarding.status, "authorized");
+  assert.match(failure.onboarding.authorizationFile, /^\.commish\/management\//);
+  assert(!JSON.stringify(failure.onboarding).includes(proposal.token));
+  assert.equal(f.revoked(), 1);
+  // An interruption during provisioning keeps the name too.
+  const g = fixture(),
+    controller = new AbortController();
+  g.dependencies.authorize = linked(g);
+  g.dependencies.provision = async () => {
+    controller.abort();
+    throw new Error("private-fixture");
+  };
+  const interrupted = await runSetup("/repo", config, options, {
+    ...g.dependencies,
+    onboarding: grants([]),
+    signal: controller.signal,
+  }).catch((error) => error);
+  assert.equal(interrupted.message, "setup_interrupted");
+  assert.match(interrupted.onboarding.authorizationFile, /^\.commish\/management\//);
+  // A store interrupted after writing its file names it on its own error.
+  const h = fixture();
+  h.dependencies.authorize = linked(h);
+  const named = await runSetup("/repo", config, options, {
+    ...h.dependencies,
+    onboarding: {
+      propose: () => proposal,
+      store: async () => {
+        throw Object.assign(new Error("setup_interrupted"), {
+          onboarding: {
+            authorizationFile: ".commish/management/x/authorization.json",
+            status: "unconfirmed",
+          },
+        });
+      },
+    },
+  }).catch((error) => error);
+  assert.equal(named.message, "setup_interrupted");
+  assert.equal(named.onboarding.authorizationFile, ".commish/management/x/authorization.json");
+  // Without a stored grant nothing is attached.
+  const i = fixture();
+  i.dependencies.provision = async () => {
+    throw new Error("setup_conflict");
+  };
+  const plain = await runSetup("/repo", config, options, i.dependencies).catch((error) => error);
+  assert.equal(plain.onboarding, undefined);
+});

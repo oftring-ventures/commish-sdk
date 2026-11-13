@@ -59,7 +59,8 @@ export async function runSetup(
   // Test setup asks for onboarding access in the same approval, so the work
   // that outlasts the ten-minute session needs no second one.
   let proposal = config.mode === "test" && options.onboarding !== false ? grants.propose() : null;
-  let session;
+  let session,
+    onboarding = null;
   try {
     let authorized;
     try {
@@ -68,7 +69,8 @@ export async function runSetup(
         flags,
       );
     } catch (error) {
-      // A server without the single consent rejects the field: provision as before.
+      // A server without the single consent rejects the field: provision as
+      // before. A request the server refuses for another reason fails again.
       if (!proposal || error?.message !== "invalid_request" || signal?.aborted) throw error;
       proposal = null;
       notify({ status: "onboarding_unavailable" });
@@ -76,7 +78,7 @@ export async function runSetup(
     }
     session = authorized.session;
     if (signal?.aborted) throw new Error("setup_interrupted");
-    const onboarding =
+    onboarding =
       proposal && authorized.onboarding
         ? await grants.store(root, proposal, {
             workspaceId: authorized.receipt.workspaceId,
@@ -157,8 +159,12 @@ export async function runSetup(
       resume: "rerun_same_command",
     };
   } catch (error) {
-    if (signal?.aborted || error?.name === "AbortError") throw new Error("setup_interrupted");
-    throw error;
+    const failure =
+      signal?.aborted || error?.name === "AbortError" ? new Error("setup_interrupted") : error;
+    // A stored grant outlives the failure; name it so it can be used or revoked.
+    const stored = onboarding ?? error?.onboarding;
+    if (stored && typeof failure === "object" && failure !== null) failure.onboarding = stored;
+    throw failure;
   } finally {
     await session?.revoke().catch(() => {});
   }

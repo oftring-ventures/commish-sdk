@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -118,4 +118,43 @@ test("a grant that cannot be confirmed, or comes back widened, is reported and n
     assert.equal(receipt.code, code);
     assert(!JSON.stringify(receipt).includes(proposal.token));
   }
+});
+
+test("a grant that cannot be stored safely is reported and setup goes on without it", async (t) => {
+  const root = directory(t),
+    outside = mkdtempSync(join(tmpdir(), "commish-outside-")),
+    proposal = proposeSetupOnboarding();
+  t.after(() => rmSync(outside, { recursive: true, force: true }));
+  mkdirSync(join(root, ".commish"), { recursive: true });
+  symlinkSync(outside, join(root, ".commish/management"));
+  let called = false;
+  const receipt = await storeSetupOnboarding(root, proposal, {
+    ...context,
+    fetcher: async () => {
+      called = true;
+      return Response.json({ data: grant(proposal) });
+    },
+  });
+  assert.equal(receipt.status, "unavailable");
+  assert.equal(receipt.authorizationFile, null);
+  assert.match(receipt.code, /^[a-z_]+$/);
+  assert.equal(called, false);
+  assert(!JSON.stringify(receipt).includes(proposal.token));
+});
+
+test("an interrupted confirmation names the stored file on its error", async (t) => {
+  const controller = new AbortController(),
+    proposal = proposeSetupOnboarding();
+  const failure = await storeSetupOnboarding(directory(t), proposal, {
+    ...context,
+    signal: controller.signal,
+    fetcher: async () => {
+      controller.abort();
+      throw new Error("aborted");
+    },
+  }).catch((error) => error);
+  assert.equal(failure.message, "setup_interrupted");
+  assert.equal(failure.onboarding.status, "unconfirmed");
+  assert.match(failure.onboarding.authorizationFile, /^\.commish\/management\//);
+  assert(!JSON.stringify(failure.onboarding).includes(proposal.token));
 });

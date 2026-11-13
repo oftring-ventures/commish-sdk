@@ -62,8 +62,20 @@ export async function storeSetupOnboarding(
       expiresIn: proposal.request.expiresIn,
     },
   };
-  writeSetupFile(root, path, JSON.stringify(state) + "\n", { privateFile: true });
   const receipt = { authorizationFile: path, scopes: [...proposal.request.scopes] };
+  try {
+    writeSetupFile(root, path, JSON.stringify(state) + "\n", { privateFile: true });
+  } catch (error) {
+    // Onboarding is optional. Unstored, the bearer ends with this process, so
+    // nothing can use the approved grant; setup continues without it.
+    return {
+      ...receipt,
+      authorizationFile: null,
+      status: "unavailable",
+      expiresAt: null,
+      code: failureCode(error),
+    };
+  }
   try {
     const grant = await managementClient({
       root,
@@ -75,12 +87,16 @@ export async function storeSetupOnboarding(
     }).status();
     return { ...receipt, status: grant.status, expiresAt: grant.expiresAt };
   } catch (error) {
-    if (signal?.aborted) throw new Error("setup_interrupted");
-    return {
+    const unconfirmed = {
       ...receipt,
       status: "unconfirmed",
       expiresAt: null,
-      code: /^[a-z_]{1,64}$/.test(error?.message ?? "") ? error.message : "service_unavailable",
+      code: failureCode(error),
     };
+    if (signal?.aborted)
+      throw Object.assign(new Error("setup_interrupted"), { onboarding: unconfirmed });
+    return unconfirmed;
   }
 }
+const failureCode = (error) =>
+  /^[a-z_]{1,64}$/.test(error?.message ?? "") ? error.message : "service_unavailable";
