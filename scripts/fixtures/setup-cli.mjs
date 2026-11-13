@@ -21,7 +21,8 @@ export async function verifySetupCli(executable) {
   const webhookSecret = `whsec_${"z".repeat(43)}`,
     requests = [],
     bearers = [],
-    authorizations = [];
+    authorizations = [],
+    grants = [];
   let current,
     denied = true,
     uncertainKey = true,
@@ -40,6 +41,44 @@ export async function verifySetupCli(executable) {
         current = body;
         authorizations.push(body);
         assert.equal(req.headers.authorization, undefined);
+        if (body.onboarding) {
+          // Only the hash of the onboarding bearer travels with the request.
+          assert.deepEqual(Object.keys(body.onboarding).sort(), [
+            "challengeHash",
+            "expiresIn",
+            "scopes",
+          ]);
+          assert.match(body.onboarding.challengeHash, /^[a-f0-9]{64}$/);
+        }
+      } else if (req.method === "GET" && req.url === "/api/management/v1/grants") {
+        // The setup approval authorized the linked onboarding grant; its own
+        // bearer confirms it, as the hosted grants route does.
+        const bearer = req.headers.authorization?.slice(7);
+        assert(
+          typeof bearer === "string" && digest(bearer) === current.onboarding?.challengeHash,
+          "onboarding bearer binding differs",
+        );
+        bearers.push(bearer);
+        const hash = current.onboarding.challengeHash;
+        const grant = {
+          protocol: "commish-management-v1",
+          requestId: hash,
+          id: `mgt_${hash.slice(0, 24)}`,
+          pairingCode: `${hash.slice(0, 4)}-${hash.slice(4, 8)}`.toUpperCase(),
+          workspaceId,
+          applicationId: null,
+          mode: "test",
+          kind: "onboarding",
+          scopes: [...current.onboarding.scopes].sort(),
+          expiresIn: current.onboarding.expiresIn,
+          status: "authorized",
+          requestExpiresAt: new Date(Date.now() + 3600000).toISOString(),
+          expiresAt: new Date(Date.now() + current.onboarding.expiresIn * 1000).toISOString(),
+        };
+        grants.push(grant);
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify({ data: grant }));
+        return;
       } else {
         const bearer = req.headers.authorization?.slice(7);
         assert(
@@ -62,6 +101,14 @@ export async function verifySetupCli(executable) {
           req.method === "POST"
             ? {
                 ...current,
+                // The server echoes the linked grant by its request id, never the input.
+                onboarding: current.onboarding
+                  ? {
+                      requestId: current.onboarding.challengeHash,
+                      scopes: [...current.onboarding.scopes].sort(),
+                      expiresIn: current.onboarding.expiresIn,
+                    }
+                  : undefined,
                 decision: "pending",
                 workspaceRequest: current.workspaceRequest ?? null,
                 pairingCode:
@@ -302,7 +349,11 @@ export async function verifySetupCli(executable) {
     assert.equal(deniedResult.result.code, "access_denied");
     assert(requests.every((r) => /setup-sessions(?:\/reviewed)?$/.test(r.path)));
     denied = false;
-    assert.equal((await run([])).result.code, "service_unavailable");
+    // Provisioning fails after the grant is stored: the error still names it.
+    const failed = (await run([])).result;
+    assert.equal(failed.code, "service_unavailable");
+    assert.equal(failed.onboarding?.status, "authorized");
+    assert.equal(statSync(join(root, failed.onboarding.authorizationFile)).mode & 0o777, 0o600);
     const filename = join(root, ".commish/setup/test/credentials.env"),
       before = readFileSync(filename);
     for (let i = 0; i < 2; i++) {
@@ -315,6 +366,16 @@ export async function verifySetupCli(executable) {
       assert(readFileSync(filename).equals(before), "credential file was replaced");
     }
     assert.equal(statSync(filename).mode & 0o777, 0o600);
+    // TEST setup asked for onboarding access in the same approval and stored it privately.
+    const stored = (await run([])).result.onboarding;
+    assert.equal(stored.status, "authorized");
+    assert.match(
+      stored.authorizationFile,
+      /^\.commish\/management\/[a-f0-9]{24}\/authorization\.json$/,
+    );
+    assert.equal(statSync(join(root, stored.authorizationFile)).mode & 0o777, 0o600);
+    assert(authorizations.every((r) => r.onboarding));
+    assert(grants.length >= 3);
     assert(
       readFileSync(join(root, ".commish/setup/test/webhook.env"), "utf8").includes(webhookSecret),
     );
@@ -322,7 +383,7 @@ export async function verifySetupCli(executable) {
     assert.equal(readFileSync(join(root, "app.ts"), "utf8"), "consumer-owned");
     assert.equal(requests.filter((r) => r.path.endsWith("/applications")).length, 1);
     assert.equal(requests.filter((r) => r.path.endsWith("/programs")).length, 1);
-    assert.equal(requests.filter((r) => r.method === "DELETE").length, 4);
+    assert.equal(requests.filter((r) => r.method === "DELETE").length, 5);
     assert.deepEqual(authorizations.at(-1).workspaceRequest, { kind: "existing", id: workspaceId });
     assert(
       authorizations.every((r) => r.mode === "test" && !r.operations.includes("stripe.connect")),
