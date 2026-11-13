@@ -494,6 +494,14 @@ test("rehearsal creates the owner's Test partnership with a management grant and
     fetcher: refused("creator_handle_required", 422),
   });
   assert.equal(handle.humanAction, "choose_creator_handle");
+  const taken = await executeTest(["rehearsal", "--program", "prg_123456789012"], {
+    env,
+    fetcher: refused("creator_handle_unavailable", 409),
+  });
+  assert.deepEqual(
+    [taken.status, taken.code, taken.humanAction],
+    ["action_required", "creator_handle_unavailable", "choose_creator_handle"],
+  );
   assert.equal(
     (
       await executeTest(["rehearsal", "--program", "prg_123456789012"], {
@@ -513,6 +521,9 @@ test("rehearsal creates the owner's Test partnership with a management grant and
   );
   for (const patch of [
     { referralUrl: "http://attacker.example/p/test/x/y" },
+    { referralUrl: "https://commish.sh/p/test/other-program/pixelcraft-test" },
+    { referralUrl: "https://commish.sh/p/test/pixel-partners/pixelcraft-test?next=/x" },
+    { workspaceId: "wrk_other123456789" },
     { programId: "prg_other1234567" },
     { status: "pending" },
   ])

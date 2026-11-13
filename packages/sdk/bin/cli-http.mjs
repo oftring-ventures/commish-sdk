@@ -78,6 +78,7 @@ const safeCodes = new Set([
   "program_not_active",
   "creator_role_required",
   "creator_handle_required",
+  "creator_handle_unavailable",
   "challenge_mismatch",
   "origin_not_public",
   "busy",

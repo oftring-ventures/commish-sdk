@@ -80,6 +80,14 @@ export async function executeTest(args, options = {}) {
           link.protocol === "https:" ||
           (link.protocol === "http:" && ["127.0.0.1", "[::1]", "localhost"].includes(link.hostname))
         ) ||
+        // The link is this partnership's TEST referral path in the grant's workspace.
+        typeof data.programSlug !== "string" ||
+        typeof data.creatorHandle !== "string" ||
+        link.pathname !==
+          `/p/test/${encodeURIComponent(data.programSlug)}/${encodeURIComponent(data.creatorHandle)}` ||
+        link.search ||
+        link.hash ||
+        data.workspaceId !== receipt.context.workspaceId ||
         data.programId !== v.program ||
         !/^mbr_[A-Za-z0-9_-]{12,}$/.test(data.membershipId ?? "") ||
         data.status !== "active"
@@ -107,6 +115,11 @@ export async function executeTest(args, options = {}) {
           humanAction: "choose_creator_handle",
           nextAction:
             "Ask the owner for a creator handle (3-40 lowercase letters, numbers, hyphens or underscores) and rerun with --handle.",
+        },
+        creator_handle_unavailable: {
+          humanAction: "choose_creator_handle",
+          nextAction:
+            "That handle is taken or reserved. Ask the owner for another creator handle and rerun with --handle.",
         },
         program_not_active: {
           nextAction: "Activate the program first (commish manage programs.activate), then rerun.",

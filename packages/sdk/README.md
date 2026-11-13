@@ -112,7 +112,8 @@ partnership. It adds no authority: the owner must hold the creator role, and
 the first rehearsal creates their private creator profile under `--handle`.
 When a person has to act it exits 2 with `status: "action_required"`:
 `creator_role_required` names the page where the owner adds the role,
-`creator_handle_required` asks for a handle, and `program_not_active` means the
+`creator_handle_required` asks for a handle, `creator_handle_unavailable` asks
+for another one (it is taken or reserved), and `program_not_active` means the
 offer has to be activated first. Opening the link and buying in Test remains
 the proof; the command only removes the dashboard step.
 
