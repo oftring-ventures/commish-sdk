@@ -3,6 +3,23 @@
 Notable changes to `@commish/sdk`, `@commish/next`, and `commish`, which release
 together with one version. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## 0.6.0 - 2026-11-12
+
+### Added
+
+- `commish auth login --onboarding` requests a browser-approved Test management
+  grant for installation and testing, lasting up to one day without requiring
+  the browser session to stay signed in. Live mode, invitation writes, longer
+  lifetimes and widened server receipts are refused. Credential and webhook
+  changes still require an authenticator check less than one hour old.
+
+### Changed
+
+- Setup documentation names the Business server credential shown in the
+  dashboard and explains the onboarding grant's authorization limits.
+- The SDK, Next adapter and `commish` launcher release together at 0.6.0.
+  The launcher pins `@commish/sdk@0.6.0`; Next accepts `@commish/sdk@~0.6.0`.
+
 ## 0.5.0 - 2026-10-20
 
 ### Added
