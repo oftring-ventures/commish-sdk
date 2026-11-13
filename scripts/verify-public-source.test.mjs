@@ -633,10 +633,10 @@ test("source shape fails closed on modes, orphans, toolchain drift, lockfile ori
       "next peer below the floor",
       (f) =>
         patch(f, next, (m) => {
-          m.peerDependencies.next = ">=15.0.0 <16";
-          m.devDependencies.next = "15.0.0";
+          m.peerDependencies.next = ">=16.4.0 <17";
+          m.devDependencies.next = "16.4.0";
         }),
-      /below 16\.3\.8/,
+      /below 16\.4\.1/,
     ],
     [
       "untested next peer floor",

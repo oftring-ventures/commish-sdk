@@ -9,18 +9,18 @@ Both packages are MIT licensed.
 
 Use Node 22 or later and your application's package manager. Keep the dependency
 lockfile. Releases are built on the Node version in `.node-version`.
-This source documents version 0.5.0; check the [npm SDK package](https://www.npmjs.com/package/@commish/sdk)
+This source documents version 0.6.0; check the [npm SDK package](https://www.npmjs.com/package/@commish/sdk)
 for published availability. Documentation on a release tag matches that release.
 
 ```sh
-pnpm add --save-exact @commish/sdk@0.5.0
+pnpm add --save-exact @commish/sdk@0.6.0
 # Optional, for Next.js App Router applications:
-pnpm add --save-exact @commish/next@0.5.0
+pnpm add --save-exact @commish/next@0.6.0
 ```
 
 The SDK client also runs on edge runtimes; webhook verification and the Next
 server helpers need Node. The Next adapter requires the same SDK minor version
-(`~0.5.0`), Next >=16.3.8 <17 and
+(`~0.6.0`), Next >=16.4.1 <17 and
 React >=19.2.8 <20. Other frameworks can use the core SDK directly.
 
 ## Start in TEST
@@ -55,8 +55,9 @@ request. Setup and management use separate browser-approved authority: the
 workspace owner/admin signs in, completes the authenticator check and approves
 the requested workspace, mode and scopes. Read-only management automation can
 last up to 30 days; interactive reads up to one hour; writes up to ten minutes.
-Longer-lived management writes are not supported. Stripe connection and each
-creator's terms and Page publication choices remain human actions.
+Test-only onboarding grants support installation and testing for up to one day;
+they cannot send invitations. Live writes still use a ten-minute session. Stripe
+connection and each creator's terms and Page publication choices remain human actions.
 
 Your own workspace administrators and participants complete those steps; no
 Commish founder or platform-owner approval is needed for TEST setup. See

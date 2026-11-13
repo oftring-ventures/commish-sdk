@@ -50,8 +50,8 @@ const required = {
 };
 
 // Framework peers start at the versions the fixtures build and test against, and
-// never below these floors (next 16.3.8 carries the image-optimization fix).
-const peerFloors = { next: "16.3.8", react: "19.2.8" };
+// never below these floors (Next 16.4.1 fixes RCE and Server Actions advisories).
+const peerFloors = { next: "16.4.1", react: "19.2.8" };
 const compareVersions = (a, b) => {
   const [x, y] = [a, b].map((version) => version.split(".").map(Number));
   return x[0] - y[0] || x[1] - y[1] || x[2] - y[2];

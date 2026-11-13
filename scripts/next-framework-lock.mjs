@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 
 const sri = (bytes) => `sha512-${createHash("sha512").update(bytes).digest("base64")}`;
 // pnpm writes YAML keys and scalars plain unless they start with an indicator or
-// contain spaces: scoped names and ranges such as '>=16.3.8 <17' are single-quoted.
+// contain spaces: scoped names and ranges such as '>=16.4.1 <17' are single-quoted.
 export const yamlKey = (name) => (/^[A-Za-z0-9_.-]+$/.test(name) ? name : `'${name}'`);
 export const yamlValue = (value) =>
   /^[A-Za-z0-9~_.][A-Za-z0-9~_.-]*$/.test(value) ? value : `'${value}'`;
