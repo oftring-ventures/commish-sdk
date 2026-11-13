@@ -3,6 +3,27 @@
 Notable changes to `@commish/sdk`, `@commish/next`, and `commish`, which release
 together with one version. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## 0.7.0 - 2026-11-13
+
+### Added
+
+- TEST setup requests onboarding access in the same browser approval, so setup,
+  verification and program activation can share a management grant lasting up to
+  one day. `--no-onboarding` declines it; LIVE setup never requests it. Older
+  servers continue to provision setup and report `onboarding: null`.
+- `commish test rehearsal` creates the approving owner's or admin's own Test
+  partnership and returns its referral link. Repeated calls reuse the partnership.
+  Owners without a creator role or handle can rehearse with a private test profile;
+  the command reports any remaining handle, role or program activation steps.
+
+### Changed
+
+- The setup playbook uses onboarding access and the rehearsal command to guide
+  an attributed TEST purchase. Opening the referral link and buying in Test
+  remains necessary to prove the integration.
+- The SDK, Next adapter and `commish` launcher release together at 0.7.0.
+  The launcher pins `@commish/sdk@0.7.0`; Next accepts `@commish/sdk@~0.7.0`.
+
 ## 0.6.0 - 2026-11-12
 
 ### Added
