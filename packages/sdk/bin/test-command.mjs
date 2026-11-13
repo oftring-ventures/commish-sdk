@@ -18,7 +18,7 @@ export const testHelp = () => ({
   webhook:
     "Signs a synthetic TEST conversion.created event with COMMISH_WEBHOOK_SIGNING_SECRET; verifies only local receiver HTTP acceptance, not a stored conversion, real delivery or payout.",
   rehearsal:
-    "Creates the approving owner's Test partnership on an active program and returns its referralUrl, using a management grant with programs.write (the onboarding grant from setup works). The owner needs the creator role; the first rehearsal names their private creator handle. Opening the link and buying in Test is still the proof.",
+    "Creates the approving owner's Test partnership on an active program and returns its referralUrl, using a management grant with programs.write (the onboarding grant from setup works). The owner needs no creator role: an owner who is not a creator rehearses with a private test profile the server prepares. Only an owner who is a creator without a profile names a handle with --handle. Opening the link and buying in Test is still the proof.",
   output: "JSON only; no signing or integration secret is printed",
 });
 export async function executeTest(args, options = {}) {
@@ -131,12 +131,12 @@ export async function executeTest(args, options = {}) {
           humanAction: "add_creator_role",
           url: `${new URL(client.baseUrl).origin}/account/roles?role=creator`,
           nextAction:
-            "Ask the approving owner or admin to add the creator role at url, then rerun the same command.",
+            "The approving account has a creator profile but not the creator role. Ask the owner or admin to add the role at url, then rerun the same command.",
         },
         creator_handle_required: {
           humanAction: "choose_creator_handle",
           nextAction:
-            "Ask the owner for a creator handle (3-40 lowercase letters, numbers, hyphens or underscores) and rerun with --handle.",
+            "The owner is a creator without a profile yet. Ask them for a creator handle (3-40 lowercase letters, numbers, hyphens or underscores) and rerun with --handle.",
         },
         creator_handle_unavailable: {
           humanAction: "choose_creator_handle",
