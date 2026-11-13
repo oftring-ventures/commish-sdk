@@ -20,7 +20,7 @@ pnpm add --save-exact @commish/next@0.6.0
 
 The SDK client also runs on edge runtimes; webhook verification and the Next
 server helpers need Node. The Next adapter requires the same SDK minor version
-(`~0.6.0`), Next >=16.3.8 <17 and
+(`~0.6.0`), Next >=16.4.1 <17 and
 React >=19.2.8 <20. Other frameworks can use the core SDK directly.
 
 ## Start in TEST

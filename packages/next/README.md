@@ -14,9 +14,10 @@ This guide describes 0.6.0; check [npm](https://www.npmjs.com/package/@commish/n
 for published availability. Pages first appears in 0.3.0. See the
 [Pages integration guide](guides/pages.md) and [agent guide](guides/agents.md).
 
-The `next` peer range is `>=16.3.8 <17`, which excludes Next.js versions
-with the image-optimization SSRF and associated cache-disclosure vulnerabilities.
-Existing merchants should upgrade Next to 16.3.8 or newer before upgrading
+The `next` peer range is `>=16.4.1 <17`, which excludes Next.js versions
+affected by the remote-code-execution and Server Actions denial-of-service
+advisories fixed in 16.4.1.
+Existing merchants should upgrade Next to 16.4.1 or newer before upgrading
 this package so their production application uses the patched framework.
 
 ## Capture route

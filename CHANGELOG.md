@@ -13,6 +13,13 @@ together with one version. The format follows [Keep a Changelog](https://keepach
   lifetimes and widened server receipts are refused. Credential and webhook
   changes still require an authenticator check less than one hour old.
 
+### Security
+
+- Raise the Next.js minimum and tested version to 16.4.1, fixing
+  GHSA-673q-mjm6-r5xr, GHSA-2464-fhr4-w9xw and GHSA-p3m5-59mp-jv5r.
+  Next.js applications must upgrade to 16.4.1 or later in the 16.x line
+  before installing this release.
+
 ### Changed
 
 - Setup documentation names the Business server credential shown in the

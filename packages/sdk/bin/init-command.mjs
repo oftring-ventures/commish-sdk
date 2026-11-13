@@ -2,7 +2,7 @@ import manifest from "../package.json" with { type: "json" };
 import { inspectRepository } from "./setup-plan.mjs";
 
 // @commish/next peer ranges; scripts/init-command.test.mjs keeps them equal to its manifest.
-export const nextPeers = { next: ">=16.3.8 <17", react: ">=19.2.8 <20" };
+export const nextPeers = { next: ">=16.4.1 <17", react: ">=19.2.8 <20" };
 const managers = {
   pnpm: { add: "pnpm add --save-exact", exec: "pnpm exec" },
   npm: { add: "npm install --save-exact", exec: "npx" },

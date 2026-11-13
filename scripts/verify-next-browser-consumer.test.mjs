@@ -84,7 +84,7 @@ function fixture(react = false, server = false, framework = react) {
     };
     if (name === "next" && react) manifest.exports["./react"] = pair("provider");
     if (name === "next" && framework) {
-      Object.assign(manifest.peerDependencies, { next: ">=16.3.8 <17", react: ">=19.2.8 <20" });
+      Object.assign(manifest.peerDependencies, { next: ">=16.4.1 <17", react: ">=19.2.8 <20" });
     }
     if (name === "next" && server) {
       manifest.exports["."] = pair("index", true);
@@ -550,8 +550,8 @@ importers:
         specifier: 19.2.18
         version: 19.2.18
       next:
-        specifier: 16.3.8
-        version: 16.3.8(react@19.2.8)
+        specifier: 16.4.1
+        version: 16.4.1(react@19.2.8)
       react:
         specifier: 19.2.8
         version: 19.2.8
