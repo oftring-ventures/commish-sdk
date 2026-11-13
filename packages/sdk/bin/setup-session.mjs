@@ -94,7 +94,8 @@ export function createSetupSession(
   if (
     !record(input) ||
     Object.keys(input).some(
-      (key) => !["mode", "operations", "workspaceRequest", "setupIntent"].includes(key),
+      (key) =>
+        !["mode", "operations", "workspaceRequest", "setupIntent", "onboarding"].includes(key),
     )
   )
     fail("invalid_request");
@@ -111,14 +112,40 @@ export function createSetupSession(
   const workspace = input.workspaceRequest;
   validateSetupWorkspace(workspace);
   if (input.setupIntent !== undefined) validateSetupIntent(input.setupIntent);
+  // One approval can also authorize an onboarding management grant. Only its
+  // bearer's hash travels, and only with a reviewed Test request.
+  const onboarding = input.onboarding;
+  if (
+    onboarding !== undefined &&
+    !(
+      mode === "test" &&
+      input.setupIntent !== undefined &&
+      keys(onboarding, ["challengeHash", "scopes", "expiresIn"]) &&
+      /^[a-f0-9]{64}$/.test(onboarding.challengeHash) &&
+      Array.isArray(onboarding.scopes) &&
+      onboarding.scopes.length > 0 &&
+      onboarding.scopes.length <= 14 &&
+      new Set(onboarding.scopes).size === onboarding.scopes.length &&
+      onboarding.scopes.every(
+        (scope) => typeof scope === "string" && /^[a-z]+\.(read|write|replay)$/.test(scope),
+      ) &&
+      !onboarding.scopes.includes("invitations.write") &&
+      Number.isInteger(onboarding.expiresIn) &&
+      onboarding.expiresIn >= 60 &&
+      onboarding.expiresIn <= 86_400
+    )
+  )
+    fail("invalid_request");
   const expected = structuredClone({
     mode,
     operations: requested,
     ...(workspace ? { workspaceRequest: workspace } : {}),
     ...(input.setupIntent ? { setupIntent: input.setupIntent } : {}),
+    ...(onboarding ? { onboarding } : {}),
   });
   const verifier = randomBytes(32).toString("base64url");
   const hash = createHash("sha256").update(verifier).digest("hex");
+  if (onboarding?.challengeHash === hash) fail("invalid_request");
   const pairingCode = `${hash.slice(0, 4)}-${hash.slice(4, 8)}`.toUpperCase();
   const beginPath = expected.setupIntent
     ? "/api/cli/setup-sessions/reviewed"
@@ -233,7 +260,15 @@ export function createSetupSession(
         Date.parse(result.requestExpiresAt) <= now() ||
         Date.parse(result.requestExpiresAt) > now() + 3_660_000 ||
         !sameWorkspace(result.workspaceRequest, expected.workspaceRequest) ||
-        (expected.setupIntent && !sameSetupIntent(result.setupIntent, expected.setupIntent))
+        (expected.setupIntent && !sameSetupIntent(result.setupIntent, expected.setupIntent)) ||
+        // The server must echo exactly the link that was asked for, or none.
+        (onboarding
+          ? !keys(result.onboarding, ["requestId", "scopes", "expiresIn"]) ||
+            result.onboarding.requestId !== onboarding.challengeHash ||
+            result.onboarding.expiresIn !== onboarding.expiresIn ||
+            !Array.isArray(result.onboarding.scopes) ||
+            [...result.onboarding.scopes].sort().join() !== [...onboarding.scopes].sort().join()
+          : result.onboarding !== undefined)
       )
         fail("invalid_response");
       return {
@@ -244,6 +279,9 @@ export function createSetupSession(
         mode,
         operations: [...expected.operations],
         requestExpiresAt: result.requestExpiresAt,
+        ...(onboarding
+          ? { onboarding: { scopes: [...onboarding.scopes], expiresIn: onboarding.expiresIn } }
+          : {}),
       };
     },
     async poll() {

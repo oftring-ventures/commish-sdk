@@ -55,7 +55,14 @@ const guidance = (code) =>
   })[code] ?? "Review the setup configuration and rerun the same command.";
 function progressText(event) {
   if (event.status === "authorization_required")
-    return `Authorize at ${event.approvalUrl}\nConfirm pairing code ${event.pairingCode}.`;
+    return (
+      `Authorize at ${event.approvalUrl}\nConfirm pairing code ${event.pairingCode}.` +
+      (event.onboarding
+        ? `\nThis approval also grants Test onboarding access for up to ${Math.round(event.onboarding.expiresIn / 3600)} hours.`
+        : "")
+    );
+  if (event.status === "onboarding_unavailable")
+    return "This server does not grant onboarding access with setup; continuing without it.";
   if (event.status === "authorized")
     return `Authorized ${event.mode.toUpperCase()} workspace ${event.workspaceId}.`;
   if (event.status === "publish_required")
@@ -80,7 +87,7 @@ function resultText(result) {
     return (
       "commish setup [options]\n\n" +
       setupFlags.join("\n") +
-      "\n\nReads commish.setup.json by default. Program, terms, webhook and participant consent are explicit business inputs.\nTEST is the default. --plan inspects local configuration and repository metadata without network requests or writes.\n--no-open prints browser handoffs; --wait sets a 0–600 second provisioning wait.\nWith --json, progress goes to stderr and one final receipt goes to stdout."
+      "\n\nReads commish.setup.json by default. Program, terms, webhook and participant consent are explicit business inputs.\nTEST is the default. --plan inspects local configuration and repository metadata without network requests or writes.\n--no-open prints browser handoffs; --wait sets a 0–600 second provisioning wait.\nTEST approval also grants onboarding access (up to one day, Test only) for commish manage and commish doctor; --no-onboarding declines it.\nWith --json, progress goes to stderr and one final receipt goes to stdout."
     );
   if (["input_required", "invalid_config"].includes(result.status))
     return `Setup ${result.status.replaceAll("_", " ")}: ${result.fields.join(", ")}.\nProvide these in commish.setup.json or explicit flags; see commish setup --help.`;
@@ -88,6 +95,10 @@ function resultText(result) {
   return (
     `Setup ${result.status.replaceAll("_", " ")} (${result.mode.toUpperCase()}).\nWorkspace: ${result.workspaceId}\nApplication: ${result.applicationId}\nProgram: ${result.programId}\nCredentials file: ${result.credentialsFile}\n` +
     (result.webhookFile ? `Webhook secret file: ${result.webhookFile}\n` : "") +
+    (result.onboarding
+      ? `Onboarding access (${result.onboarding.status}): ${result.onboarding.authorizationFile}\n` +
+        "Use it with commish manage and commish doctor (--auth-file) instead of approving again.\n"
+      : "") +
     `Remaining steps: ${result.readiness.actions.join(", ") || "complete integration acceptance"}.\nIntegration remains unverified. Rerun this command to resume.`
   );
 }

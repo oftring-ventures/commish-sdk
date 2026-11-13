@@ -228,6 +228,27 @@ contains the endpoint signing material. Private files have owner-only permission
 The CLI prints paths, never secret values. Supply them to your existing secret
 manager/environment runner; they are not automatically loaded or deployed.
 
+In TEST, the same approval also grants **onboarding access**: a management
+grant for the work that outlasts the setup session's ten minutes. The receipt
+reports it as `onboarding`, with a private `authorizationFile`, the granted
+scopes and its expiry. It lasts up to one day, works in Test only, cannot send
+invitations or change credentials, and is shown to the approver on the same
+consent page. Use it instead of asking for another approval:
+
+```sh
+commish manage destinations.verify --body-file verify.json \
+  --auth-file .commish/management/REQUEST/authorization.json --mode test --json
+commish manage programs.activate --body-file activate.json \
+  --auth-file .commish/management/REQUEST/authorization.json --mode test --json
+commish doctor --program prg_123456789012 \
+  --auth-file .commish/management/REQUEST/authorization.json --mode test --json
+```
+
+`--no-onboarding` declines it. LIVE setup never requests it. A server that does
+not support the single approval is provisioned as before and the receipt
+reports `"onboarding": null`. Each approved run stores its own grant; revoke one
+early with `commish auth revoke --auth-file <path> --mode test`.
+
 Rerun the **same command and configuration** after interruption or uncertainty.
 Completed resource IDs, credential material and webhook identity are reused.
 Existing differing files, symlinks, tracked private state and changed setup

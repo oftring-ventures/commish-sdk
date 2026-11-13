@@ -19,7 +19,7 @@ const strings = [
   "participant-consent",
   "wait",
 ];
-const booleans = ["json", "no-open", "non-interactive", "plan", "help"];
+const booleans = ["json", "no-open", "non-interactive", "no-onboarding", "plan", "help"];
 export const setupFlags = [
   ...strings.map((name) => `--${name} <value>`),
   ...booleans.map((name) => `--${name}`),
@@ -117,6 +117,7 @@ export function parseSetupArguments(root, args) {
       ...(v.plan ? { plan: true } : {}),
       noOpen: v["no-open"] === true,
       nonInteractive: v["non-interactive"] === true,
+      onboarding: v["no-onboarding"] !== true,
       waitSeconds: Number(wait),
     },
   };

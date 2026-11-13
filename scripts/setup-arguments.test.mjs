@@ -38,8 +38,13 @@ test("missing choices produce fixed input requirements without accessing the net
     json: true,
     noOpen: true,
     nonInteractive: true,
+    onboarding: true,
     waitSeconds: 300,
   });
+  assert.equal(
+    parseSetupArguments(root(t), ["--json", "--no-onboarding"]).options.onboarding,
+    false,
+  );
 });
 test("loads non-secret configuration with TEST default and explicit overrides", (t) => {
   const path = root(t);
