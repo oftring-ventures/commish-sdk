@@ -90,14 +90,36 @@ export async function executeTest(args, options = {}) {
         data.workspaceId !== receipt.context.workspaceId ||
         data.programId !== v.program ||
         !/^mbr_[A-Za-z0-9_-]{12,}$/.test(data.membershipId ?? "") ||
-        data.status !== "active"
+        data.status !== "active" ||
+        (data.creatorId !== undefined && !/^cr_[A-Za-z0-9_-]{12,}$/.test(data.creatorId)) ||
+        (data.activatedAt !== undefined &&
+          (typeof data.activatedAt !== "string" ||
+            !Number.isFinite(Date.parse(data.activatedAt)))) ||
+        (data.replayed !== undefined && typeof data.replayed !== "boolean")
       )
         fail("invalid_response");
+      // Print only the validated, non-secret fields: never the server's whole object.
+      const receiptData = Object.fromEntries(
+        [
+          "membershipId",
+          "workspaceId",
+          "programId",
+          "programSlug",
+          "creatorId",
+          "creatorHandle",
+          "status",
+          "activatedAt",
+          "replayed",
+        ]
+          .filter((name) => data[name] !== undefined)
+          .map((name) => [name, data[name]]),
+      );
+      receiptData.referralUrl = link.href;
       return {
         version: 1,
         status: "ok",
         mode: "test",
-        data,
+        data: receiptData,
         integrationVerified: false,
         nextAction:
           "Open referralUrl, complete a Test purchase in your product, then read the conversion and commission with commish doctor --program.",

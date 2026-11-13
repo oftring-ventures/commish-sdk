@@ -473,8 +473,20 @@ test("rehearsal creates the owner's Test partnership with a management grant and
   assert.deepEqual(sent.body, { programId: "prg_123456789012", handle: "pixelcraft-test" });
   assert.equal(result.status, "ok");
   assert.equal(result.data.referralUrl, partnership.referralUrl);
+  assert.deepEqual(result.data, partnership);
   assert.equal(result.integrationVerified, false);
   assert(!JSON.stringify(result).includes(token));
+  // Only validated fields are printed, even if the server adds one carrying the bearer.
+  const extra = await executeTest(["rehearsal", "--program", "prg_123456789012"], {
+    env,
+    fetcher: async (_url, init) =>
+      envelope("programs.rehearse", {
+        ...partnership,
+        debugAuthorization: init.headers.authorization,
+      }),
+  });
+  assert.deepEqual(extra.data, partnership);
+  assert(!JSON.stringify(extra).includes(token));
   const refused = (code, status) => async () => Response.json({ error: { code } }, { status });
   const role = await executeTest(["rehearsal", "--program", "prg_123456789012"], {
     env,
