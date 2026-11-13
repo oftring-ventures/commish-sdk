@@ -97,6 +97,26 @@ normal secret-management workflow.
   returns exit 2. Refunds, recurring purchases, payouts and LIVE readiness need
   their own checks.
 
+To get the TEST referral link without the dashboard, rehearse the program with
+a management grant that holds `programs.write` (the onboarding grant from setup
+does):
+
+```sh
+commish test rehearsal --program prg_123456789012 --handle your-handle \
+  --auth-file .commish/management/REQUEST/authorization.json --json
+```
+
+It creates the approving owner's or admin's own Test partnership on an active
+program and returns `referralUrl`; running it again returns the same
+partnership. It adds no authority: the owner must hold the creator role, and
+the first rehearsal creates their private creator profile under `--handle`.
+When a person has to act it exits 2 with `status: "action_required"`:
+`creator_role_required` names the page where the owner adds the role,
+`creator_handle_required` asks for a handle, `creator_handle_unavailable` asks
+for another one (it is taken or reserved), and `program_not_active` means the
+offer has to be activated first. Opening the link and buying in Test remains
+the proof; the command only removes the dashboard step.
+
 A configured result is useful progress, not an installation failure. Follow its
 remaining actions; do not repeat setup solely to make `integrationVerified` true.
 

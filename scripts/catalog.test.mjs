@@ -16,7 +16,8 @@ import management from "../packages/sdk/bin/management-catalog.json" with { type
 
 test("management discovery retains its separate authority and fixed operations", () => {
   assert.equal(management.protocol, "commish-management-v1");
-  assert.equal(Object.keys(management.operations).length, 24);
+  assert.equal(Object.keys(management.operations).length, 25);
+  assert.equal(management.operations["programs.rehearse"].scope, "programs.write");
   assert.equal(management.authorization.integrationKeysAccepted, false);
   assert.equal(management.authorization.automationReadOnly, true);
   for (const op of Object.values(management.operations)) {

@@ -444,6 +444,124 @@ test("TEST helpers forbid LIVE and remote receivers; webhook signatures match th
   assert(!JSON.stringify(result).includes(secret));
 });
 
+test("rehearsal creates the owner's Test partnership with a management grant and names human steps", async () => {
+  const env = { COMMISH_MANAGEMENT_TOKEN: token };
+  const partnership = {
+    membershipId: "mbr_123456789012",
+    workspaceId: proposal.workspaceId,
+    programId: "prg_123456789012",
+    programSlug: "pixel-partners",
+    creatorId: "cr_123456789012",
+    creatorHandle: "pixelcraft-test",
+    status: "active",
+    activatedAt: "2026-11-12T12:00:00.000Z",
+    replayed: false,
+    referralUrl: "https://commish.sh/p/test/pixel-partners/pixelcraft-test",
+  };
+  let sent;
+  const result = await executeTest(
+    ["rehearsal", "--program", "prg_123456789012", "--handle", "pixelcraft-test"],
+    {
+      env,
+      fetcher: async (url, init) => {
+        sent = { url, body: JSON.parse(init.body) };
+        return envelope("programs.rehearse", partnership);
+      },
+    },
+  );
+  assert.equal(sent.url, "https://app.commish.sh/api/management/v1/programs.rehearse");
+  assert.deepEqual(sent.body, { programId: "prg_123456789012", handle: "pixelcraft-test" });
+  assert.equal(result.status, "ok");
+  assert.equal(result.data.referralUrl, partnership.referralUrl);
+  assert.deepEqual(result.data, partnership);
+  assert.equal(result.integrationVerified, false);
+  assert(!JSON.stringify(result).includes(token));
+  // Only validated fields are printed, even if the server adds one carrying the bearer.
+  const extra = await executeTest(["rehearsal", "--program", "prg_123456789012"], {
+    env,
+    fetcher: async (_url, init) =>
+      envelope("programs.rehearse", {
+        ...partnership,
+        debugAuthorization: init.headers.authorization,
+      }),
+  });
+  assert.deepEqual(extra.data, partnership);
+  assert(!JSON.stringify(extra).includes(token));
+  const refused = (code, status) => async () => Response.json({ error: { code } }, { status });
+  const role = await executeTest(["rehearsal", "--program", "prg_123456789012"], {
+    env,
+    fetcher: refused("creator_role_required", 403),
+  });
+  assert.deepEqual(
+    [role.status, role.code, role.humanAction, role.url],
+    [
+      "action_required",
+      "creator_role_required",
+      "add_creator_role",
+      "https://app.commish.sh/account/roles?role=creator",
+    ],
+  );
+  const handle = await executeTest(["rehearsal", "--program", "prg_123456789012"], {
+    env,
+    fetcher: refused("creator_handle_required", 422),
+  });
+  assert.equal(handle.humanAction, "choose_creator_handle");
+  const taken = await executeTest(["rehearsal", "--program", "prg_123456789012"], {
+    env,
+    fetcher: refused("creator_handle_unavailable", 409),
+  });
+  assert.deepEqual(
+    [taken.status, taken.code, taken.humanAction],
+    ["action_required", "creator_handle_unavailable", "choose_creator_handle"],
+  );
+  assert.equal(
+    (
+      await executeTest(["rehearsal", "--program", "prg_123456789012"], {
+        env,
+        fetcher: refused("program_not_active", 409),
+      })
+    ).code,
+    "program_not_active",
+  );
+  // Anything else stays an error, and a tampered receipt is refused.
+  await assert.rejects(
+    executeTest(["rehearsal", "--program", "prg_123456789012"], {
+      env,
+      fetcher: refused("scope_denied", 403),
+    }),
+    /scope_denied/,
+  );
+  for (const patch of [
+    { referralUrl: "http://attacker.example/p/test/x/y" },
+    { referralUrl: "https://commish.sh/p/test/other-program/pixelcraft-test" },
+    { referralUrl: "https://commish.sh/p/test/pixel-partners/pixelcraft-test?next=/x" },
+    { workspaceId: "wrk_other123456789" },
+    { programId: "prg_other1234567" },
+    { status: "pending" },
+  ])
+    await assert.rejects(
+      executeTest(["rehearsal", "--program", "prg_123456789012"], {
+        env,
+        fetcher: async () => envelope("programs.rehearse", { ...partnership, ...patch }),
+      }),
+      /invalid_response/,
+    );
+  for (const args of [
+    ["rehearsal"],
+    ["rehearsal", "--program", "prg_123456789012", "--handle", "No"],
+    ["rehearsal", "--program", "prg_123456789012", "--url", "http://127.0.0.1:1/hook"],
+    ["fixture", "--program", "prg_123456789012", "--handle", "pixelcraft-test"],
+  ])
+    await assert.rejects(executeTest(args, { env, fetcher: noRequest }), /invalid_arguments/);
+  await assert.rejects(
+    executeTest(["rehearsal", "--program", "prg_123456789012", "--mode", "live"], {
+      env,
+      fetcher: noRequest,
+    }),
+    /test_mode_required/,
+  );
+});
+
 test("login keeps waiting through gateway errors and names its authorization file on failure", async (t) => {
   const root = directory(t),
     notices = [];

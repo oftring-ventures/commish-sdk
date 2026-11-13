@@ -1,6 +1,7 @@
 import { createHmac, randomUUID } from "node:crypto";
 import { executeApi } from "./api-command.mjs";
-import { argumentsFor, errorReceipt, fail } from "./cli-http.mjs";
+import { argumentsFor, CliError, errorReceipt, fail } from "./cli-http.mjs";
+import { managementClient } from "./management-client.mjs";
 export const testHelp = () => ({
   version: 1,
   status: "help",
@@ -8,6 +9,7 @@ export const testHelp = () => ({
     "test fixture --program <id>",
     "test conversion --body-file <path> --idempotency-key <identity>",
     "test webhook --url <loopback-url>",
+    "test rehearsal --program <id> [--handle <handle>] --auth-file <path>",
   ],
   defaultMode: "test",
   liveSupported: false,
@@ -15,22 +17,147 @@ export const testHelp = () => ({
     "Produces a manual conversion input; supply real referral attribution in a private body file to test attribution. Never re-ingest a Stripe purchase through the manual API.",
   webhook:
     "Signs a synthetic TEST conversion.created event with COMMISH_WEBHOOK_SIGNING_SECRET; verifies only local receiver HTTP acceptance, not a stored conversion, real delivery or payout.",
+  rehearsal:
+    "Creates the approving owner's Test partnership on an active program and returns its referralUrl, using a management grant with programs.write (the onboarding grant from setup works). The owner needs the creator role; the first rehearsal names their private creator handle. Opening the link and buying in Test is still the proof.",
   output: "JSON only; no signing or integration secret is printed",
 });
 export async function executeTest(args, options = {}) {
   const env = options.env ?? process.env;
   const { values: v, positionals: p } = argumentsFor(
     args,
-    ["program", "mode", "api-url", "body-file", "idempotency-key", "url"],
+    [
+      "program",
+      "mode",
+      "api-url",
+      "body-file",
+      "idempotency-key",
+      "url",
+      "handle",
+      "auth-file",
+      "management-url",
+    ],
     ["help", "json", "non-interactive"],
   );
   if (v.help || !p.length) return testHelp();
   if (
     p.length !== 1 ||
-    !["fixture", "conversion", "webhook"].includes(p[0]) ||
+    !["fixture", "conversion", "webhook", "rehearsal"].includes(p[0]) ||
     (v.mode ?? env.COMMISH_MODE ?? "test") !== "test"
   )
     fail("test_mode_required");
+  if (p[0] !== "rehearsal" && ["handle", "auth-file", "management-url"].some((k) => v[k]))
+    fail("invalid_arguments");
+  if (p[0] === "rehearsal") {
+    if (
+      !/^prg_[A-Za-z0-9_-]{12,}$/.test(v.program ?? "") ||
+      (v.handle !== undefined && !/^[a-z0-9][a-z0-9_-]{2,39}$/.test(v.handle)) ||
+      ["api-url", "body-file", "idempotency-key", "url"].some((k) => v[k])
+    )
+      fail("invalid_arguments");
+    const client = managementClient({
+      root: options.root,
+      env,
+      mode: "test",
+      authFile: v["auth-file"],
+      url: v["management-url"],
+      fetcher: options.fetcher,
+      signal: options.signal,
+    });
+    try {
+      const receipt = await client.call("programs.rehearse", {
+        programId: v.program,
+        ...(v.handle ? { handle: v.handle } : {}),
+      });
+      const data = receipt.data;
+      let link;
+      try {
+        link = new URL(data?.referralUrl);
+      } catch {
+        fail("invalid_response");
+      }
+      if (
+        !(
+          link.protocol === "https:" ||
+          (link.protocol === "http:" && ["127.0.0.1", "[::1]", "localhost"].includes(link.hostname))
+        ) ||
+        // The link is this partnership's TEST referral path in the grant's workspace.
+        typeof data.programSlug !== "string" ||
+        typeof data.creatorHandle !== "string" ||
+        link.pathname !==
+          `/p/test/${encodeURIComponent(data.programSlug)}/${encodeURIComponent(data.creatorHandle)}` ||
+        link.search ||
+        link.hash ||
+        data.workspaceId !== receipt.context.workspaceId ||
+        data.programId !== v.program ||
+        !/^mbr_[A-Za-z0-9_-]{12,}$/.test(data.membershipId ?? "") ||
+        data.status !== "active" ||
+        (data.creatorId !== undefined && !/^cr_[A-Za-z0-9_-]{12,}$/.test(data.creatorId)) ||
+        (data.activatedAt !== undefined &&
+          (typeof data.activatedAt !== "string" ||
+            !Number.isFinite(Date.parse(data.activatedAt)))) ||
+        (data.replayed !== undefined && typeof data.replayed !== "boolean")
+      )
+        fail("invalid_response");
+      // Print only the validated, non-secret fields: never the server's whole object.
+      const receiptData = Object.fromEntries(
+        [
+          "membershipId",
+          "workspaceId",
+          "programId",
+          "programSlug",
+          "creatorId",
+          "creatorHandle",
+          "status",
+          "activatedAt",
+          "replayed",
+        ]
+          .filter((name) => data[name] !== undefined)
+          .map((name) => [name, data[name]]),
+      );
+      receiptData.referralUrl = link.href;
+      return {
+        version: 1,
+        status: "ok",
+        mode: "test",
+        data: receiptData,
+        integrationVerified: false,
+        nextAction:
+          "Open referralUrl, complete a Test purchase in your product, then read the conversion and commission with commish doctor --program.",
+      };
+    } catch (error) {
+      // These need the owner, not a retry: say exactly what to do.
+      const human = {
+        creator_role_required: {
+          humanAction: "add_creator_role",
+          url: `${new URL(client.baseUrl).origin}/account/roles?role=creator`,
+          nextAction:
+            "Ask the approving owner or admin to add the creator role at url, then rerun the same command.",
+        },
+        creator_handle_required: {
+          humanAction: "choose_creator_handle",
+          nextAction:
+            "Ask the owner for a creator handle (3-40 lowercase letters, numbers, hyphens or underscores) and rerun with --handle.",
+        },
+        creator_handle_unavailable: {
+          humanAction: "choose_creator_handle",
+          nextAction:
+            "That handle is taken or reserved. Ask the owner for another creator handle and rerun with --handle.",
+        },
+        program_not_active: {
+          nextAction: "Activate the program first (commish manage programs.activate), then rerun.",
+        },
+      }[error instanceof CliError ? error.message : ""];
+      if (!human) throw error;
+      return {
+        version: 1,
+        status: "action_required",
+        mode: "test",
+        code: error.message,
+        ...human,
+        integrationVerified: false,
+      };
+    }
+  }
   if (p[0] === "fixture") {
     if (
       !/^prg_[A-Za-z0-9_-]{12,}$/.test(v.program ?? "") ||
@@ -134,7 +261,7 @@ export async function runTestCommand(
   try {
     const result = await executeTest(args, options);
     out(JSON.stringify(result));
-    return result.status === "rejected" ? 2 : 0;
+    return ["rejected", "action_required"].includes(result.status) ? 2 : 0;
   } catch (error) {
     diagnostic(JSON.stringify(errorReceipt(error)));
     return 1;
