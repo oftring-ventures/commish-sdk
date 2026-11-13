@@ -44,6 +44,7 @@ const setupGuide = {
     "human_completes_authentication_reviews_business_choices_and_approves_scopes_at_that_url",
     "waiting_cli_provisions_approved_resources",
     "publish_destination_proof_and_wire_application",
+    "continue_in_test_with_the_onboarding_authorization_file_instead_of_another_approval",
     "follow_remaining_readiness_actions_and_demonstrate_attributed_test_conversion_and_commission",
   ],
   authorization: {
@@ -52,9 +53,22 @@ const setupGuide = {
     signupEntryPoint: "setup_approval_url",
     progressStream: "stderr_json_lines",
     event: "authorization_required",
-    fields: ["approvalUrl", "pairingCode", "mode", "operations", "requestExpiresAt"],
+    fields: ["approvalUrl", "pairingCode", "mode", "operations", "requestExpiresAt", "onboarding"],
     pendingMaximumSeconds: 3600,
     approvedMaximumSeconds: 600,
+    // Test approval also authorizes a management grant for the work that
+    // outlasts those ten minutes. The receipt names its private file.
+    onboarding: {
+      includedIn: "test_setup_approval",
+      optOut: "--no-onboarding",
+      receiptField: "onboarding.authorizationFile",
+      maximumSeconds: 86400,
+      liveMode: false,
+      use: [
+        "commish manage <operation> --auth-file <onboarding.authorizationFile> --mode test --json",
+        "commish doctor --program <programId> --auth-file <onboarding.authorizationFile> --mode test --json",
+      ],
+    },
     humanActions: [
       "sign_up_or_sign_in",
       "verify_email_if_needed",
@@ -122,6 +136,8 @@ const guideText = () =>
   "Setup saves keys in owner-only, git-ignored .commish/setup/<mode>/credentials.env.\n" +
   "A policy prohibiting all secret persistence must be resolved before setup. Planning stores no keys.\n" +
   "Program activation, Stripe consent, participant acceptance and application wiring remain explicit steps.\n" +
+  "TEST approval also grants onboarding access for up to one day: pass the receipt's onboarding.authorizationFile\n" +
+  "to commish manage and commish doctor (--auth-file) instead of asking for another approval. --no-onboarding declines it.\n" +
   `Configuration/schema: ${setupGuide.discoveryUrl}\nGuide: ${setupGuide.documentationUrl}`;
 const args = process.argv.slice(2);
 const json = args.includes("--json");

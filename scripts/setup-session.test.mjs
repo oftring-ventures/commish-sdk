@@ -31,6 +31,15 @@ function fixture(input = { operations: ["workspace.read"] }, extra = {}) {
               operations: body.operations,
               workspaceRequest: body.workspaceRequest ?? null,
               ...(body.setupIntent ? { setupIntent: body.setupIntent } : {}),
+              ...(body.onboarding
+                ? {
+                    onboarding: {
+                      requestId: body.onboarding.challengeHash,
+                      scopes: [...body.onboarding.scopes].reverse(),
+                      expiresIn: body.onboarding.expiresIn,
+                    },
+                  }
+                : {}),
               decision: "pending",
               pairingCode: `${hash.slice(0, 4)}-${hash.slice(4, 8)}`.toUpperCase(),
               requestExpiresAt: new Date(now + 3600000).toISOString(),
@@ -311,4 +320,80 @@ test("does not conflate multiple scopes with one comma-containing operation", as
   await session.begin();
   change((value) => ({ ...value, operations: ["application.write,workspace.read"] }));
   await assert.rejects(session.poll(), { message: "invalid_response" });
+});
+
+const reviewed = {
+  version: 1,
+  program: {
+    name: "Guestbook",
+    slug: "guestbook",
+    category: "SaaS",
+    description: "",
+    visibility: "private",
+    joinPolicy: "approval",
+    attributionPolicy: "last_click",
+    eligibleStripeProductIds: [],
+    creatorKit: { summary: "", talkingPoints: [], assets: [] },
+  },
+  terms: {
+    version: 1,
+    commission: { type: "percentage", basisPoints: 1500 },
+    recurrence: { kind: "first_payment" },
+    perSaleCap: null,
+    disclosureText: "I earn a commission.",
+    prohibitedClaims: [],
+  },
+};
+const onboarding = {
+  challengeHash: "b".repeat(64),
+  scopes: ["programs.write", "diagnostics.read"],
+  expiresIn: 86400,
+};
+test("a reviewed Test request sends only the onboarding grant's hash and requires its exact echo", async () => {
+  const input = { operations: ["program.write"], setupIntent: reviewed, onboarding };
+  const { session, calls, change } = fixture(input);
+  const pending = await session.begin();
+  assert.deepEqual(JSON.parse(calls[0].body).onboarding, onboarding);
+  assert.deepEqual(pending.onboarding, { scopes: onboarding.scopes, expiresIn: 86400 });
+  for (const tamper of [
+    (value) => ({ ...value, onboarding: undefined }),
+    (value) => ({ ...value, onboarding: { ...value.onboarding, requestId: "c".repeat(64) } }),
+    (value) => ({ ...value, onboarding: { ...value.onboarding, scopes: ["programs.write"] } }),
+    (value) => ({ ...value, onboarding: { ...value.onboarding, expiresIn: 3600 } }),
+    (value) => ({ ...value, onboarding: { ...value.onboarding, token: "leak" } }),
+    // One joined string is not the two scopes that were asked for.
+    (value) => ({
+      ...value,
+      onboarding: { ...value.onboarding, scopes: [[...onboarding.scopes].sort().join()] },
+    }),
+  ]) {
+    const altered = fixture(input);
+    altered.change(tamper);
+    await assert.rejects(altered.session.begin(), /invalid_response/);
+  }
+  // A server that links a grant nobody asked for is refused too.
+  const unsolicited = fixture({ operations: ["program.write"], setupIntent: reviewed });
+  unsolicited.change((value) => ({
+    ...value,
+    onboarding: { requestId: "c".repeat(64), scopes: ["programs.write"], expiresIn: 60 },
+  }));
+  await assert.rejects(unsolicited.session.begin(), /invalid_response/);
+  change((value) => value);
+});
+test("onboarding is refused before network without review, in Live, or when widened", () => {
+  const base = { operations: ["program.write"], setupIntent: reviewed, onboarding };
+  for (const input of [
+    { ...base, setupIntent: undefined },
+    { ...base, mode: "live" },
+    { ...base, onboarding: { ...onboarding, scopes: ["invitations.write"] } },
+    { ...base, onboarding: { ...onboarding, scopes: [] } },
+    { ...base, onboarding: { ...onboarding, scopes: ["programs.write", "programs.write"] } },
+    { ...base, onboarding: { ...onboarding, expiresIn: 86401 } },
+    { ...base, onboarding: { ...onboarding, challengeHash: "not-a-hash" } },
+    { ...base, onboarding: { ...onboarding, token: "cm_mgmt_test_secret" } },
+  ])
+    assert.throws(
+      () => createSetupSession(input, { fetcher: () => assert.fail("Unexpected network access") }),
+      /invalid_request/,
+    );
 });

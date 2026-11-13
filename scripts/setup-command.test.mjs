@@ -325,3 +325,64 @@ test("missing-input output with explicit inputs asks to plan with the same argum
   assert(samePlan.length < missing(["--plan", "--json"]).length);
   assert.deepEqual(readdirSync(f.root), ["custom.json"]);
 });
+
+test("a stored onboarding grant is offered only when authorized and named when setup fails", async (t) => {
+  const f = fixture(t, true);
+  const file = ".commish/management/bbbbbbbbbbbbbbbbbbbbbbbb/authorization.json";
+  const result = (status) => ({
+    status: "configured",
+    mode: "test",
+    workspaceId: "wrk_123456789012",
+    applicationId: "app_123456789012",
+    programId: "prg_123456789012",
+    credentialsFile: ".commish/setup/test/credentials.env",
+    readiness: { actions: [] },
+    onboarding: { authorizationFile: file, scopes: ["programs.write"], status, expiresAt: null },
+    integrationVerified: false,
+  });
+  await runSetupCommand([], { ...f.options, execute: async () => result("authorized") });
+  assert.match(f.output.pop(), /Use it with commish manage and commish doctor/);
+  await runSetupCommand([], { ...f.options, execute: async () => result("unconfirmed") });
+  const unconfirmed = f.output.pop();
+  assert.doesNotMatch(unconfirmed, /Use it with/);
+  assert.match(
+    unconfirmed,
+    /commish auth status --auth-file \.commish\/management\/b+\/authorization\.json --mode test/,
+  );
+  // A failure after the grant was stored keeps only its non-secret receipt.
+  const failing = async () => {
+    throw Object.assign(new Error("setup_conflict"), {
+      onboarding: {
+        authorizationFile: file,
+        scopes: ["programs.write"],
+        status: "authorized",
+        token: "cm_mgmt_test_secret",
+      },
+    });
+  };
+  assert.equal(await runSetupCommand(["--json"], { ...f.options, execute: failing }), 1);
+  const receipt = JSON.parse(f.output.pop());
+  assert.equal(receipt.code, "setup_conflict");
+  assert.deepEqual(receipt.onboarding, {
+    authorizationFile: file,
+    scopes: ["programs.write"],
+    status: "authorized",
+  });
+  assert(!JSON.stringify(receipt).includes("cm_mgmt_test_secret"));
+  await runSetupCommand([], { ...f.options, execute: failing });
+  const text = f.output.pop();
+  assert.match(text, /Setup failed: setup_conflict/);
+  assert.match(
+    text,
+    /commish auth revoke --auth-file \.commish\/management\/b+\/authorization\.json --mode test/,
+  );
+  assert(!text.includes("cm_mgmt_test_secret"));
+  // A denied approval points at setup without onboarding access.
+  await runSetupCommand([], {
+    ...f.options,
+    execute: async () => {
+      throw new Error("access_denied");
+    },
+  });
+  assert.match(f.output.pop(), /--no-onboarding/);
+});

@@ -228,3 +228,165 @@ test("an abort completing in-flight provisioning cannot open a provider browser"
   assert.equal(f.opened.length, 0);
   assert.equal(f.revoked(), 1);
 });
+
+const proposal = {
+  token: `cm_mgmt_test_${"t".repeat(43)}`,
+  request: { challengeHash: "b".repeat(64), scopes: ["programs.write"], expiresIn: 86400 },
+};
+function grants(stored = []) {
+  return {
+    propose: () => proposal,
+    store: async (root, value, context) => {
+      stored.push({ root, value, context });
+      return {
+        authorizationFile: ".commish/management/bbbbbbbbbbbbbbbbbbbbbbbb/authorization.json",
+        scopes: ["programs.write"],
+        status: "authorized",
+        expiresAt: "2026-10-04T12:00:00.000Z",
+      };
+    },
+  };
+}
+test("Test setup asks for onboarding access in the same approval and stores what was granted", async () => {
+  const f = fixture(),
+    stored = [];
+  f.dependencies.authorize = async (input, flags) => {
+    f.authorizations.push({ input, flags });
+    return {
+      session: f.session,
+      receipt: { workspaceId: "wrk_123456789012", expiresAt: "2026-10-03T12:10:00.000Z" },
+      onboarding: { scopes: ["programs.write"], expiresIn: 86400 },
+    };
+  };
+  const result = await runSetup("/repo", config, options, {
+    ...f.dependencies,
+    onboarding: grants(stored),
+  });
+  assert.deepEqual(f.authorizations[0].input.onboarding, proposal.request);
+  assert.deepEqual(stored, [
+    {
+      root: "/repo",
+      value: proposal,
+      context: { workspaceId: "wrk_123456789012", appUrl: options.appUrl, signal: undefined },
+    },
+  ]);
+  assert.equal(result.onboarding.status, "authorized");
+  assert.match(result.onboarding.authorizationFile, /^\.commish\/management\//);
+  assert(!JSON.stringify([result, f.notices]).includes(proposal.token));
+});
+test("Live setup, an opt-out and an approval without the link never store a grant", async () => {
+  for (const [setup, flags] of [
+    [{ ...config, mode: "live" }, options],
+    [config, { ...options, onboarding: false }],
+    [config, options],
+  ]) {
+    const f = fixture(),
+      stored = [];
+    if (setup.mode === "live") f.result.mode = "live";
+    const result = await runSetup("/repo", setup, flags, {
+      ...f.dependencies,
+      onboarding: grants(stored),
+    });
+    assert.equal(result.onboarding, null);
+    assert.equal(stored.length, 0);
+    assert.equal(
+      f.authorizations[0].input.onboarding !== undefined,
+      setup.mode === "test" && flags.onboarding !== false,
+    );
+  }
+});
+test("a server without the single consent is provisioned as before, without the grant", async () => {
+  const f = fixture(),
+    stored = [];
+  let attempts = 0;
+  f.dependencies.authorize = async (input) => {
+    f.authorizations.push({ input });
+    if (attempts++ === 0) throw new Error("invalid_request");
+    return { session: f.session, receipt: { expiresAt: "2026-10-03T12:10:00.000Z" } };
+  };
+  const result = await runSetup("/repo", config, options, {
+    ...f.dependencies,
+    onboarding: grants(stored),
+  });
+  assert.equal(result.status, "configured");
+  assert.equal(result.onboarding, null);
+  assert.deepEqual(f.authorizations[0].input.onboarding, proposal.request);
+  assert.equal(f.authorizations[1].input.onboarding, undefined);
+  assert.equal(f.notices[0].status, "onboarding_unavailable");
+  assert.equal(stored.length, 0);
+  // Without a proposal the same refusal is a real error.
+  const g = fixture();
+  g.dependencies.authorize = async () => {
+    throw new Error("invalid_request");
+  };
+  await assert.rejects(
+    runSetup("/repo", config, { ...options, onboarding: false }, g.dependencies),
+    /invalid_request/,
+  );
+});
+test("a failure after the grant is stored names it, so it can be used or revoked", async () => {
+  const linked = (f) => async (input, flags) => {
+    f.authorizations.push({ input, flags });
+    return {
+      session: f.session,
+      receipt: { workspaceId: "wrk_123456789012", expiresAt: "2026-10-03T12:10:00.000Z" },
+      onboarding: { scopes: ["programs.write"], expiresIn: 86400 },
+    };
+  };
+  // Provisioning refuses after the grant is stored.
+  const f = fixture();
+  f.dependencies.authorize = linked(f);
+  f.dependencies.provision = async () => {
+    throw new Error("setup_conflict");
+  };
+  const failure = await runSetup("/repo", config, options, {
+    ...f.dependencies,
+    onboarding: grants([]),
+  }).catch((error) => error);
+  assert.equal(failure.message, "setup_conflict");
+  assert.equal(failure.onboarding.status, "authorized");
+  assert.match(failure.onboarding.authorizationFile, /^\.commish\/management\//);
+  assert(!JSON.stringify(failure.onboarding).includes(proposal.token));
+  assert.equal(f.revoked(), 1);
+  // An interruption during provisioning keeps the name too.
+  const g = fixture(),
+    controller = new AbortController();
+  g.dependencies.authorize = linked(g);
+  g.dependencies.provision = async () => {
+    controller.abort();
+    throw new Error("private-fixture");
+  };
+  const interrupted = await runSetup("/repo", config, options, {
+    ...g.dependencies,
+    onboarding: grants([]),
+    signal: controller.signal,
+  }).catch((error) => error);
+  assert.equal(interrupted.message, "setup_interrupted");
+  assert.match(interrupted.onboarding.authorizationFile, /^\.commish\/management\//);
+  // A store interrupted after writing its file names it on its own error.
+  const h = fixture();
+  h.dependencies.authorize = linked(h);
+  const named = await runSetup("/repo", config, options, {
+    ...h.dependencies,
+    onboarding: {
+      propose: () => proposal,
+      store: async () => {
+        throw Object.assign(new Error("setup_interrupted"), {
+          onboarding: {
+            authorizationFile: ".commish/management/x/authorization.json",
+            status: "unconfirmed",
+          },
+        });
+      },
+    },
+  }).catch((error) => error);
+  assert.equal(named.message, "setup_interrupted");
+  assert.equal(named.onboarding.authorizationFile, ".commish/management/x/authorization.json");
+  // Without a stored grant nothing is attached.
+  const i = fixture();
+  i.dependencies.provision = async () => {
+    throw new Error("setup_conflict");
+  };
+  const plain = await runSetup("/repo", config, options, i.dependencies).catch((error) => error);
+  assert.equal(plain.onboarding, undefined);
+});

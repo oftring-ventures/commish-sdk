@@ -84,7 +84,8 @@ export async function authorizeSetup(
         if (receipt.status === "authorized") {
           notify({ status: "authorized", ...receipt });
           authorized = true;
-          return { session, receipt };
+          // Whether this approval also authorized the requested onboarding grant.
+          return { session, receipt, onboarding: pending.onboarding ?? null };
         }
         if (receipt.status === "denied" || receipt.status === "revoked")
           throw new Error("access_denied");
