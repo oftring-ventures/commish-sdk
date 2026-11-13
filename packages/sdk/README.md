@@ -102,20 +102,24 @@ a management grant that holds `programs.write` (the onboarding grant from setup
 does):
 
 ```sh
-commish test rehearsal --program prg_123456789012 --handle your-handle \
+commish test rehearsal --program prg_123456789012 \
   --auth-file .commish/management/REQUEST/authorization.json --json
 ```
 
 It creates the approving owner's or admin's own Test partnership on an active
 program and returns `referralUrl`; running it again returns the same
-partnership. It adds no authority: the owner must hold the creator role, and
-the first rehearsal creates their private creator profile under `--handle`.
+partnership. The owner needs no creator role and no handle: for an owner who is
+not a creator, the server prepares a private test profile with a generated
+handle. It grants no role, is never public, and is taken over with the handle
+they choose if they later become a creator. An owner who already is a creator
+rehearses as their own profile; if they have none yet, pass `--handle`.
 When a person has to act it exits 2 with `status: "action_required"`:
-`creator_role_required` names the page where the owner adds the role,
-`creator_handle_required` asks for a handle, `creator_handle_unavailable` asks
-for another one (it is taken or reserved), and `program_not_active` means the
-offer has to be activated first. Opening the link and buying in Test remains
-the proof; the command only removes the dashboard step.
+`creator_handle_required` asks for a handle (a creator without a profile),
+`creator_handle_unavailable` asks for another one (it is taken or reserved),
+`creator_role_required` names the page where an account with a creator profile
+but no creator role adds the role, and `program_not_active` means the offer has
+to be activated first. Opening the link and buying in Test remains the proof;
+the command only removes the dashboard step.
 
 A configured result is useful progress, not an installation failure. Follow its
 remaining actions; do not repeat setup solely to make `integrationVerified` true.
