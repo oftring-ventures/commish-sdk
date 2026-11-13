@@ -30,7 +30,7 @@ test("a bare run prints the repository's playbook without reading secrets or wri
   const root = repository(
     t,
     {
-      "package.json": { dependencies: { next: "16.3.8", react: "19.2.8" } },
+      "package.json": { dependencies: { next: "16.4.1", react: "19.2.8" } },
       "pnpm-lock.yaml": "",
       ".env": "SECRET=private-fixture",
     },
@@ -79,7 +79,7 @@ test("commands follow the detected package manager and framework", (t) => {
     assert(guide.markdown.includes("captureReferral"));
     assert(!guide.markdown.includes("@commish/next@"));
   }
-  const ambiguous = repository(t, { "package.json": { dependencies: { next: "16.3.8" } } }, [
+  const ambiguous = repository(t, { "package.json": { dependencies: { next: "16.4.1" } } }, [
     "app",
     "src/app",
   ]);

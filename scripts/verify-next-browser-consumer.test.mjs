@@ -76,15 +76,15 @@ function fixture(react = false, server = false, framework = react) {
   return ["sdk", "next"].map((name) => {
     const manifest = {
       name: `@commish/${name}`,
-      version: "0.5.0",
+      version: "0.6.0",
       type: "module",
       engines: { node: ">=24 <25" },
       exports: { "./browser": pair("browser") },
-      ...(name === "next" ? { peerDependencies: { "@commish/sdk": "0.5.0" } } : {}),
+      ...(name === "next" ? { peerDependencies: { "@commish/sdk": "0.6.0" } } : {}),
     };
     if (name === "next" && react) manifest.exports["./react"] = pair("provider");
     if (name === "next" && framework) {
-      Object.assign(manifest.peerDependencies, { next: ">=16.3.8 <17", react: ">=19.2.8 <20" });
+      Object.assign(manifest.peerDependencies, { next: ">=16.4.1 <17", react: ">=19.2.8 <20" });
     }
     if (name === "next" && server) {
       manifest.exports["."] = pair("index", true);
@@ -418,7 +418,7 @@ test("provider layout freezes registry types then extends the exact local pair o
             install(consumer, packages);
             let generated = locks.paired;
             if (failure === "paired-version")
-              generated = generated.replace("version: 0.5.0", "version: 0.1.0-beta.8");
+              generated = generated.replace("version: 0.6.0", "version: 0.1.0-beta.8");
             if (failure === "paired-integrity")
               generated = generated.replace("integrity: sha512-", "integrity: sha512-changed");
             if (failure === "paired-peer")
@@ -550,8 +550,8 @@ importers:
         specifier: 19.2.18
         version: 19.2.18
       next:
-        specifier: 16.3.8
-        version: 16.3.8(react@19.2.8)
+        specifier: 16.4.1
+        version: 16.4.1(react@19.2.8)
       react:
         specifier: 19.2.8
         version: 19.2.8
