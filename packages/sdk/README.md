@@ -191,6 +191,13 @@ them. Use `webhook: null` to explicitly defer registration, or provide
 `{"url":"https://your-product.example/api/commish/events","eventTypes":["commission.payable"]}`.
 Choose `stripe: "later"` to defer the provider connection.
 
+`terms.returnWindowDays` is optional: the days a buyer may return a purchase, as
+an integer from 0 to 180. Omit it to accept the server default of 30 days; the
+CLI sends nothing and never chooses one for you. The final receipt reports the
+stored value as `returnWindowDays` (`null` when the server does not name one).
+Like every business choice, adding or changing it after setup has started is a
+different configuration: resume with the original file.
+
 ```sh
 pnpm exec commish setup --json --no-open --non-interactive
 ```

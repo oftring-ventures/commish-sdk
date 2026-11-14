@@ -587,6 +587,51 @@ test("implicit term dates preserve retained microsecond timestamps and exact bus
   await assert.rejects(f.resources.createTerms(input), /invalid_response/);
 });
 
+test("a chosen return window is sent and must be echoed; an omitted one accepts the stored default", async () => {
+  const retained = { ...terms, createdAt: app.createdAt };
+  for (const days of [0, 14, 180]) {
+    const f = financialFixture(),
+      input = { ...terms, returnWindowDays: days };
+    f.change({ term: { ...retained, returnWindowDays: days } });
+    assert.equal((await f.resources.createTerms(input)).term.returnWindowDays, days);
+    assert.equal(f.calls[0][2].returnWindowDays, days);
+    // The server default, another value or no value is not the reviewed choice.
+    for (const term of [
+      { ...retained, returnWindowDays: days === 14 ? 30 : 14 },
+      { ...retained, returnWindowDays: String(days) },
+      retained,
+    ]) {
+      f.change({ term });
+      await assert.rejects(f.resources.createTerms(input), /invalid_response/);
+    }
+  }
+  for (const returnWindowDays of [-1, 181, 1.5, "30", null, undefined]) {
+    const f = financialFixture();
+    await assert.rejects(
+      f.resources.createTerms({ ...terms, returnWindowDays }),
+      /invalid_request/,
+    );
+    assert.equal(f.calls.length, 0);
+  }
+  // Omitted: nothing is sent, and the stored value never fails the comparison.
+  for (const stored of [30, 0, 180]) {
+    const f = financialFixture();
+    f.change({ term: { ...retained, returnWindowDays: stored } });
+    const receipt = await f.resources.createTerms(terms);
+    assert.equal(receipt.term.returnWindowDays, stored);
+    assert(!Object.hasOwn(f.calls[0][2], "returnWindowDays"));
+  }
+  const silent = financialFixture();
+  silent.change({ term: retained });
+  assert(!Object.hasOwn((await silent.resources.createTerms(terms)).term, "returnWindowDays"));
+  // A stored value outside the contract is not reconstructed into a receipt.
+  for (const stored of [-1, 181, 1.5, "30", null]) {
+    const f = financialFixture();
+    f.change({ term: { ...retained, returnWindowDays: stored } });
+    await assert.rejects(f.resources.createTerms(terms), /invalid_response/);
+  }
+});
+
 test("focused Stripe handoff binds the exact grant and rejects redirects or extra choices", async () => {
   for (const mode of ["test", "live"]) {
     const f = readinessFixture(mode),

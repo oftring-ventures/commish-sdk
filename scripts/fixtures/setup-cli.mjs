@@ -162,7 +162,10 @@ export async function verifySetupCli(executable) {
         };
       } else if (req.url.endsWith("/terms")) {
         assert(!Object.hasOwn(body, "effectiveAt"));
-        value = { term: { ...body, effectiveAt: createdAt, createdAt } };
+        // The reviewed choice reaches the terms request unchanged; the server
+        // always returns the stored window, its default of 30 when none was sent.
+        assert.equal(body.returnWindowDays, current.setupIntent.terms.returnWindowDays);
+        value = { term: { returnWindowDays: 30, ...body, effectiveAt: createdAt, createdAt } };
       } else if (req.url.endsWith("/credentials")) {
         if (credential)
           assert(
@@ -331,6 +334,7 @@ export async function verifySetupCli(executable) {
         commission: { type: "percentage", basisPoints: 1500 },
         recurrence: { kind: "first_payment" },
         perSaleCap: null,
+        returnWindowDays: 14,
         disclosureText: "I earn a commission.",
       },
       participantConsent: "commish_hosted",
@@ -362,6 +366,7 @@ export async function verifySetupCli(executable) {
       assert.equal(result.result.status, "configured");
       assert.equal(result.result.integrationVerified, false);
       assert.equal(result.result.programId, programId);
+      assert.equal(result.result.returnWindowDays, 14);
       assert(result.notices.some((n) => n.status === "authorization_required"));
       assert(readFileSync(filename).equals(before), "credential file was replaced");
     }
@@ -383,6 +388,11 @@ export async function verifySetupCli(executable) {
     assert.equal(readFileSync(join(root, "app.ts"), "utf8"), "consumer-owned");
     assert.equal(requests.filter((r) => r.path.endsWith("/applications")).length, 1);
     assert.equal(requests.filter((r) => r.path.endsWith("/programs")).length, 1);
+    assert(
+      requests
+        .filter((r) => r.path.endsWith("/terms"))
+        .every((r) => r.body.returnWindowDays === 14),
+    );
     assert.equal(requests.filter((r) => r.method === "DELETE").length, 5);
     assert.deepEqual(authorizations.at(-1).workspaceRequest, { kind: "existing", id: workspaceId });
     assert(

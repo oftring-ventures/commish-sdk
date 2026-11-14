@@ -45,6 +45,7 @@ const termFields = [
   "commission",
   "recurrence",
   "perSaleCap",
+  "returnWindowDays",
   "disclosureText",
   "prohibitedClaims",
   "effectiveAt",
@@ -122,17 +123,26 @@ export function parseSetupConfig(value) {
     else {
       for (const key of ["commission", "recurrence", "perSaleCap", "disclosureText"])
         require(value.terms, key, `terms.${key}`);
+      // The return window stays absent when omitted: the server applies its
+      // default, and saved progress keeps the fingerprint of the same choices.
       terms = { version: 1, prohibitedClaims: [], ...value.terms };
       if (!missing.some((f) => f.startsWith("terms."))) {
-        try {
-          validateSetupTerms({
-            effectiveAt: "2000-01-01T00:00:00.000Z",
-            ...terms,
-            programId: "prg_configuration",
-          });
-        } catch {
-          invalid.push("terms");
-        }
+        const valid = (candidate) => {
+          try {
+            validateSetupTerms({
+              effectiveAt: "2000-01-01T00:00:00.000Z",
+              ...candidate,
+              programId: "prg_configuration",
+            });
+            return true;
+          } catch {
+            return false;
+          }
+        };
+        // Name the optional field only when everything else in terms is valid.
+        const { returnWindowDays: _, ...others } = terms;
+        if (!valid(others)) invalid.push("terms");
+        else if (!valid(terms)) invalid.push("terms.returnWindowDays");
       }
     }
   }
