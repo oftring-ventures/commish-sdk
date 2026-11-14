@@ -682,6 +682,38 @@ cap, return window, prohibited claims, disclosure and effective time. Activation
 requires the selected term version and expected current status/term version.
 Read state first, review the business choices, then submit them unchanged.
 
+`--body-file` takes a path **relative to the directory the command runs in,
+inside the current repository**: no absolute path, no `..` segment and no
+symbolic link. A file elsewhere, such as a system temporary directory, is
+refused; copy it into the repository first. The file must hold one JSON object
+in a regular UTF-8 file of at most 1 MiB. For example, to activate the draft
+program that setup created, with its first term version:
+
+```sh
+commish manage schema programs.activate --json
+cat > activate.json <<'JSON'
+{
+  "programId": "prg_123456789012",
+  "termVersion": 1,
+  "expectedCurrentTermVersion": null,
+  "expectedCurrentStatus": "draft"
+}
+JSON
+commish manage programs.activate --body-file activate.json \
+  --auth-file .commish/management/REQUEST/authorization.json --mode test --json
+```
+
+A refused file fails before any request with `code: "invalid_body_file"` and a
+fixed `reason` and `guidance`; the path and the file's contents are never echoed:
+
+| `reason` | Meaning |
+| --- | --- |
+| `path_not_repository_relative` | The path is absolute, leaves the repository or passes through a symbolic link. |
+| `file_missing` | No file exists at that relative path. |
+| `file_unreadable` | Not a readable regular UTF-8 file of at most 1 MiB. |
+| `invalid_json` | The file is not valid JSON. |
+| `json_object_required` | The JSON is valid but is not a single object. |
+
 `keys create` and `keys rotate` generate and save integration key material
 privately before the first request. They return a credential-file path, never
 the secret. Keep the same operation identity on retries:

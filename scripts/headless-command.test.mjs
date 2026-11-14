@@ -1,7 +1,15 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { createHmac } from "node:crypto";
-import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -9,7 +17,11 @@ import { executeAuth, runAuthCommand } from "../packages/sdk/bin/auth-command.mj
 import { runDoctorCommand } from "../packages/sdk/bin/doctor-command.mjs";
 import { executeKeys, runKeysCommand } from "../packages/sdk/bin/keys-command.mjs";
 import { managementClient, tokenHash } from "../packages/sdk/bin/management-client.mjs";
-import { executeManagement } from "../packages/sdk/bin/management-command.mjs";
+import {
+  executeManagement,
+  managementHelp,
+  runManagementCommand,
+} from "../packages/sdk/bin/management-command.mjs";
 import { executeTest } from "../packages/sdk/bin/test-command.mjs";
 
 const token = `cm_mgmt_test_${"s".repeat(43)}`;
@@ -280,6 +292,94 @@ test("management calls preserve bounded pagination and reject wrong mode or repe
     }),
     /invalid_arguments/,
   );
+});
+test("a refused body file says why with fixed reasons, before any request and without echoing it", async (t) => {
+  const root = directory(t),
+    outside = directory(t),
+    body = {
+      programId: "prg_123456789012",
+      termVersion: 1,
+      expectedCurrentTermVersion: null,
+      expectedCurrentStatus: "draft",
+    };
+  writeFileSync(join(outside, "private-fixture.json"), JSON.stringify(body));
+  writeFileSync(join(root, "activate.json"), JSON.stringify(body));
+  writeFileSync(join(root, "broken.json"), '{"programId": "private-fixture"');
+  writeFileSync(join(root, "binary.json"), Buffer.from([0xff, 0xfe, 0x00]));
+  writeFileSync(join(root, "large.json"), " ".repeat(1_048_577));
+  mkdirSync(join(root, "folder"));
+  symlinkSync(join(outside, "private-fixture.json"), join(root, "linked.json"));
+  for (const [name, content] of [
+    ["list.json", "[]"],
+    ["text.json", '"private-fixture"'],
+    ["null.json", "null"],
+  ])
+    writeFileSync(join(root, name), content);
+  const attempt = async (path) => {
+    const output = [],
+      errors = [];
+    const code = await runManagementCommand(["programs.activate", "--body-file", path], {
+      root,
+      env,
+      fetcher: noRequest,
+      out: (value) => output.push(value),
+      diagnostic: (value) => errors.push(value),
+    });
+    assert.deepEqual([code, output, errors.length], [1, [], 1], path);
+    assert(!errors[0].includes("private-fixture"), path);
+    assert(!errors[0].includes(outside), path);
+    return JSON.parse(errors[0]);
+  };
+  for (const [path, reason] of [
+    [join(outside, "private-fixture.json"), "path_not_repository_relative"],
+    [join(root, "activate.json"), "path_not_repository_relative"],
+    ["../private-fixture.json", "path_not_repository_relative"],
+    ["folder/../../private-fixture.json", "path_not_repository_relative"],
+    ["linked.json", "path_not_repository_relative"],
+    ["missing.json", "file_missing"],
+    ["folder/missing.json", "file_missing"],
+    ["folder", "file_unreadable"],
+    ["binary.json", "file_unreadable"],
+    ["large.json", "file_unreadable"],
+    ["broken.json", "invalid_json"],
+    ["list.json", "json_object_required"],
+    ["text.json", "json_object_required"],
+    ["null.json", "json_object_required"],
+  ]) {
+    const receipt = await attempt(path);
+    assert.deepEqual(Object.keys(receipt), ["version", "status", "code", "reason", "guidance"]);
+    assert.deepEqual(
+      [receipt.version, receipt.status, receipt.code, receipt.reason],
+      [1, "error", "invalid_body_file", reason],
+      path,
+    );
+    assert(receipt.guidance.length > 0 && receipt.guidance.length < 300, path);
+  }
+  assert.match(
+    (await attempt("/etc/hosts")).guidance,
+    /relative path inside the current repository/,
+  );
+  assert.deepEqual(managementHelp().bodyFile.errorReasons, [
+    "path_not_repository_relative",
+    "file_missing",
+    "file_unreadable",
+    "invalid_json",
+    "json_object_required",
+  ]);
+  // The same file by its repository-relative path is read and sent unchanged.
+  const requests = [];
+  const result = await executeManagement(["programs.activate", "--body-file", "activate.json"], {
+    root,
+    env,
+    fetcher: async (url, init) => {
+      if (url.endsWith("/grants"))
+        return respond(grantFor({ ...proposal, scopes: ["programs.write"] }));
+      requests.push(JSON.parse(init.body));
+      return envelope("programs.activate", { program: { id: body.programId, status: "active" } });
+    },
+  });
+  assert.deepEqual(requests, [body]);
+  assert.equal(result.status, "ok");
 });
 test("credentials retain exact private material across a lost response; changed business choices never issue another key", async (t) => {
   const root = directory(t),
