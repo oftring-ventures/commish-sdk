@@ -139,6 +139,28 @@ const guideText = () =>
   "TEST approval also grants onboarding access for up to one day: pass the receipt's onboarding.authorizationFile\n" +
   "to commish manage and commish doctor (--auth-file) instead of asking for another approval. --no-onboarding declines it.\n" +
   `Configuration/schema: ${setupGuide.discoveryUrl}\nGuide: ${setupGuide.documentationUrl}`;
+const verifyEnvironment = [
+  "COMMISH_SECRET_KEY",
+  "COMMISH_PUBLISHABLE_KEY",
+  "COMMISH_APPLICATION_ID",
+  "COMMISH_PROGRAM_ID",
+];
+const verifyHelp = {
+  status: "help",
+  command: "verify [--json]",
+  flags: ["--json", "--help"],
+  requiredEnvironment: verifyEnvironment,
+  alternativeEnvironment: {
+    COMMISH_PUBLISHABLE_KEY: "NEXT_PUBLIC_COMMISH_PUBLISHABLE_KEY",
+    COMMISH_APPLICATION_ID: "NEXT_PUBLIC_COMMISH_APPLICATION_ID",
+  },
+  optionalEnvironment: ["COMMISH_API_URL"],
+  request: "one_authenticated_read_of_the_configured_program",
+  interpretation:
+    "Checks that the secret key authenticates, the program is accessible and the application and key modes match. Never verifies consumer wiring, attribution, checkout or webhooks.",
+  exitCodes: { 0: "help_or_configuration_verified", 1: "sanitized_error" },
+  integrationVerified: false,
+};
 const args = process.argv.slice(2);
 const json = args.includes("--json");
 // Private-file safety relies on POSIX modes and O_NOFOLLOW; use WSL on Windows. The
@@ -239,6 +261,23 @@ if (Object.hasOwn(managementRunners, args[0])) {
       } else console.log(value + (args.includes("--help") ? `\n\n${guideText()}` : ""));
     },
   });
+} else if (
+  args[0] === "verify" &&
+  args.slice(1).some((arg) => ["--help", "-h"].includes(arg)) &&
+  args.slice(1).every((arg) => ["--help", "-h", "--json"].includes(arg)) &&
+  new Set(args).size === args.length
+) {
+  // Help reads no environment and makes no request.
+  console.log(
+    json
+      ? JSON.stringify(verifyHelp)
+      : "Usage: commish verify [--json]\n" +
+          "Checks the configured credentials with one authenticated read of the configured program.\n" +
+          `Requires ${verifyEnvironment.join(", ")} in the environment.\n` +
+          "NEXT_PUBLIC_COMMISH_PUBLISHABLE_KEY and NEXT_PUBLIC_COMMISH_APPLICATION_ID are accepted in place of their\n" +
+          "unprefixed names; COMMISH_API_URL selects a Commish deployment you trust.\n" +
+          "Exit 0 means configuration verified, 1 a sanitized error. Configuration verified is not integration verified.",
+  );
 } else if (args[0] === "verify") {
   const fail = (code) => {
     throw new Error(code);
@@ -404,12 +443,7 @@ if (Object.hasOwn(managementRunners, args[0])) {
         "agent --json",
         ...apiHelp().commands.slice(3),
       ],
-      requiredEnvironment: [
-        "COMMISH_SECRET_KEY",
-        "COMMISH_PUBLISHABLE_KEY",
-        "COMMISH_APPLICATION_ID",
-        "COMMISH_PROGRAM_ID",
-      ],
+      requiredEnvironment: verifyEnvironment,
       requiredEnvironmentPurpose: "verify_only",
       setupGuide,
       integrationApi: apiHelp(),
