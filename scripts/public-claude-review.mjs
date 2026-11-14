@@ -6,7 +6,6 @@ import { pathToFileURL } from "node:url";
 
 const repository = "oftring-ventures/commish-sdk";
 export const gate = "Claude review gate";
-export const legacyGate = "codex_review / Codex review gate";
 const githubActionsApp = 15368;
 const model = "claude-sonnet-5";
 const sha = /^[0-9a-f]{40}$/;
@@ -143,9 +142,9 @@ async function validatePull(request, { pr, base, head }) {
   assert.equal(comparison.status, "ahead", "Main no longer descends from the admitted base");
 }
 
-function matchesCheck(check, identity, name) {
+function matchesCheck(check, identity) {
   return (
-    check.name === name &&
+    check.name === gate &&
     check.app?.id === githubActionsApp &&
     check.head_sha === identity.head &&
     check.external_id === externalId(identity) &&
@@ -156,7 +155,6 @@ function matchesCheck(check, identity, name) {
 
 export async function admit(request, identity) {
   await validatePull(request, identity);
-  let legacy;
   for (let page = 1; ; page++) {
     const { check_runs: checks } = await request(
       `commits/${identity.head}/check-runs?app_id=${githubActionsApp}&filter=all&per_page=100&page=${page}`,
@@ -172,34 +170,22 @@ export async function admit(request, identity) {
       )
     )
       return;
-    legacy ??= checks.find((check) => matchesCheck(check, identity, legacyGate));
     if (checks.length < 100) break;
   }
-  const create = async (name) => {
-    const check = await request("check-runs", "POST", {
-      name,
-      head_sha: identity.head,
-      status: "queued",
-      external_id: externalId(identity),
-    });
-    assert(matchesCheck(check, identity, name), "GitHub returned a different check");
-    return check.id;
-  };
-  // Create the legacy alias first so a failure here leaves the review eligible
-  // for admission. If canonical check creation fails, reuse the queued alias.
-  const legacyId = legacy?.id ?? (await create(legacyGate));
-  return { legacyId, checkId: await create(gate) };
+  const check = await request("check-runs", "POST", {
+    name: gate,
+    head_sha: identity.head,
+    status: "queued",
+    external_id: externalId(identity),
+  });
+  assert(matchesCheck(check, identity), "GitHub returned a different check");
+  return check.id;
 }
 
-export async function publish(request, identity, ids, report, detailsUrl, saveEvidence) {
-  assert(/^[1-9]\d*$/.test(ids.checkId) && /^[1-9]\d*$/.test(ids.legacyId), "Invalid check IDs");
-  for (const [name, id] of [
-    [gate, ids.checkId],
-    [legacyGate, ids.legacyId],
-  ]) {
-    const check = await request(`check-runs/${id}`);
-    assert(matchesCheck(check, identity, name) && String(check.id) === id, "Wrong admitted check");
-  }
+export async function publish(request, identity, checkId, report, detailsUrl, saveEvidence) {
+  assert(/^[1-9]\d*$/.test(checkId), "Invalid check ID");
+  const check = await request(`check-runs/${checkId}`);
+  assert(matchesCheck(check, identity) && String(check.id) === checkId, "Wrong admitted check");
   try {
     await validatePull(request, identity);
   } catch {
@@ -210,40 +196,32 @@ export async function publish(request, identity, ids, report, detailsUrl, saveEv
   const conclusion = allowed ? "success" : "failure";
   const summary = `Claude review: ${report.status}. Findings: ${report.findings.length}; blockers: ${report.findings.filter(blocks).length}. See the workflow artifact for the complete report.`;
   saveEvidence(report, summary);
-  const checkBody = {
+  await request(`check-runs/${checkId}`, "PATCH", {
     status: "completed",
     conclusion,
     details_url: detailsUrl,
-    output: { title: `Claude review: ${report.status}`, summary },
-  };
-  for (const [name, id] of [
-    [gate, ids.checkId],
-    [legacyGate, ids.legacyId],
-  ]) {
-    await request(`check-runs/${id}`, "PATCH", {
-      ...checkBody,
-      output: {
-        ...checkBody.output,
-        annotations:
-          name === gate && report.status !== "identity_failure"
-            ? report.findings.slice(0, 50).map((finding) => ({
-                path: finding.path,
-                start_line: finding.start_line,
-                end_line: finding.end_line,
-                annotation_level: blocks(finding) ? "failure" : "warning",
-                title: finding.title,
-                message: `[P${finding.priority}, ${Math.round(finding.confidence * 100)}%] ${finding.body}`,
-              }))
-            : [],
-      },
-    });
-    await request(`statuses/${identity.head}`, "POST", {
-      context: name,
-      state: conclusion,
-      description: `Claude review: ${report.status}`,
-      target_url: detailsUrl,
-    });
-  }
+    output: {
+      title: `Claude review: ${report.status}`,
+      summary,
+      annotations:
+        report.status === "identity_failure"
+          ? []
+          : report.findings.slice(0, 50).map((finding) => ({
+              path: finding.path,
+              start_line: finding.start_line,
+              end_line: finding.end_line,
+              annotation_level: blocks(finding) ? "failure" : "warning",
+              title: finding.title,
+              message: `[P${finding.priority}, ${Math.round(finding.confidence * 100)}%] ${finding.body}`,
+            })),
+    },
+  });
+  await request(`statuses/${identity.head}`, "POST", {
+    context: gate,
+    state: conclusion,
+    description: `Claude review: ${report.status}`,
+    target_url: detailsUrl,
+  });
   return allowed;
 }
 
@@ -322,11 +300,8 @@ async function main(env, mode) {
   }
 
   if (mode === "admit") {
-    const checks = await admit(request, identity);
-    if (checks) {
-      output("check_id", checks.checkId);
-      output("legacy_id", checks.legacyId);
-    }
+    const checkId = await admit(request, identity);
+    if (checkId) output("check_id", checkId);
     return;
   }
 
@@ -341,7 +316,7 @@ async function main(env, mode) {
   const allowed = await publish(
     request,
     identity,
-    { checkId: env.REVIEW_CHECK_ID, legacyId: env.REVIEW_LEGACY_ID },
+    env.REVIEW_CHECK_ID,
     report,
     detailsUrl,
     (evidence, summary) => {

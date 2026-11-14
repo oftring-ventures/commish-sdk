@@ -1000,7 +1000,7 @@ test("the model and merge-group bridge have separate triggers and privileges", (
     "utf8",
   );
   assert.match(group, /^  merge_group:$/m);
-  assert.match(group, /gate: \[Claude review gate, codex_review \/ Codex review gate\]/);
+  assert.match(group, /name: Claude review gate/);
   assert.doesNotMatch(group, /pull_request:|pull_request_target:|uses:|secrets:/);
 });
 

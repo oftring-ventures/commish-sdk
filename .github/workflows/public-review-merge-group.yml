@@ -5,12 +5,7 @@ on:
 permissions: {}
 jobs:
   review:
-    name: ${{ matrix.gate }}
-    strategy:
-      fail-fast: false
-      matrix:
-        # Keep the legacy name until both rulesets require Claude.
-        gate: [Claude review gate, codex_review / Codex review gate]
+    name: Claude review gate
     runs-on: ubuntu-slim
     timeout-minutes: 5
     steps:

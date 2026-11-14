@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { admit, gate, legacyGate, makeReport, publish } from "./public-claude-review.mjs";
+import { admit, gate, makeReport, publish } from "./public-claude-review.mjs";
 
 const identity = {
   repository: "oftring-ventures/commish-sdk",
@@ -68,7 +68,6 @@ function fixture() {
     checks: [],
     mutations: [],
     evidence: [],
-    failCanonicalCreation: false,
   };
   state.request = async (path, method = "GET", payload) => {
     if (method !== "GET") state.mutations.push({ path, method, payload });
@@ -78,7 +77,6 @@ function fixture() {
       return { check_runs: state.checks };
     }
     if (method === "POST" && path === "check-runs") {
-      if (state.failCanonicalCreation && payload.name === gate) throw new Error("create failed");
       const check = { ...payload, id: state.checks.length + 1, app: { id: 15368 } };
       state.checks.push(check);
       return check;
@@ -90,11 +88,11 @@ function fixture() {
     assert.fail(`Unexpected ${method} ${path}`);
   };
   state.admit = () => admit(state.request, identity);
-  state.publish = (ids, report) =>
+  state.publish = (checkId, report) =>
     publish(
       state.request,
       identity,
-      { checkId: String(ids.checkId), legacyId: String(ids.legacyId) },
+      String(checkId),
       report,
       "https://example.invalid/run",
       (evidence) => state.evidence.push(evidence),
@@ -102,33 +100,22 @@ function fixture() {
   return state;
 }
 
-test("admission binds both check names to one head and deduplicates Claude reviews", async () => {
+test("admission binds one check to the exact head and deduplicates Claude reviews", async () => {
   const state = fixture();
-  assert.deepEqual(await state.admit(), { legacyId: 1, checkId: 2 });
-  assert.deepEqual(
-    state.checks.map(({ name, status, head_sha, external_id }) => ({
-      name,
-      status,
-      head_sha,
-      external_id,
-    })),
-    [legacyGate, gate].map((name) => ({
-      name,
-      status: "queued",
-      head_sha: identity.head,
-      external_id: `public-claude-review:${identity.pr}:${identity.base}:${identity.head}`,
-    })),
-  );
+  assert.equal(await state.admit(), 1);
+  assert.deepEqual(state.checks[0], {
+    app: { id: 15368 },
+    id: 1,
+    name: gate,
+    status: "queued",
+    head_sha: identity.head,
+    external_id: `public-claude-review:${identity.pr}:${identity.base}:${identity.head}`,
+  });
   assert.equal(await state.admit(), undefined);
-  assert.equal(state.mutations.length, 2);
+  assert.equal(state.mutations.length, 1);
 });
 
-test("admission recovers a partial write and rejects a moved head or diverged base", async () => {
-  const state = fixture();
-  state.failCanonicalCreation = true;
-  await assert.rejects(state.admit(), /create failed/);
-  state.failCanonicalCreation = false;
-  assert.deepEqual(await state.admit(), { legacyId: 1, checkId: 2 });
+test("admission rejects a moved head or diverged base", async () => {
   for (const ref of ["head", "base"]) {
     const stale = fixture();
     stale.pull[ref].sha = "c".repeat(40);
@@ -138,47 +125,43 @@ test("admission recovers a partial write and rejects a moved head or diverged ba
   }
 });
 
-test("reporting enforces the same decision on both names with exact-head annotations", async () => {
+test("reporting enforces the decision with exact-head annotations", async () => {
   for (const priority of [1, 2]) {
     const state = fixture();
-    const ids = await state.admit();
+    const checkId = await state.admit();
     const allowed = priority === 2;
     const decision = allowed ? "success" : "failure";
     const report = reportFor({ ...cleanResult, findings: [{ ...finding, priority }] });
-    assert.equal(await state.publish(ids, report), allowed);
+    assert.equal(await state.publish(checkId, report), allowed);
     assert.deepEqual(state.evidence, [report]);
-    const [, , canonical, canonicalStatus, legacy, legacyStatus] = state.mutations;
+    const [, check, status] = state.mutations;
     assert.equal(
-      canonical.payload.output.annotations[0].annotation_level,
+      check.payload.output.annotations[0].annotation_level,
       allowed ? "warning" : "failure",
     );
-    assert.deepEqual(legacy.payload.output.annotations, []);
-    assert.equal(canonical.payload.conclusion, decision);
-    assert.equal(legacy.payload.conclusion, decision);
-    assert.equal(canonicalStatus.payload.context, gate);
-    assert.equal(legacyStatus.payload.context, legacyGate);
-    assert.equal(canonicalStatus.payload.state, decision);
-    assert.equal(legacyStatus.payload.state, decision);
+    assert.equal(check.payload.conclusion, decision);
+    assert.equal(status.payload.context, gate);
+    assert.equal(status.payload.state, decision);
   }
 });
 
 test("reporting allows forward movement of main and rejects stale pull or check identity", async () => {
   for (const movement of ["ahead", "diverged", "draft", "retarget", "new head", "wrong check"]) {
     const state = fixture();
-    const ids = await state.admit();
+    const checkId = await state.admit();
     state.pull.base.sha = "c".repeat(40);
     if (movement === "diverged") state.comparison = "diverged";
     if (movement === "draft") state.pull.draft = true;
     if (movement === "retarget") state.pull.base.ref = "other";
     if (movement === "new head") state.pull.head.sha = "d".repeat(40);
     if (movement === "wrong check") {
-      state.checks[1].external_id = "other";
-      await assert.rejects(state.publish(ids, reportFor()), /Wrong admitted check/);
-      assert.equal(state.mutations.length, 2);
+      state.checks[0].external_id = "other";
+      await assert.rejects(state.publish(checkId, reportFor()), /Wrong admitted check/);
+      assert.equal(state.mutations.length, 1);
       continue;
     }
     const allowed = movement === "ahead";
-    assert.equal(await state.publish(ids, reportFor()), allowed);
+    assert.equal(await state.publish(checkId, reportFor()), allowed);
     assert.equal(state.evidence[0].status, allowed ? "passed" : "identity_failure");
     assert.equal(state.mutations.at(-1).path, `statuses/${identity.head}`);
   }

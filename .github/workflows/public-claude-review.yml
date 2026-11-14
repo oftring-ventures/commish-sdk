@@ -35,7 +35,6 @@ jobs:
       checks: write
     outputs:
       check_id: ${{ steps.admit.outputs.check_id }}
-      legacy_id: ${{ steps.admit.outputs.legacy_id }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -52,7 +51,7 @@ jobs:
   model:
     name: Run the subscription review
     needs: admission
-    if: needs.admission.outputs.check_id != '' && needs.admission.outputs.legacy_id != ''
+    if: needs.admission.outputs.check_id != ''
     runs-on: ubuntu-24.04
     timeout-minutes: 35
     permissions:
@@ -115,7 +114,7 @@ jobs:
   report:
     name: Publish review decision
     needs: [admission, model]
-    if: always() && needs.admission.outputs.check_id != '' && needs.admission.outputs.legacy_id != ''
+    if: always() && needs.admission.outputs.check_id != ''
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
@@ -131,11 +130,10 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .node-version
-      - name: Resolve and enforce the required checks
+      - name: Resolve and enforce the required check
         env:
           GITHUB_TOKEN: ${{ github.token }}
           REVIEW_CHECK_ID: ${{ needs.admission.outputs.check_id }}
-          REVIEW_LEGACY_ID: ${{ needs.admission.outputs.legacy_id }}
           REVIEW_JOB_RESULT: ${{ needs.model.result }}
           REVIEW_CONCLUSION: ${{ needs.model.outputs.conclusion }}
           REVIEW_CONFIGURED: ${{ needs.model.outputs.configured }}
