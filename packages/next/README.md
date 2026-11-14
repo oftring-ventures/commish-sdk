@@ -104,10 +104,11 @@ metadata. `getCommishAttribution()` reads that cookie directly; both helpers
 require a Next request context. The root export is blocked in browser builds.
 
 Set `client_reference_id` on the Checkout parameters to your own stable customer
-ID before calling the helper. A shop without accounts issues an ID for the buyer
-and keeps it with the order. Without it Commish still records the purchase, from
-the Checkout email, but `commish doctor` keeps `stable_customer_identity` unmet
-and the TEST integration cannot be activated.
+ID before calling the helper. A shop without accounts gives each buyer one ID it
+can find again, for example stored with their email, and reuses it on their
+later orders; never send the email address itself. Without it Commish still
+records the purchase, from the Checkout email, but `commish doctor` keeps
+`stable_customer_identity` unmet and the TEST integration cannot be activated.
 The provider belongs at `@commish/next/react`; `@commish/next/browser` also exports
 `captureReferral` for direct browser integration.
 
