@@ -100,6 +100,26 @@ test("the playbook's Next peer ranges match @commish/next", () => {
   assert.deepEqual(nextPeers, { next: peerDependencies.next, react: peerDependencies.react });
 });
 
+test("the agent guide links the configuration guide at this release's tag, like the playbook", (t) => {
+  const root = repository(t);
+  const expected = `https://github.com/oftring-ventures/commish-sdk/blob/v${version}/packages/sdk/README.md#set-up-from-your-repository`;
+  for (const [args, guide] of [
+    [["agent", "--json"], (output) => output.setup],
+    [["--help", "--json"], (output) => output.setupGuide],
+    [["setup", "--help", "--json"], (output) => output.setupGuide],
+  ]) {
+    const result = run(root, args);
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(guide(JSON.parse(result.stdout)).configurationGuideUrl, expected);
+    assert(!result.stdout.includes("/blob/main/"));
+  }
+  // The anchor is a heading of the README that the link names.
+  assert.match(
+    readFileSync(new URL("../packages/sdk/README.md", import.meta.url), "utf8"),
+    /^## Set up from your repository$/m,
+  );
+});
+
 test("init rejects unknown arguments without echoing them and documents itself", (t) => {
   const root = repository(t);
   const rejected = run(root, ["init", "--private-fixture"]);

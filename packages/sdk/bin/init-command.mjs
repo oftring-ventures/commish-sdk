@@ -11,7 +11,8 @@ const managers = {
 };
 const docs = "https://commish.sh/docs.md";
 const schema = "https://app.commish.sh/api/cli/setup/capabilities";
-const sdkGuide = `https://github.com/oftring-ventures/commish-sdk/blob/v${manifest.version}/packages/sdk/README.md`;
+// Pinned to this release's tag, so the guide matches the installed CLI.
+export const sdkGuide = `https://github.com/oftring-ventures/commish-sdk/blob/v${manifest.version}/packages/sdk/README.md`;
 
 // The agent playbook ships with the CLI that runs it. Like planning, it reads only
 // package.json and the presence of lockfiles and app directories: no network, no

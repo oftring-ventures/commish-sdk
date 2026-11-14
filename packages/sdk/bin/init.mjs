@@ -3,7 +3,7 @@ import manifest from "../package.json" with { type: "json" };
 import { apiHelp, resourceGroups, runApiCommand } from "./api-command.mjs";
 import { authHelp, runAuthCommand } from "./auth-command.mjs";
 import { doctorHelp, runDoctorCommand } from "./doctor-command.mjs";
-import { runInitCommand } from "./init-command.mjs";
+import { runInitCommand, sdkGuide } from "./init-command.mjs";
 import { keysHelp, runKeysCommand } from "./keys-command.mjs";
 import { managementHelp, runManagementCommand } from "./management-command.mjs";
 import { runTestCommand, testHelp } from "./test-command.mjs";
@@ -17,8 +17,7 @@ const setupGuide = {
   configurationContainsSecrets: false,
   discoveryUrl: "https://app.commish.sh/api/cli/setup/capabilities",
   documentationUrl: "https://commish.sh/docs.md",
-  configurationGuideUrl:
-    "https://github.com/oftring-ventures/commish-sdk/blob/main/packages/sdk/README.md#set-up-from-your-repository",
+  configurationGuideUrl: `${sdkGuide}#set-up-from-your-repository`,
   commands: {
     plan: "commish setup --plan --json",
     provision:
