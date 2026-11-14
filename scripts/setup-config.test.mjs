@@ -92,6 +92,37 @@ test("rejects secret-like unknown fields, unsafe paths and invalid economics wit
     assert(!JSON.stringify(result).includes("do-not-echo"));
   }
 });
+test("accepts an optional return window without inventing one and names it when it alone is invalid", () => {
+  const withWindow = (returnWindowDays, terms = input.terms) =>
+    parseSetupConfig({ ...input, terms: { ...terms, returnWindowDays } });
+  assert(!Object.hasOwn(parseSetupConfig(input).config.terms, "returnWindowDays"));
+  for (const days of [0, 30, 180]) {
+    const result = withWindow(days);
+    assert.equal(result.kind, "ready");
+    assert.equal(result.config.terms.returnWindowDays, days);
+  }
+  for (const days of [-1, 181, 1.5, "30", "do-not-echo", null, [30], Number.MAX_SAFE_INTEGER + 1]) {
+    const result = withWindow(days);
+    assert.deepEqual(result, { kind: "invalid_config", fields: ["terms.returnWindowDays"] });
+    assert(!JSON.stringify(result).includes("do-not-echo"));
+  }
+  // Anything else wrong with terms, or an unknown property, still reports only `terms`.
+  assert.deepEqual(
+    withWindow(181, { ...input.terms, commission: { type: "percentage", basisPoints: 10001 } })
+      .fields,
+    ["terms"],
+  );
+  assert.deepEqual(
+    parseSetupConfig({ ...input, terms: { ...input.terms, returnWindow: 30 } }).fields,
+    ["terms"],
+  );
+  // Required choices are still collected first; the window is checked once they exist.
+  const { commission, ...incomplete } = input.terms;
+  assert.deepEqual(withWindow(181, incomplete), {
+    kind: "input_required",
+    fields: ["terms.commission"],
+  });
+});
 test("validates existing/new workspace intent and explicitly selected webhook events", () => {
   for (const workspace of [
     { kind: "existing", id: "wrk_123456789012" },

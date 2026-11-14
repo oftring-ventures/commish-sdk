@@ -47,6 +47,26 @@ test("projects only business choices and canonicalizes unordered product/claim l
   });
   assert.equal(explicit.terms.effectiveAt, "2026-10-05T00:00:00.000Z");
 });
+test("carries a chosen return window into the reviewed intent and omits an unchosen one", () => {
+  assert(!Object.hasOwn(setupIntent(config).terms, "returnWindowDays"));
+  const chosen = parseSetupConfig({ ...raw, terms: { ...raw.terms, returnWindowDays: 14 } }).config,
+    intent = setupIntent(chosen);
+  assert.equal(intent.terms.returnWindowDays, 14);
+  assert.equal(sameSetupIntent(JSON.parse(JSON.stringify(intent)), intent), true);
+  for (const terms of [
+    { ...intent.terms, returnWindowDays: 30 },
+    { ...intent.terms, returnWindowDays: undefined },
+    setupIntent(config).terms,
+  ])
+    assert.equal(sameSetupIntent({ ...intent, terms }, intent), false);
+  // A review that adds a window the configuration did not choose is a different proposal.
+  assert.equal(sameSetupIntent(intent, setupIntent(config)), false);
+  for (const returnWindowDays of [-1, 181, 1.5, "14", null])
+    assert.throws(
+      () => validateSetupIntent({ ...intent, terms: { ...intent.terms, returnWindowDays } }),
+      { message: "invalid_request" },
+    );
+});
 test("rejects changed economics, extra properties and missing review without echoing values", () => {
   const expected = setupIntent(config);
   for (const actual of [

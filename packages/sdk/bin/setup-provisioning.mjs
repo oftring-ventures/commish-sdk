@@ -116,6 +116,9 @@ export async function provisionSetup(
     programId: program.id,
     termVersion: terms.term.version,
     effectiveAt: terms.term.effectiveAt,
+    // The configured return window, or the server's default when none was
+    // chosen; null when the server does not report one.
+    returnWindowDays: terms.term.returnWindowDays ?? null,
     credentialsFile: credentials.path,
     webhookFile: webhook?.path ?? null,
     proof,

@@ -110,6 +110,14 @@ test("waits for provider completion with no automatic browser and revokes tempor
   assert(!f.authorizations[0].input.operations.includes("webhook.write"));
   assert.deepEqual(f.authorizations[0].input.setupIntent, { version: 1, ...business });
 });
+test("a chosen return window is reviewed in the same approval and reported from provisioning", async () => {
+  const f = fixture(),
+    terms = { ...business.terms, returnWindowDays: 14 };
+  f.result.returnWindowDays = 14;
+  const result = await runSetup("/repo", { ...config, terms }, options, f.dependencies);
+  assert.deepEqual(f.authorizations[0].input.setupIntent, { version: 1, ...business, terms });
+  assert.equal(result.returnWindowDays, 14);
+});
 test("reauthorizes the saved workspace and preserves explicit LIVE and selected scopes", async () => {
   const f = fixture();
   f.saved({ id: "wrk_abcdefghijkl" });

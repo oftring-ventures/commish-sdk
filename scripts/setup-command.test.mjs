@@ -228,6 +228,32 @@ test("planning reports ambiguity and refuses symlinked metadata without followin
   assert.deepEqual(JSON.parse(invalid).configuration.invalidFields, ["config"]);
 });
 
+test("planning accepts an optional return window and names it when it is out of range", async (t) => {
+  const f = fixture(t),
+    write = (returnWindowDays) =>
+      writeFileSync(
+        join(f.root, "commish.setup.json"),
+        JSON.stringify({ ...config, terms: { ...config.terms, returnWindowDays } }),
+      );
+  write(45);
+  assert.equal(await runSetupCommand(["--plan", "--json"], f.options), 0);
+  assert.equal(JSON.parse(f.output.pop()).configuration.status, "ready");
+  write(181);
+  assert.equal(await runSetupCommand(["--plan", "--json"], f.options), 2);
+  const plan = JSON.parse(f.output.pop());
+  assert.deepEqual(plan.configuration.invalidFields, ["terms.returnWindowDays"]);
+  assert.deepEqual(plan.configuration.missingInputs, []);
+  // Without --plan the same fixed field name is reported before any authorization.
+  assert.equal(await runSetupCommand(["--json"], f.options), 2);
+  assert.deepEqual(JSON.parse(f.output.pop()), {
+    status: "invalid_config",
+    fields: ["terms.returnWindowDays"],
+    integrationVerified: false,
+  });
+  assert.deepEqual(readdirSync(f.root), ["commish.setup.json"]);
+  assert.deepEqual(f.notices, []);
+});
+
 test("the installed entry point exposes planning before configuration and does not create progress", (t) => {
   const f = fixture(t);
   const result = spawnSync(process.execPath, [executable, "setup", "--plan", "--json"], {

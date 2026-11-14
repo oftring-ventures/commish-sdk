@@ -130,6 +130,42 @@ test("completes practical configuration while reporting a publishable proof acti
   assert.equal(result.termVersion, 1);
   assert.equal(f.calls.at(-1).name, "readiness");
 });
+test("sends a return window only when configured and reports the one the server stored", async (t) => {
+  const defaulted = fixture(t);
+  defaulted.session.createTerms = async (input) => {
+    defaulted.calls.push({ name: "terms", args: [input] });
+    return { term: { ...input, returnWindowDays: 30, effectiveAt: "2026-10-03T10:00:00.123Z" } };
+  };
+  const first = await provisionSetup(
+    defaulted.root,
+    config,
+    defaulted.progress(),
+    defaulted.session,
+    authorization,
+  );
+  assert.equal(first.returnWindowDays, 30);
+  assert(
+    !Object.hasOwn(defaulted.calls.find((c) => c.name === "terms").args[0], "returnWindowDays"),
+  );
+  // A server that names no window is reported as unknown, not as a default.
+  const silent = fixture(t);
+  assert.equal(
+    (await provisionSetup(silent.root, config, silent.progress(), silent.session, authorization))
+      .returnWindowDays,
+    null,
+  );
+  const chosen = fixture(t),
+    custom = { ...config, terms: { ...config.terms, returnWindowDays: 0 } };
+  const result = await provisionSetup(
+    chosen.root,
+    custom,
+    openSetupProgress(chosen.root, custom),
+    chosen.session,
+    authorization,
+  );
+  assert.equal(result.returnWindowDays, 0);
+  assert.equal(chosen.calls.find((c) => c.name === "terms").args[0].returnWindowDays, 0);
+});
 test("rejects wrong workspace or mode before resource requests", async (t) => {
   const f = fixture(t),
     progress = f.progress();

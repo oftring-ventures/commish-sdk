@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -67,6 +67,28 @@ test("rejects changed business choices and separates TEST from explicitly select
   assert.notEqual(first.directory, live.directory);
   assert.notEqual(first.idempotencyKey("credential"), live.idempotencyKey("credential"));
   assert.throws(() => live.idempotencyKey("token"), /invalid_setup_step/);
+});
+test("progress saved by 0.7.0 without a return window resumes, and choosing one later conflicts", (t) => {
+  const root = fixture(t),
+    path = join(root, ".commish/setup/test/intent.json");
+  // The fingerprint 0.7.0 wrote for this configuration, before the CLI knew the field.
+  const saved = {
+    createdAt: "2026-11-14T00:00:00.000Z",
+    fingerprint: "ddb53bc4df3cf103f3980091eea98a01496fb0b34937032cda7ce96b30a2edea",
+    id: "a62ca193-4725-4e4c-aefd-19bd857603c2",
+    version: 1,
+  };
+  mkdirSync(join(root, ".commish/setup/test"), { recursive: true, mode: 0o700 });
+  writeFileSync(join(root, ".commish/.gitignore"), "*\n");
+  writeFileSync(path, `${JSON.stringify(saved)}\n`, { mode: 0o600 });
+  const resumed = openSetupProgress(root, config);
+  assert.equal(resumed.idempotencyKey("credential"), `commish-cli:${saved.id}:credential`);
+  assert.deepEqual(JSON.parse(readFileSync(path, "utf8")), saved);
+  for (const returnWindowDays of [30, 14])
+    assert.throws(
+      () => openSetupProgress(root, { ...config, terms: { ...config.terms, returnWindowDays } }),
+      /setup_config_conflict/,
+    );
 });
 test("protects ignored state in a real repository and refuses already tracked paths", (t) => {
   const root = fixture(t);

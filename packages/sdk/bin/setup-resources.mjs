@@ -51,6 +51,13 @@ const termFields = [
   "prohibitedClaims",
   "effectiveAt",
 ];
+// Optional: the days a buyer may return a purchase. The server applies its own
+// default when the field is omitted, so the CLI never invents one.
+const returnWindow = (v) => Number.isSafeInteger(v) && v >= 0 && v <= 180;
+const termKeys = (input) =>
+  record(input) && Object.hasOwn(input, "returnWindowDays")
+    ? [...termFields, "returnWindowDays"]
+    : termFields;
 const same = (left, right) =>
   Array.isArray(left)
     ? Array.isArray(right) &&
@@ -110,7 +117,7 @@ export function validateSetupTerms(input) {
   const commission = input?.commission,
     recurrence = input?.recurrence;
   if (
-    !keys(input, termFields) ||
+    !keys(input, termKeys(input)) ||
     !id(input.programId, "prg") ||
     !integer(input.version, 1_000_000) ||
     !(
@@ -128,6 +135,7 @@ export function validateSetupTerms(input) {
         integer(recurrence.months, 120))
     ) ||
     (input.perSaleCap !== null && !usd(input.perSaleCap)) ||
+    (Object.hasOwn(input, "returnWindowDays") && !returnWindow(input.returnWindowDays)) ||
     !text(input.disclosureText, 2000, 1) ||
     !Array.isArray(input.prohibitedClaims) ||
     input.prohibitedClaims.length > 20 ||
@@ -553,7 +561,11 @@ export function createSetupResources(request, context) {
       const value = result.term;
       // CLI progress retains millisecond ISO input. SQL may project the same
       // instant with three trailing zero microseconds; do not truncate others.
-      const projected = record(value) ? selected(value, termFields) : null;
+      // A supplied return window must be echoed exactly. An omitted one is
+      // neither sent nor compared: the receipt reports the value the server
+      // stored when it names one, and accepts a server that does not.
+      const implicitWindow = !Object.hasOwn(input, "returnWindowDays");
+      const projected = record(value) ? selected(value, termKeys(input)) : null;
       if (projected && typeof projected.effectiveAt === "string")
         projected.effectiveAt = projected.effectiveAt.replace(/(\.\d{3})000Z$/, "$1Z");
       if (implicitDate && projected) {
@@ -566,9 +578,22 @@ export function createSetupResources(request, context) {
       }
       const comparison =
         implicitDate && projected ? { ...expected, effectiveAt: projected.effectiveAt } : expected;
-      if (!projected || !same(comparison, projected) || !date(value.createdAt))
+      const stored = implicitWindow && projected ? value.returnWindowDays : undefined;
+      if (
+        !projected ||
+        !same(comparison, projected) ||
+        !date(value.createdAt) ||
+        (stored !== undefined && !returnWindow(stored))
+      )
         fail("invalid_response");
-      return { ...receipt, term: { ...comparison, createdAt: value.createdAt } };
+      return {
+        ...receipt,
+        term: {
+          ...comparison,
+          ...(stored === undefined ? {} : { returnWindowDays: stored }),
+          createdAt: value.createdAt,
+        },
+      };
     },
     registerDestination: (input) => destination("POST", input),
     verifyDestination: (input) => destination("PUT", input),
