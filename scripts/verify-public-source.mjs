@@ -44,7 +44,9 @@ const required = [
   "pnpm-workspace.yaml",
   "pnpm-lock.yaml",
   ".github/workflows/public-source.yml",
+  ".github/public-claude-review.md",
   ".github/workflows/public-review.yml",
+  ".github/workflows/public-claude-review.yml",
   ".github/workflows/public-review-merge-group.yml",
   ".github/workflows/publish-packages.yml",
   "scripts/verify-public-source.mjs",
@@ -57,7 +59,7 @@ const required = [
 // unlisted files) needs a reviewed change to this list.
 const allowedPaths = [
   /^(?:\.gitignore|\.node-version|LICENSE|README\.md|RELEASING\.md|SECURITY\.md|CHANGELOG\.md|biome\.json|package\.json|pnpm-workspace\.yaml|pnpm-lock\.yaml)$/,
-  /^\.github\/(?:dependabot\.yml|workflows\/(?:public-source|public-review|public-review-merge-group|publish-packages)\.yml)$/,
+  /^\.github\/(?:dependabot\.yml|public-claude-review\.md|workflows\/(?:public-source|public-review|public-claude-review|public-review-merge-group|publish-packages)\.yml)$/,
   /^scripts\/[a-z0-9-]+(?:\.test)?\.mjs$/,
   /^scripts\/fixtures\/[a-z0-9-]+\.(?:mjs|ts|tsx|txt)$/,
   /^packages\/(?:sdk|next)\/(?:LICENSE|README\.md|package\.json|build\.mjs|tsconfig\.build\.json)$/,

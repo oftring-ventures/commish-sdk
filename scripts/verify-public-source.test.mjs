@@ -847,7 +847,7 @@ const runAdmission = new (Object.getPrototypeOf(async () => {}).constructor)(
   admissionScript,
 );
 const publicRepository = "oftring-ventures/commish-sdk";
-const reviewGate = "codex_review / Codex review gate";
+const reviewGate = "Claude review gate";
 function admissionFixture() {
   const base = "b".repeat(40);
   const pull = {
@@ -861,9 +861,7 @@ function admissionFixture() {
     pull,
     main: base,
     checks: [],
-    created: {},
     calls: [],
-    outputs: {},
     context: {
       repo: { owner: "oftring-ventures", repo: "commish-sdk" },
       eventName: "pull_request_target",
@@ -878,59 +876,32 @@ function admissionFixture() {
     rest: {
       pulls: { get: async () => ({ data: state.pull }) },
       git: { getRef: async () => ({ data: { object: { sha: state.main } } }) },
-      checks: {
-        listForRef: "checks",
-        create: async (input) => {
-          state.calls.push(input);
-          return {
-            data: {
-              id: 71,
-              name: reviewGate,
-              head_sha: input.head_sha,
-              app: { id: 15368 },
-              ...state.created,
-            },
-          };
-        },
-      },
+      checks: { listForRef: "checks" },
+      actions: { createWorkflowDispatch: async (input) => state.calls.push(input) },
     },
     paginate: async (kind) => state[kind],
   };
   state.run = () =>
-    runAdmission(
-      github,
-      state.context,
-      {
-        setOutput: (name, value) => {
-          state.outputs[name] = value;
-        },
-      },
-      { env: state.env },
-      createRequire(import.meta.url),
-    );
+    runAdmission(github, state.context, {}, { env: state.env }, createRequire(import.meta.url));
   return state;
 }
 
-test("trusted main binds one queued required check to the API-validated head", async () => {
+test("trusted main dispatches an exact-head subscription review", async () => {
   const state = admissionFixture();
   await state.run();
-  assert.equal(state.calls.length, 1);
-  assert.deepEqual(state.calls[0], {
-    owner: "oftring-ventures",
-    repo: "commish-sdk",
-    name: reviewGate,
-    head_sha: state.pull.head.sha,
-    status: "queued",
-    external_id: `public-review:7:${state.main}:${state.pull.head.sha}`,
-  });
-  assert.deepEqual(state.outputs, {
-    pr_number: "7",
-    base_sha: state.main,
-    head_sha: state.pull.head.sha,
-    head_repository: publicRepository,
-    check_run_id: "71",
-    admitted: "true",
-  });
+  assert.deepEqual(state.calls, [
+    {
+      owner: "oftring-ventures",
+      repo: "commish-sdk",
+      workflow_id: "public-claude-review.yml",
+      ref: "main",
+      inputs: {
+        pr_number: "7",
+        base_sha: state.main,
+        head_sha: state.pull.head.sha,
+      },
+    },
+  ]);
 });
 test("fork, draft, stale and untrusted workflow paths cannot create a required check", async () => {
   for (const mutate of [
@@ -975,7 +946,6 @@ test("fork, draft, stale and untrusted workflow paths cannot create a required c
     mutate(state);
     await assert.rejects(state.run());
     assert.deepEqual(state.calls, []);
-    assert.deepEqual(state.outputs, {});
   }
 });
 test("the former A1a pull_request bootstrap cannot admit a review", async () => {
@@ -989,51 +959,49 @@ test("the former A1a pull_request bootstrap cannot admit a review", async () => 
   state.env.GITHUB_WORKFLOW_REF = `${publicRepository}/.github/workflows/public-review.yml@refs/pull/7/merge`;
   await assert.rejects(state.run(), /Unexpected event/);
   assert.deepEqual(state.calls, []);
-  assert.deepEqual(state.outputs, {});
 });
 test("existing reviews are never replaced or automatically retried", async () => {
   for (const status of ["queued", "in_progress", "completed"]) {
     const state = admissionFixture();
-    state.checks = [{ name: reviewGate, status }];
+    state.checks = [
+      {
+        name: reviewGate,
+        status,
+        app: { id: 15368 },
+        head_sha: state.pull.head.sha,
+        external_id: `public-claude-review:7:${state.main}:${state.pull.head.sha}`,
+      },
+    ];
     await state.run();
     assert.deepEqual(state.calls, []);
-    assert.deepEqual(state.outputs, {});
   }
 });
-test("wrong provider check identity never reaches the review receiver", async () => {
-  for (const created of [
-    { id: "71" },
-    { id: 0 },
-    { name: "other" },
-    { head_sha: "c".repeat(40) },
-    { app: { id: 0 } },
-  ]) {
-    const state = admissionFixture();
-    state.created = created;
-    await assert.rejects(state.run());
-    assert.deepEqual(state.outputs, {});
-  }
-});
-test("skipped model jobs cannot impersonate the required gate and group bridging is separate", () => {
+test("the model and merge-group bridge have separate triggers and privileges", () => {
   assert.equal(
     reviewWorkflow.match(/^on:\n([\s\S]*?)^permissions:/m)?.[1],
-    "  pull_request_target:\n    types: [opened, reopened, synchronize, ready_for_review]\n",
+    "  pull_request_target:\n    branches: [main]\n    types: [opened, reopened, synchronize, ready_for_review]\n",
   );
-  assert.match(reviewWorkflow, /^  review_model:$/m);
-  assert.doesNotMatch(reviewWorkflow, /^  codex_review:$/m);
+  assert.doesNotMatch(reviewWorkflow, /secrets:|run:|actions\/checkout/);
+  const receiver = readFileSync(
+    new URL("../.github/workflows/public-claude-review.yml", import.meta.url),
+    "utf8",
+  );
+  assert.match(receiver, /^  workflow_dispatch:$/m);
+  assert.match(receiver, /ref: \$\{\{ github.workflow_sha \}\}/);
+  assert.match(receiver, /claude_code_oauth_token: \$\{\{ secrets.CLAUDE_CODE_OAUTH_TOKEN \}\}/);
   assert.doesNotMatch(
-    reviewWorkflow,
-    /name: Codex review gate|secrets: inherit|run:|actions\/checkout/,
+    receiver,
+    /pull_request_target:|merge_group:|OPENAI_API_KEY|anthropic_api_key:|name: Claude review gate/,
   );
-  assert.match(reviewWorkflow, /OPENAI_API_KEY: \$\{\{ secrets.OPENAI_API_KEY \}\}/);
+  const modelJob = receiver.split("\n  model:\n")[1].split("\n  report:\n")[0];
+  assert.doesNotMatch(modelJob, /: write|github_token:/);
   const group = readFileSync(
     new URL("../.github/workflows/public-review-merge-group.yml", import.meta.url),
     "utf8",
   );
   assert.match(group, /^  merge_group:$/m);
-  assert.match(group, /^  codex_review:$/m);
-  assert.match(group, /mode: merge_group/);
-  assert.doesNotMatch(group, /pull_request:|pull_request_target:|\n\s+if:|secrets:/);
+  assert.match(group, /gate: \[Claude review gate, codex_review \/ Codex review gate\]/);
+  assert.doesNotMatch(group, /pull_request:|pull_request_target:|uses:|secrets:/);
 });
 
 test("the failure diagnostic names the assertion without printing generated diffs", () => {

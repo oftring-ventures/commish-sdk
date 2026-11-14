@@ -18,6 +18,50 @@ pnpm test
 them); CI runs the same check and
 reports test coverage for the CLI and release scripts.
 
+## Required pull request review
+
+Ready, same-repository PRs targeting `main` receive one exact-head code review
+using Claude Code OAuth. P0/P1 findings at confidence 0.85 or higher fail the
+gate. Other findings remain visible as warnings. Missing authentication,
+exhausted allowance, invalid output, incomplete reviews, and execution failures
+also fail the gate. The Actions run retains the structured review report for 30
+days. Inspect the report even when the gate passes.
+
+1. Before merging the migration, add `CLAUDE_CODE_OAUTH_TOKEN` to
+   [commish-sdk's Actions secrets](https://github.com/oftring-ventures/commish-sdk/settings/secrets/actions).
+   Generate it with `claude setup-token` on the existing subscription account, then
+   use the GitHub secret form or the hidden prompt from
+   `gh secret set CLAUDE_CODE_OAUTH_TOKEN --repo oftring-ventures/commish-sdk`.
+   Disable usage credits and auto-reload in the Claude account's Usage settings.
+   The workflow uses OAuth exclusively. Account settings control paid overages.
+2. Land the migration through the existing merge queue. During cutover, one
+   Claude run reports its decision as both `Claude review gate` and
+   `codex_review / Codex review gate`. The merge-group workflow bridges both
+   names from already reviewed PR heads without a model call.
+3. After a ready PR passes the new gate on its current head, add
+   `Claude review gate` with GitHub Actions as the source in the SDK's
+   [Public main admission ruleset](https://github.com/oftring-ventures/commish-sdk/rules/22551792).
+   Preserve the other requirements. Hold queue admission during the ruleset
+   cutover and requeue any entries created before it. For open PR heads reviewed
+   before cutover, use a fresh ready-for-review event if the Claude check is
+   missing.
+4. Once the new requirement is active, remove the SDK from the scope of the
+   [organization Codex ruleset](https://github.com/oftring-ventures/commish-sdk/rules/21969859)
+   and remove its legacy context from the SDK ruleset. Then remove the legacy
+   check publishing and merge-group bridge in a follow-up. Remove SDK access to
+   any unused OpenAI review secret after confirming no other SDK workflow uses it.
+   Preserve the shared workflow and other repositories' settings.
+
+After repairing configuration or after the subscription allowance resets, rerun
+the failed jobs of the original Claude run so the admitted check IDs are reused.
+GitHub can withhold a structured job output if it matches a masked secret;
+missing output fails closed. Full model transcripts stay out of public artifacts.
+
+See [Claude Code GitHub Actions](https://code.claude.com/docs/en/github-actions)
+and [Claude usage credits](https://support.claude.com/en/articles/12429409-manage-usage-credits-for-paid-claude-plans).
+
+## Release candidates
+
 The complete release, the SDK and Next pair plus the `commish` launcher, targets the
 stable version declared in the SDK manifest, which `scripts/stable-release.mjs` reads,
 on npm's `latest` tag. Package stability is independent of TEST/LIVE mode and

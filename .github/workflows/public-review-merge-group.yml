@@ -2,15 +2,16 @@ name: Public review merge-group bridge
 on:
   merge_group:
     types: [checks_requested]
-permissions:
-  contents: read
-  actions: read
-  checks: write
-  pull-requests: read
-  statuses: write
+permissions: {}
 jobs:
-  codex_review:
-    # This workflow has no PR trigger: no skipped required job can admit a PR head.
-    uses: oftring-ventures/.github/.github/workflows/codex-pr-review.yml@0b8c58b73fddadaa69ce46deaec79c4ef63513d0
-    with:
-      mode: merge_group
+  review:
+    name: ${{ matrix.gate }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # Keep the legacy name until both rulesets require Claude.
+        gate: [Claude review gate, codex_review / Codex review gate]
+    runs-on: ubuntu-slim
+    timeout-minutes: 5
+    steps:
+      - run: echo 'The merge queue requires review on each admitted PR head.'
