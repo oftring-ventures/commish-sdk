@@ -243,6 +243,14 @@ Stripe completion; `--wait 0` returns immediately after provisioning. This flag
 does not shorten the initial authorization wait. Provider actions resume in the
 CLI after completion, or on a new authorized run if the wait expires.
 
+The Stripe connection link is a page for the signed-in workspace owner or admin
+and stays valid after the setup session ends. It is announced on stderr as
+`browser_action_required`, and a receipt that still waits for Stripe repeats it
+as `browserActions: [{ "action": "connect_stripe", "url": "..." }]`, so a caller
+that reads output only after the command exits can still pass it on. Once the
+owner has connected Stripe, `commish doctor` reports `stripe_connection`; a new
+approval is not needed for that step alone.
+
 Progress and handoff events go to stderr; `--json` produces one final receipt on
 stdout. Exit 0 means practical configuration completed, 2 means input or browser
 action remains, 1 means a sanitized error, and 130 means interruption. A

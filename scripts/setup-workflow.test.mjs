@@ -109,6 +109,18 @@ test("waits for provider completion with no automatic browser and revokes tempor
   assert(!JSON.stringify(result).includes("readinessInput"));
   assert(!f.authorizations[0].input.operations.includes("webhook.write"));
   assert.deepEqual(f.authorizations[0].input.setupIntent, { version: 1, ...business });
+  // Once Stripe is connected there is no browser step left to repeat.
+  assert(!Object.hasOwn(result, "browserActions"));
+});
+test("a wait that ends before Stripe is connected repeats the connection link in the receipt", async () => {
+  const f = fixture(),
+    result = await runSetup("/repo", config, { ...options, waitSeconds: 0 }, f.dependencies);
+  assert.equal(result.status, "action_required");
+  assert.deepEqual(result.browserActions, [{ action: "connect_stripe", url: f.notices[0].url }]);
+  assert.equal(
+    f.notices[0].url,
+    "https://app.commish.sh/cli/setup/workspace/wrk_123456789012/stripe?mode=test",
+  );
 });
 test("a chosen return window is reviewed in the same approval and reported from provisioning", async () => {
   const f = fixture(),

@@ -128,6 +128,9 @@ function resultText(result) {
     `Setup ${result.status.replaceAll("_", " ")} (${result.mode.toUpperCase()}).\nWorkspace: ${result.workspaceId}\nApplication: ${result.applicationId}\nProgram: ${result.programId}\nCredentials file: ${result.credentialsFile}\n` +
     (result.webhookFile ? `Webhook secret file: ${result.webhookFile}\n` : "") +
     (result.onboarding ? onboardingText(result.onboarding) : "") +
+    (result.browserActions ?? [])
+      .map((item) => `Open in the browser (${item.action.replaceAll("_", " ")}): ${item.url}\n`)
+      .join("") +
     `Remaining steps: ${result.readiness.actions.join(", ") || "complete integration acceptance"}.\nIntegration remains unverified. Rerun this command to resume.`
   );
 }
