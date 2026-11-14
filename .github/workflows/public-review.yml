@@ -1,6 +1,7 @@
 name: Public review admission
 on:
   pull_request_target:
+    branches: [main]
     types: [opened, reopened, synchronize, ready_for_review]
 permissions:
   contents: read
@@ -17,22 +18,15 @@ jobs:
     permissions:
       contents: read
       pull-requests: read
-      checks: write
-    outputs:
-      admitted: ${{ steps.admit.outputs.admitted }}
-      pr_number: ${{ steps.admit.outputs.pr_number }}
-      base_sha: ${{ steps.admit.outputs.base_sha }}
-      head_sha: ${{ steps.admit.outputs.head_sha }}
-      head_repository: ${{ steps.admit.outputs.head_repository }}
-      check_run_id: ${{ steps.admit.outputs.check_run_id }}
+      actions: write
+      checks: read
     steps:
       - uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
-        id: admit
         with:
           script: |
             const assert = require('node:assert/strict');
             const repository = 'oftring-ventures/commish-sdk';
-            const gate = 'codex_review / Codex review gate';
+            const gate = 'Claude review gate';
             const { owner, repo } = context.repo;
             assert.equal(`${owner}/${repo}`, repository, 'Unexpected repository');
             const event = context.payload.pull_request;
@@ -57,38 +51,14 @@ jobs:
             assert.equal(process.env.GITHUB_WORKFLOW_SHA, main.object.sha,
               'Review workflow is not current main');
             const checks = await github.paginate(github.rest.checks.listForRef,
-              { owner, repo, ref: pull.head.sha, filter: 'all' });
-            // Existing queued/failed/successful reviews never authorize an automatic retry.
-            if (checks.some(({ name }) => name === gate)) return;
-            const { data: check } = await github.rest.checks.create({
-              owner, repo, name: gate, head_sha: pull.head.sha, status: 'queued',
-              external_id: `public-review:${pull_number}:${pull.base.sha}:${pull.head.sha}`,
+              { owner, repo, ref: pull.head.sha, app_id: 15368, filter: 'all' });
+            // The receiver serializes and deduplicates dispatches on the exact head.
+            if (checks.some((check) => check.name === gate && check.app?.id === 15368 &&
+              check.external_id?.startsWith(`public-claude-review:${pull_number}:`) &&
+              check.head_sha === pull.head.sha)) return;
+            await github.rest.actions.createWorkflowDispatch({
+              owner, repo, workflow_id: 'public-claude-review.yml', ref: 'main',
+              inputs: {
+                pr_number: String(pull_number), base_sha: pull.base.sha, head_sha: pull.head.sha,
+              },
             });
-            assert(Number.isSafeInteger(check.id) && check.id > 0, 'Invalid check identity');
-            assert.equal(check.head_sha, pull.head.sha, 'Check belongs to another head');
-            assert.equal(check.name, gate, 'Check name changed');
-            assert.equal(check.app?.id, 15368, 'Unexpected check producer');
-            for (const [name, value] of Object.entries({
-              pr_number: pull_number, base_sha: pull.base.sha, head_sha: pull.head.sha,
-              head_repository: repository, check_run_id: check.id, admitted: 'true',
-            })) core.setOutput(name, String(value));
-  review_model:
-    # Its skipped job names deliberately differ from the inherited required context.
-    needs: admit
-    if: needs.admit.outputs.admitted == 'true'
-    permissions:
-      contents: read
-      actions: read
-      checks: write
-      pull-requests: read
-      statuses: write
-    uses: oftring-ventures/.github/.github/workflows/codex-pr-review.yml@0b8c58b73fddadaa69ce46deaec79c4ef63513d0
-    with:
-      mode: pr
-      pr_number: ${{ needs.admit.outputs.pr_number }}
-      base_sha: ${{ needs.admit.outputs.base_sha }}
-      head_sha: ${{ needs.admit.outputs.head_sha }}
-      head_repository: ${{ needs.admit.outputs.head_repository }}
-      check_run_id: ${{ needs.admit.outputs.check_run_id }}
-    secrets:
-      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}

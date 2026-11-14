@@ -1,0 +1,152 @@
+name: Public Claude code review
+run-name: Claude review #${{ inputs.pr_number }} · ${{ inputs.head_sha }}
+on:
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: Admitted pull request number
+        required: true
+        type: string
+      base_sha:
+        description: Admitted main SHA
+        required: true
+        type: string
+      head_sha:
+        description: Admitted pull request head SHA
+        required: true
+        type: string
+permissions:
+  contents: read
+concurrency:
+  group: public-claude-review-${{ inputs.head_sha }}
+  cancel-in-progress: false
+env:
+  REVIEW_PR: ${{ inputs.pr_number }}
+  REVIEW_BASE: ${{ inputs.base_sha }}
+  REVIEW_HEAD: ${{ inputs.head_sha }}
+jobs:
+  admission:
+    if: github.repository == 'oftring-ventures/commish-sdk' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+      checks: write
+    outputs:
+      check_id: ${{ steps.admit.outputs.check_id }}
+      legacy_id: ${{ steps.admit.outputs.legacy_id }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.workflow_sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+      - name: Admit exact head
+        id: admit
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node scripts/public-claude-review.mjs admit
+  model:
+    name: Run the subscription review
+    needs: admission
+    if: needs.admission.outputs.check_id != '' && needs.admission.outputs.legacy_id != ''
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      result: ${{ steps.claude.outputs.structured_output }}
+      conclusion: ${{ steps.claude.outputs.conclusion }}
+      configured: ${{ steps.prepare.outputs.configured }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.workflow_sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+      - name: Check out review subject as data
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.head_sha }}
+          path: pr-head
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Prepare the introduced-change patch
+        id: prepare
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          HAS_CLAUDE_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN != '' }}
+        run: node scripts/public-claude-review.mjs prepare
+      - name: Review with Claude Code OAuth
+        id: claude
+        timeout-minutes: 30
+        uses: anthropics/claude-code-action/base-action@c0949c50a78c1ec8ce2647db36629b870e715d0c # v1.0.268
+        env:
+          ANTHROPIC_API_KEY: ""
+          ANTHROPIC_AUTH_TOKEN: ""
+          ANTHROPIC_BASE_URL: ""
+          CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1"
+          NODE_VERSION: "24"
+          ACTIONS_STEP_DEBUG: "false"
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          show_full_output: "false"
+          prompt: |
+            Read the trusted review instructions in .github/public-claude-review.md.
+            Review the complete .review-pr.patch and trace current definitions and
+            callers in pr-head/. Return the required structured result.
+          claude_args: >-
+            --model claude-sonnet-5 --effort high --max-turns 100
+            --restricted --safe-mode --setting-sources user
+            --tools Read,Glob,Grep --allowedTools Read,Glob,Grep
+            --disallowedTools "mcp__*" "Read(./.git/**)" "Read(./pr-head/.git/**)"
+            --strict-mcp-config --mcp-config '{"mcpServers":{}}'
+            --json-schema '${{ steps.prepare.outputs.schema }}'
+      - name: Fail the model job if review execution failed
+        env:
+          CONCLUSION: ${{ steps.claude.outputs.conclusion }}
+        run: test "$CONCLUSION" = success
+  report:
+    name: Publish review decision
+    needs: [admission, model]
+    if: always() && needs.admission.outputs.check_id != '' && needs.admission.outputs.legacy_id != ''
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+      checks: write
+      statuses: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.workflow_sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+      - name: Resolve and enforce the required checks
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          REVIEW_CHECK_ID: ${{ needs.admission.outputs.check_id }}
+          REVIEW_LEGACY_ID: ${{ needs.admission.outputs.legacy_id }}
+          REVIEW_JOB_RESULT: ${{ needs.model.result }}
+          REVIEW_CONCLUSION: ${{ needs.model.outputs.conclusion }}
+          REVIEW_CONFIGURED: ${{ needs.model.outputs.configured }}
+          REVIEW_RESULT: ${{ needs.model.outputs.result }}
+          REPORT_PATH: ${{ runner.temp }}/claude-review-report.json
+        run: node scripts/public-claude-review.mjs report
+      - name: Save review evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: claude-code-review-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/claude-review-report.json
+          retention-days: 30
+          if-no-files-found: error
