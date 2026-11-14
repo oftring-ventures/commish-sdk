@@ -1,6 +1,6 @@
 {
   "name": "commish",
-  "version": "0.7.0",
+  "version": "0.7.1",
   "description": "Run the Commish developer CLI with npx commish",
   "license": "MIT",
   "repository": {
@@ -22,7 +22,7 @@
     "commish": "./bin/commish.mjs"
   },
   "dependencies": {
-    "@commish/sdk": "0.7.0"
+    "@commish/sdk": "0.7.1"
   },
   "publishConfig": {
     "access": "public",

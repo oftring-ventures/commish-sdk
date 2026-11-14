@@ -3,6 +3,35 @@
 Notable changes to `@commish/sdk`, `@commish/next`, and `commish`, which release
 together with one version. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## 0.7.1 - 2026-11-14
+
+### Fixed
+
+- `commish setup` accepts `terms.returnWindowDays` (an integer from 0 to 180),
+  which the published setup schema already listed, and reports an invalid value
+  under that field name instead of `terms`. An omitted value is not sent, and the
+  final receipt reports the window the server stored next to `termVersion`.
+  Progress saved by 0.7.0 still resumes.
+- `commish verify --help` and `commish init --help --json` print help instead of
+  failing with `invalid_arguments`.
+- `commish manage --body-file` explains a refused file with a fixed `reason`
+  (`path_not_repository_relative`, `file_missing`, `file_unreadable`,
+  `invalid_json` or `json_object_required`) and `guidance`, without echoing the
+  path or contents. Body files must still be inside the repository.
+- `commish agent --json` returns a `configurationGuideUrl` pinned to the release
+  tag, like its other links, instead of `main`.
+
+### Changed
+
+- A `commish setup` receipt that is still waiting for Stripe repeats the
+  connection link as `browserActions: [{ action: "connect_stripe", url }]`, and
+  the text output prints it. The field is absent once Stripe is connected.
+- The Next guide explains how to wait for referral capture before Checkout and
+  that `client_reference_id` must be the merchant's own stable customer ID. The
+  SDK guide explains how to read the `commish doctor` report.
+- The SDK, Next adapter and `commish` launcher release together at 0.7.1.
+  The launcher pins `@commish/sdk@0.7.1`; Next accepts `@commish/sdk@~0.7.1`.
+
 ## 0.7.0 - 2026-11-13
 
 ### Added
