@@ -1,8 +1,40 @@
-import { argumentsFor, errorReceipt, fail } from "./cli-http.mjs";
+import { argumentsFor, CliError, errorReceipt, fail } from "./cli-http.mjs";
 import { managementCatalog, managementClient } from "./management-client.mjs";
 import { readSetupFile, writeSetupFile } from "./setup-files.mjs";
 import { protectPrivateState } from "./setup-progress.mjs";
 
+// Why a body file was refused. Reasons and guidance are fixed text: neither the
+// path nor anything read from the file reaches output.
+const bodyFileGuidance = {
+  path_not_repository_relative:
+    "Pass --body-file a relative path inside the current repository (the directory the command runs in): no absolute path, no .. segment and no symbolic link. Copy the file into the repository first.",
+  file_missing: "No file exists at that path, relative to the directory the command runs in.",
+  file_unreadable: "The body file must be a readable regular UTF-8 file of at most 1 MiB.",
+  invalid_json: "The body file is not valid JSON.",
+  json_object_required: "The body file must contain one JSON object.",
+};
+const bodyFileFailure = (reason) =>
+  new CliError("invalid_body_file", { reason, guidance: bodyFileGuidance[reason] });
+function readBodyFile(root, path) {
+  let text, input;
+  try {
+    text = readSetupFile(root, path, { profile: "configuration" });
+  } catch (error) {
+    throw bodyFileFailure(
+      { unsafe_file_path: "path_not_repository_relative", setup_file_missing: "file_missing" }[
+        error?.message
+      ] ?? "file_unreadable",
+    );
+  }
+  try {
+    input = JSON.parse(text);
+  } catch {
+    throw bodyFileFailure("invalid_json");
+  }
+  if (!input || typeof input !== "object" || Array.isArray(input))
+    throw bodyFileFailure("json_object_required");
+  return input;
+}
 export const managementHelp = () => ({
   version: 1,
   status: "help",
@@ -28,6 +60,12 @@ export const managementHelp = () => ({
   authorization: "commish auth login; a separate scoped management grant is required",
   mutationPolicy:
     "explicit_body_file_no_automatic_retries; retain operationKey/idempotencyKey from the operation schema",
+  bodyFile: {
+    path: "relative_path_inside_the_current_repository; no absolute path, .. segment or symbolic link",
+    content: "one JSON object in a regular UTF-8 file of at most 1 MiB",
+    errorCode: "invalid_body_file",
+    errorReasons: Object.keys(bodyFileGuidance),
+  },
   webhookSecret:
     "webhooks.secret requires an owner-only, ignored output file; no secret is printed",
   schema: "bundled versioned snapshot; server validates every input",
@@ -117,12 +155,7 @@ export async function executeManagement(args, options = {}) {
       fail("missing_input");
   } else {
     if (query.size || !v["body-file"]) fail("mutation_input_required");
-    try {
-      input = JSON.parse(readSetupFile(root, v["body-file"], { profile: "configuration" }));
-    } catch {
-      fail("invalid_body_file");
-    }
-    if (!input || typeof input !== "object" || Array.isArray(input)) fail("invalid_body_file");
+    input = readBodyFile(root, v["body-file"]);
     if (operation !== "webhooks.secret" && v["output-file"]) fail("invalid_arguments");
   }
   const client = managementClient({
