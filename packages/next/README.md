@@ -68,7 +68,31 @@ export default function Layout({ children }: { children: ReactNode }) {
 The provider captures on client navigation through the same-origin route above.
 Set `capturePath` on the provider if that route uses another same-origin path.
 Successful capture removes `commish_ref` while preserving navigation state;
-failure keeps the referral for retry. Wait for capture before starting Checkout.
+failure keeps the referral for retry. Wait for capture before starting Checkout:
+in the client component that starts it, await `captureReferral` from
+`@commish/next/browser` with the same keys as the provider. It joins a capture
+the provider already started instead of sending a second one.
+
+```tsx
+"use client";
+import { captureReferral } from "@commish/next/browser";
+
+export function BuyButton() {
+  return (
+    <button
+      onClick={async () => {
+        await captureReferral({
+          publishableKey: process.env.NEXT_PUBLIC_COMMISH_PUBLISHABLE_KEY!,
+          applicationId: process.env.NEXT_PUBLIC_COMMISH_APPLICATION_ID!,
+        });
+        window.location.assign("/api/checkout");
+      }}
+    >
+      Buy
+    </button>
+  );
+}
+```
 
 ## Agent-driven installation and Checkout
 
@@ -78,6 +102,13 @@ to your existing Stripe Checkout integration. The helper preserves other
 parameters and applies the request's attribution to payment or subscription
 metadata. `getCommishAttribution()` reads that cookie directly; both helpers
 require a Next request context. The root export is blocked in browser builds.
+
+Set `client_reference_id` on the Checkout parameters to your own stable customer
+ID before calling the helper. A shop without accounts gives each buyer one ID it
+can find again, for example stored with their email, and reuses it on their
+later orders; never send the email address itself. Without it Commish still
+records the purchase, from the Checkout email, but `commish doctor` keeps
+`stable_customer_identity` unmet and the TEST integration cannot be activated.
 The provider belongs at `@commish/next/react`; `@commish/next/browser` also exports
 `captureReferral` for direct browser integration.
 

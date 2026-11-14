@@ -760,6 +760,17 @@ webhook shows HTTP acceptance, not correct business processing by its recipient.
 false. LIVE provider readiness, refunds, renewals, settlement and payouts need
 separate checks.
 
+Reading the report:
+
+- A check that is met carries no `action`; each unmet check names its next step.
+- `stable_customer_identity` needs the Checkout session's `client_reference_id`
+  to be your own stable customer ID. A purchase without it is still recorded.
+- A workspace with no enabled webhook endpoint in the mode reports
+  `related_webhook_delivered` as `not_applicable`; it is not an unmet condition.
+- A commission with status `unfunded` is recorded and attributed. It waits for
+  workspace funding before it can be paid, and is the expected result of a first
+  TEST purchase.
+
 ```sh
 commish test fixture --program prg_123456789012 --json
 commish test conversion --body-file reviewed-test-conversion.json --idempotency-key test-order-1 --json
