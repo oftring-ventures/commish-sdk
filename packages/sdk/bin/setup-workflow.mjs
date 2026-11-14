@@ -103,9 +103,19 @@ export async function runSetup(
     let refreshPending = false;
     const pending = () => result.proof !== null || needsStripe() || refreshPending;
     if (result.proof) notify({ status: "publish_required", ...result.proof });
+    // The Stripe page needs only the signed-in workspace owner, so its link
+    // outlives this session. Repeat it in the final receipt while Stripe is
+    // still unconnected: a caller that reads stdout only after the command
+    // exits never saw the stderr event.
+    let stripeUrl = null;
+    const browserActions = () =>
+      needsStripe() && stripeUrl
+        ? { browserActions: [{ action: "connect_stripe", url: stripeUrl }] }
+        : {};
     if (needsStripe()) {
       const handoff = await session.stripeHandoff({ flow: "setup" }),
         url = new URL(handoff.path, options.appUrl).href;
+      stripeUrl = url;
       if (signal?.aborted) throw new Error("setup_interrupted");
       notify({
         status: "browser_action_required",
@@ -141,6 +151,7 @@ export async function runSetup(
         if (reauthorize.includes(error?.message)) {
           return {
             ...result,
+            ...browserActions(),
             status: "action_required",
             code: "reauthorization_required",
             resume: "rerun_same_command",
@@ -155,6 +166,7 @@ export async function runSetup(
     if (signal?.aborted) throw new Error("setup_interrupted");
     return {
       ...result,
+      ...browserActions(),
       status: pending() ? "action_required" : "configured",
       resume: "rerun_same_command",
     };

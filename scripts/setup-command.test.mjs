@@ -107,11 +107,21 @@ test("human output distinguishes local configuration from verified integration a
     credentialsFile: ".commish/setup/test/credentials.env",
     webhookFile: ".commish/setup/test/webhook.env",
     readiness: { actions: ["connect_stripe"] },
+    browserActions: [
+      {
+        action: "connect_stripe",
+        url: "https://app.commish.sh/cli/setup/workspace/wrk_123456789012/stripe?mode=test",
+      },
+    ],
     integrationVerified: false,
   };
   assert.equal(await runSetupCommand([], { ...f.options, execute: async () => result }), 2);
   assert.match(f.output[0], /Setup action required \(TEST\)/);
   assert.match(f.output[0], /connect_stripe/);
+  assert.match(
+    f.output[0],
+    /Open in the browser \(connect stripe\): https:\/\/app\.commish\.sh\/cli\/setup\/workspace\/wrk_123456789012\/stripe\?mode=test\n/,
+  );
   assert.match(f.output[0], /Integration remains unverified/);
 });
 test("errors and interrupted requests have sanitized output and release signal listeners", async (t) => {
