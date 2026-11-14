@@ -91,10 +91,26 @@ Report package installation, configuration verification and the attributed TEST 
 `;
 }
 
+export const initHelp = () => ({
+  status: "help",
+  command: "init [--json]",
+  flags: ["--json", "--help"],
+  purpose:
+    "Prints a setup playbook for coding agents from a local scan of this repository. Reads package.json and checks which lockfiles and app directories exist.",
+  mutations: false,
+  networkRequests: false,
+  integrationVerified: false,
+});
 export function runInitCommand(args, { root = process.cwd(), out = console.log } = {}) {
-  if (args.length === 1 && ["--help", "-h"].includes(args[0])) {
+  if (
+    args.some((arg) => ["--help", "-h"].includes(arg)) &&
+    args.every((arg) => ["--help", "-h", "--json"].includes(arg)) &&
+    new Set(args).size === args.length
+  ) {
     out(
-      "Usage: commish init [--json]\nPrints a setup playbook for coding agents from a local scan of this repository. Reads package.json and checks which lockfiles and app directories exist; makes no network requests and writes no files.",
+      args.includes("--json")
+        ? JSON.stringify(initHelp())
+        : "Usage: commish init [--json]\nPrints a setup playbook for coding agents from a local scan of this repository. Reads package.json and checks which lockfiles and app directories exist; makes no network requests and writes no files.",
     );
     return 0;
   }

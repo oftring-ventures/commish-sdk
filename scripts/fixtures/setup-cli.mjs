@@ -292,6 +292,7 @@ export async function verifySetupCli(executable) {
       ["keys", "--help"],
       ["doctor", "--help"],
       ["test", "--help"],
+      ["verify", "--help"],
       ["agent"],
     ]) {
       await new Promise((resolve, reject) =>
