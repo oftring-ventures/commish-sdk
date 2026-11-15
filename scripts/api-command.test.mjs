@@ -1,11 +1,18 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import catalog from "../packages/sdk/bin/api-catalog.json" with { type: "json" };
-import { executeApi, resourceCommands, runApiCommand } from "../packages/sdk/bin/api-command.mjs";
+import {
+  apiHelp,
+  executeApi,
+  resourceCommands,
+  runApiCommand,
+} from "../packages/sdk/bin/api-command.mjs";
+import { managementHelp } from "../packages/sdk/bin/management-command.mjs";
+import { executeTest } from "../packages/sdk/bin/test-command.mjs";
 
 const env = { COMMISH_SECRET_KEY: "cm_test_sk_fixture123456789" };
 const response = (data) => Response.json(data);
@@ -216,6 +223,79 @@ test("mutations require an explicit file and reusable identity, never retry", as
     /service_unavailable/,
   );
   assert.equal(calls, 1);
+});
+test("a refused body file says why with the same fixed reasons as manage, before any request", async (t) => {
+  const root = mkdtempSync(join(tmpdir(), "commish-api-")),
+    outside = mkdtempSync(join(tmpdir(), "commish-api-outside-"));
+  t.after(() => {
+    rmSync(root, { recursive: true, force: true });
+    rmSync(outside, { recursive: true, force: true });
+  });
+  writeFileSync(join(outside, "private-fixture.json"), '{"externalId":"private-fixture"}');
+  writeFileSync(join(root, "customer.json"), '{"externalId":"private-fixture"}');
+  writeFileSync(join(root, "broken.json"), '{"externalId": "private-fixture"');
+  writeFileSync(join(root, "binary.json"), Buffer.from([0xff, 0xfe, 0x00]));
+  writeFileSync(join(root, "list.json"), '["private-fixture"]');
+  mkdirSync(join(root, "folder"));
+  symlinkSync(join(outside, "private-fixture.json"), join(root, "linked.json"));
+  const attempt = async (path, command = ["customers", "identify"]) => {
+    const output = [],
+      errors = [];
+    const code = await runApiCommand(
+      [...command, "--body-file", path, "--idempotency-key", "customer-1"],
+      {
+        root,
+        env,
+        fetcher: noRequest,
+        out: (value) => output.push(value),
+        diagnostic: (value) => errors.push(value),
+      },
+    );
+    assert.deepEqual([code, output, errors.length], [1, [], 1], path);
+    assert(!errors[0].includes("private-fixture"), path);
+    assert(!errors[0].includes(outside), path);
+    return JSON.parse(errors[0]);
+  };
+  for (const [path, reason] of [
+    [join(outside, "private-fixture.json"), "path_not_repository_relative"],
+    [join(root, "customer.json"), "path_not_repository_relative"],
+    ["../private-fixture.json", "path_not_repository_relative"],
+    ["linked.json", "path_not_repository_relative"],
+    ["missing.json", "file_missing"],
+    ["folder", "file_unreadable"],
+    ["binary.json", "file_unreadable"],
+    ["broken.json", "invalid_json"],
+    ["list.json", "json_object_required"],
+  ]) {
+    const receipt = await attempt(path);
+    assert.deepEqual(Object.keys(receipt), ["version", "status", "code", "reason", "guidance"]);
+    assert.deepEqual(
+      [receipt.version, receipt.status, receipt.code, receipt.reason],
+      [1, "error", "invalid_body_file", reason],
+      path,
+    );
+    assert(receipt.guidance.length > 0 && receipt.guidance.length < 300, path);
+  }
+  // The generic form and the TEST conversion fixture read the file the same way.
+  assert.equal((await attempt("missing.json", ["api", "identifyCustomer"])).reason, "file_missing");
+  await assert.rejects(
+    executeTest(["conversion", "--body-file", "/etc/hosts", "--idempotency-key", "order-1"], {
+      root,
+      env,
+      fetcher: noRequest,
+    }),
+    (error) =>
+      error.message === "invalid_body_file" &&
+      error.detail.reason === "path_not_repository_relative",
+  );
+  assert.deepEqual(apiHelp().bodyFile, managementHelp().bodyFile);
+  assert.deepEqual(apiHelp().bodyFile.errorReasons, [
+    "path_not_repository_relative",
+    "file_missing",
+    "file_unreadable",
+    "invalid_json",
+    "json_object_required",
+  ]);
 });
 test("invalid response envelopes and oversized bodies fail closed", async () => {
   for (const body of [
