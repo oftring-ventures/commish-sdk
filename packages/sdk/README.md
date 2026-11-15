@@ -253,7 +253,15 @@ that reads output only after the command exits can still pass it on. Once the
 owner has connected Stripe, `commish doctor` reports `stripe_connection`; a new
 approval is not needed for that step alone.
 
-Progress and handoff events go to stderr; `--json` produces one final receipt on
+Progress and handoff events go to stderr, one JSON object per line with
+`--json`. Each stage is reported once as it is reached: `authorization_required`,
+`authorized`, `provisioned` (resources exist and the credential files are
+written), `publish_required`, `browser_action_required`, `destination_verified`
+and `stripe_connected`. `waiting` carries the `code` of what is still
+outstanding: it repeats while the destination check fails, and
+`stripe_not_connected` is reported once while the CLI polls for Stripe. A stage
+that was not reached before the wait ended is not reported; the final receipt
+says what remains. `--json` produces one final receipt on
 stdout. Exit 0 means practical configuration completed, 2 means input or browser
 action remains, 1 means a sanitized error, and 130 means interruption. A
 `configured` receipt can still list activation, Stripe, LIVE eligibility or TEST
@@ -688,6 +696,25 @@ commish auth revoke --auth-file .commish/management/REQUEST/authorization.json -
 servers may be selected with `--management-url` or `COMMISH_MANAGEMENT_URL`;
 they receive the credential, so use only an endpoint you trust. The CLI pins a
 stored authorization to its original endpoint and refuses redirects.
+
+`manage products.list` lists the products of the Stripe account connected to
+the workspace in the credential's mode, each with its active prices, so the ids
+for a program's `eligibleStripeProductIds` need not be asked for. It needs
+`resources.read`, which setup's onboarding access already holds, and fails with
+`stripe_connection_required` until Stripe is connected in that mode:
+
+```sh
+commish manage products.list --limit 20 --all --max-pages 10 \
+  --auth-file .commish/management/REQUEST/authorization.json --json
+```
+
+A page holds at most 20 products (10 by default) and the server allows ten
+`products.list` calls a minute per credential. `--all` on its own therefore
+cannot finish a catalog of more than 200 products: the eleventh page fails with
+`rate_limited` and, as for any failed later page, the pages already read are
+not returned. Keep `--max-pages` at 10 or fewer, counting other `products.list`
+calls in the same minute. When `complete` is `false`, wait a minute and continue
+with `--cursor <nextCursor>`.
 
 ### Explicit management writes
 

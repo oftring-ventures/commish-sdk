@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
-import { runSetupCommand } from "../packages/sdk/bin/setup-command.mjs";
+import { runSetupCommand, setupProgressEvents } from "../packages/sdk/bin/setup-command.mjs";
 
 const executable = fileURLToPath(new URL("../packages/sdk/bin/init.mjs", import.meta.url));
 const config = {
@@ -95,6 +95,58 @@ test("JSON mode separates pairing notices from its single non-secret final recei
   assert.equal(f.output.length, 1);
   assert.deepEqual(JSON.parse(f.output[0]), receipt);
   assert.equal(JSON.parse(f.notices[0]).status, "authorization_required");
+});
+test("every progress stage has its own line, and help lists the stages", async (t) => {
+  const events = [
+    {
+      status: "provisioned",
+      mode: "test",
+      workspaceId: "wrk_123456789012",
+      applicationId: "app_123456789012",
+      programId: "prg_123456789012",
+      credentialsFile: ".commish/setup/test/credentials.env",
+      webhookFile: null,
+    },
+    {
+      status: "publish_required",
+      path: "public/.well-known/commish-verification.txt",
+      url: "https://guestbook.example/.well-known/commish-verification.txt",
+    },
+    { status: "destination_verified", origin: "https://guestbook.example" },
+    { status: "waiting", code: "stripe_not_connected" },
+    { status: "stripe_connected", mode: "test" },
+  ];
+  const execute = async (_root, _input, _options, { notify }) => {
+    for (const event of events) notify(event);
+    return { status: "configured", mode: "test", integrationVerified: false };
+  };
+  const text = fixture(t, true);
+  await runSetupCommand(["--no-open"], {
+    ...text.options,
+    execute: async (...args) => ({
+      ...(await execute(...args)),
+      workspaceId: "wrk_123456789012",
+      applicationId: "app_123456789012",
+      programId: "prg_123456789012",
+      credentialsFile: ".commish/setup/test/credentials.env",
+      readiness: { actions: [] },
+    }),
+  });
+  assert.deepEqual(text.notices, [
+    "Provisioned TEST application app_123456789012 and program prg_123456789012. Credentials file: .commish/setup/test/credentials.env",
+    "Publish public/.well-known/commish-verification.txt at https://guestbook.example/.well-known/commish-verification.txt. Waiting for verification.",
+    "Verified https://guestbook.example.",
+    "Waiting for setup (stripe_not_connected)…",
+    "Stripe TEST connected.",
+  ]);
+  const json = fixture(t, true);
+  await runSetupCommand(["--json", "--no-open"], { ...json.options, execute });
+  assert.deepEqual(json.notices.map(JSON.parse), events);
+  const help = fixture(t);
+  assert.equal(await runSetupCommand(["--help", "--json"], help.options), 0);
+  const stages = JSON.parse(help.output[0]).progressEvents;
+  assert.deepEqual(stages, setupProgressEvents);
+  for (const event of events) assert(stages.includes(event.status), event.status);
 });
 test("human output distinguishes local configuration from verified integration and resumable action", async (t) => {
   const f = fixture(t, true);

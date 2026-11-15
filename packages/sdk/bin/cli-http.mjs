@@ -82,6 +82,7 @@ const safeCodes = new Set([
   "conflict",
   "program_activation_preflight_required",
   "program_not_active",
+  "stripe_connection_required",
   "creator_role_required",
   "creator_handle_required",
   "creator_handle_unavailable",
