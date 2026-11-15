@@ -1,6 +1,13 @@
 import { randomBytes } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
-import { argumentsFor, CliError, errorReceipt, fail, requestJson } from "./cli-http.mjs";
+import {
+  argumentsFor,
+  CliError,
+  errorReceipt,
+  fail,
+  missingInput,
+  requestJson,
+} from "./cli-http.mjs";
 import {
   managementCatalog,
   managementClient,
@@ -133,6 +140,14 @@ export async function executeAuth(
     )
       fail("authorization_context_mismatch");
   } else {
+    const absent = [
+      ...(v.workspace === undefined ? ["--workspace <id>"] : []),
+      ...(v.application === undefined && !v["workspace-scope"]
+        ? ["--application <id> or --workspace-scope"]
+        : []),
+      ...(v.scopes === undefined ? ["--scopes <comma-separated scopes>"] : []),
+    ];
+    if (absent.length) missingInput(absent);
     const scopes = v.scopes?.split(","),
       kind = v.onboarding ? "onboarding" : v.automation ? "automation" : "session",
       onboarding = managementCatalog.authorization.onboarding;

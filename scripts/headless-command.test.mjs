@@ -721,7 +721,7 @@ test("rehearsal creates the owner's Test partnership with a management grant and
       /invalid_response/,
     );
   for (const args of [
-    ["rehearsal"],
+    ["rehearsal", "--program", "private-fixture"],
     ["rehearsal", "--program", "prg_123456789012", "--handle", "No"],
     ["rehearsal", "--program", "prg_123456789012", "--url", "http://127.0.0.1:1/hook"],
     ["fixture", "--program", "prg_123456789012", "--handle", "pixelcraft-test"],

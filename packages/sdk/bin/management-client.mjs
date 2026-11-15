@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { apiUrl, fail, requestJson } from "./cli-http.mjs";
+import { apiUrl, fail, missingInput, requestJson } from "./cli-http.mjs";
 import catalog from "./management-catalog.json" with { type: "json" };
 import { readSetupFile } from "./setup-files.mjs";
 
@@ -120,6 +120,11 @@ export function managementClient({
   const stored = authFile ? readManagementAuthorization(root, authFile) : null;
   if (stored && env.COMMISH_MANAGEMENT_TOKEN) fail("ambiguous_authorization");
   const token = stored?.token ?? env.COMMISH_MANAGEMENT_TOKEN;
+  if (token === undefined)
+    missingInput(
+      ["--auth-file <path> or COMMISH_MANAGEMENT_TOKEN"],
+      "management_authorization_required",
+    );
   if (typeof token !== "string" || !/^cm_mgmt_(test|live)_[A-Za-z0-9_-]{43}$/.test(token))
     fail("management_authorization_required");
   if (!token.startsWith(`cm_mgmt_${mode}_`)) fail("key_mode_mismatch");

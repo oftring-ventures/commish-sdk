@@ -1,6 +1,6 @@
 import { createHmac, randomUUID } from "node:crypto";
 import { executeApi } from "./api-command.mjs";
-import { argumentsFor, CliError, errorReceipt, fail } from "./cli-http.mjs";
+import { argumentsFor, CliError, errorReceipt, fail, missingInput } from "./cli-http.mjs";
 import { managementClient } from "./management-client.mjs";
 export const testHelp = () => ({
   version: 1,
@@ -47,6 +47,9 @@ export async function executeTest(args, options = {}) {
     fail("test_mode_required");
   if (p[0] !== "rehearsal" && ["handle", "auth-file", "management-url"].some((k) => v[k]))
     fail("invalid_arguments");
+  if (["rehearsal", "fixture"].includes(p[0]) && v.program === undefined)
+    missingInput(["--program <id>"]);
+  if (p[0] === "webhook" && v.url === undefined) missingInput(["--url <loopback-url>"]);
   if (p[0] === "rehearsal") {
     if (
       !/^prg_[A-Za-z0-9_-]{12,}$/.test(v.program ?? "") ||
@@ -216,6 +219,7 @@ export async function executeTest(args, options = {}) {
   )
     fail("loopback_url_required");
   const secret = env.COMMISH_WEBHOOK_SIGNING_SECRET;
+  if (!secret) missingInput(["COMMISH_WEBHOOK_SIGNING_SECRET"], "webhook_secret_required");
   if (!/^whsec_[A-Za-z0-9_-]{12,512}$/.test(secret ?? "")) fail("webhook_secret_required");
   const event = {
     id: `evt_cli_fixture_${randomUUID().replaceAll("-", "")}`,

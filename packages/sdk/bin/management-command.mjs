@@ -1,5 +1,5 @@
 import { bodyFileHelp, readBodyFile } from "./body-file.mjs";
-import { argumentsFor, errorReceipt, fail } from "./cli-http.mjs";
+import { argumentsFor, errorReceipt, fail, missingInput } from "./cli-http.mjs";
 import { managementCatalog, managementClient } from "./management-client.mjs";
 import { writeSetupFile } from "./setup-files.mjs";
 import { protectPrivateState } from "./setup-progress.mjs";
@@ -36,6 +36,7 @@ export const managementHelp = () => ({
   defaultMode: "test",
 });
 export function privateOutputPath(value) {
+  if (value === undefined) missingInput(["--output-file <.commish/path>"]);
   if (
     typeof value !== "string" ||
     !/^\.commish\/(?:[A-Za-z0-9_-]+\/)*[A-Za-z0-9_-]+\.(?:env|json|txt)$/.test(value)
@@ -74,20 +75,15 @@ export async function executeManagement(args, options = {}) {
     definition = managementCatalog.operations[operation],
     fields = definition.input.properties;
   let input = {};
-  const query = new Map();
+  const query = new Map(),
+    flags = { program: "programId", application: "applicationId", endpoint: "endpointId" };
   for (const assignment of v.query ?? []) {
     const at = assignment.indexOf("=");
     if (at < 1 || at === assignment.length - 1 || query.has(assignment.slice(0, at)))
       fail("invalid_arguments");
     query.set(assignment.slice(0, at), assignment.slice(at + 1));
   }
-  for (const [flag, field] of Object.entries({
-    program: "programId",
-    application: "applicationId",
-    endpoint: "endpointId",
-    limit: "limit",
-    cursor: "cursor",
-  })) {
+  for (const [flag, field] of Object.entries({ ...flags, limit: "limit", cursor: "cursor" })) {
     if (v[flag] !== undefined) {
       if (query.has(field)) fail("invalid_arguments");
       query.set(field, v[flag]);
@@ -115,10 +111,17 @@ export async function executeManagement(args, options = {}) {
         input[name] = Number(value);
       } else input[name] = value;
     }
-    if (definition.input.required?.some((name) => !Object.hasOwn(input, name)))
-      fail("missing_input");
+    const absent = (definition.input.required ?? []).filter((name) => !Object.hasOwn(input, name));
+    if (absent.length)
+      missingInput(
+        absent.map((name) => {
+          const flag = Object.keys(flags).find((key) => flags[key] === name);
+          return flag ? `--${flag} <id>` : `--query ${name}=<value>`;
+        }),
+      );
   } else {
-    if (query.size || !v["body-file"]) fail("mutation_input_required");
+    if (!v["body-file"]) missingInput(["--body-file <path>"], "mutation_input_required");
+    if (query.size) fail("mutation_input_required");
     input = readBodyFile(root, v["body-file"]);
     if (operation !== "webhooks.secret" && v["output-file"]) fail("invalid_arguments");
   }
