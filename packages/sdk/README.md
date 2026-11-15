@@ -154,16 +154,25 @@ for every project.
   the receipt reports `claudeMd: "agents_md_not_referenced"`; add a line
   `@AGENTS.md` to it so Claude Code loads the section.
 
-Both texts are cut from the `commish init` playbook of the CLI that writes them.
-Rerun the command with `--write` after upgrading. `--json` returns
-one receipt listing each file as `create`, `update` or `unchanged`
-(`created` and `updated` once written). The command never prompts, and
-`--non-interactive` is accepted. Exit 0 is a plan or a completed write; 1 is a
-sanitized error. `agent_guidance_conflict`, with a `reason` per file, and
-`application_root_not_found` change no file. Any other error carries `mutations`
-and, when a write failed part-way, `files` with what had already changed
-(`created`, `updated`) and what was `not_written`; the skill is written before
-`AGENTS.md`, and a rerun finishes the job.
+Both texts are cut from the `commish init` playbook of the CLI that writes them;
+when Creator Pages are installed the section also carries the copyable block of
+the [Pages agent guide](https://github.com/oftring-ventures/commish-sdk/blob/v0.7.1/packages/next/guides/agents.md).
+Rerun the command with `--write` after upgrading. `--remove` plans, and with
+`--write` performs, the removal of the section and the skill; it works in any
+directory. An `AGENTS.md` that ended with a line break comes back byte for byte;
+one that did not keeps the line break the insertion added, and one left with no
+bytes is deleted, so a file that was empty before the install is not restored.
+When `CLAUDE.md` mentions an `AGENTS.md` that removal deletes, the receipt adds
+the next step `remove_agents_md_reference_from_claude_md`. `--json` returns
+one receipt listing each file as `create`, `update`, `delete`, `unchanged` or
+`absent` (`created`, `updated` and `deleted` once written). The command never
+prompts, and `--non-interactive` is accepted. Exit 0 is a plan or a completed
+write; 1 is a sanitized error. `agent_guidance_conflict`, with a `reason` per
+file, and `application_root_not_found` change no file. Any other error carries
+`mutations` and, when a write failed part-way, `files` with what had already
+changed (`created`, `updated`, `deleted`) and what was `not_written` or
+`not_removed`; the skill is written before `AGENTS.md` and removed after it, and
+a rerun finishes the job.
 
 Since 0.2.1, `pnpm exec commish setup --plan --json` previews setup first.
 Planning reads local configuration and bounded package metadata, reports missing

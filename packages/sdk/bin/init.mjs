@@ -471,7 +471,7 @@ if (Object.hasOwn(managementRunners, args[0])) {
         "status [options]",
         "test [command]",
         "agent --json",
-        "agent setup [--write] [--json]",
+        "agent setup [--write] [--remove] [--json]",
         ...apiHelp().commands.slice(3),
       ],
       requiredEnvironment: verifyEnvironment,
