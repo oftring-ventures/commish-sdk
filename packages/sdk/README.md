@@ -749,6 +749,30 @@ version; participants still accept their own terms. Stripe connection still
 requires provider consent in the browser. Existing LIVE eligibility and
 financial guards remain in force.
 
+### See where an install stands
+
+`commish status` reports, for the install in the current directory, each setup
+step with its status, the evidence that status rests on and the exact next
+command:
+
+```sh
+commish status --json
+```
+
+| Step | Met when |
+| --- | --- |
+| `configuration` | `commish.setup.json` (or `--config`) is complete, or setup already started from flags. |
+| `setup_approved` | A workspace owner approved setup: `.commish/setup/<mode>/workspace.json` records the workspace. |
+| `resources_provisioned` | The application, program and credential are recorded and `credentials.env` exists, plus the webhook endpoint and `webhook.env` when a webhook is configured. |
+
+It reads local files only, makes no request and changes nothing. Key material
+is checked for presence and shape and never printed. Text is the default
+output; `--json` prints one object with `status` (`complete` or `incomplete`),
+`steps`, `nextStep` and `next`. Exit 0 means every step is met, 2 that a step is
+unmet and 1 an error. Each mode keeps its own progress: `--mode live` reports
+the LIVE setup. A met step is recorded progress, not verification:
+`integrationVerified` stays false.
+
 ### Diagnose and test
 
 `doctor` requires `diagnostics.read`. It reports readiness and actual linked

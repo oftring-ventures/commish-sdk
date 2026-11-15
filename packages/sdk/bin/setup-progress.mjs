@@ -90,6 +90,28 @@ const schemas = {
   program: (v) => keys(v, ["id"]) && id(v.id, "prg"),
   webhook: (v) => keys(v, ["id"]) && id(v.id, "whe"),
 };
+const validIntent = (v) =>
+  keys(v, ["version", "fingerprint", "id", "createdAt"]) &&
+  v.version === 1 &&
+  /^[0-9a-f]{64}$/.test(v.fingerprint) &&
+  uuid(v.id) &&
+  date(v.createdAt);
+// What setup has recorded so far, for commands that only report: nothing is
+// created, so a repository that never ran setup stays untouched.
+export function readSetupProgress(root, mode) {
+  if (!["test", "live"].includes(mode)) fail("invalid_setup_step");
+  const directory = `.commish/setup/${mode}`;
+  return {
+    directory,
+    intent: read(root, `${directory}/intent.json`, validIntent),
+    ...Object.fromEntries(
+      Object.keys(schemas).map((name) => [
+        name,
+        read(root, `${directory}/${name}.json`, schemas[name]),
+      ]),
+    ),
+  };
+}
 // This journal contains identities only. A new browser grant is required on
 // every run; neither session authority nor API/signing keys are stored here.
 export function openSetupProgress(
@@ -125,12 +147,7 @@ export function openSetupProgress(
   protectPrivateState(root);
   const directory = `.commish/setup/${config.mode}`,
     path = `${directory}/intent.json`;
-  const valid = (v) =>
-    keys(v, ["version", "fingerprint", "id", "createdAt"]) &&
-    v.version === 1 &&
-    /^[0-9a-f]{64}$/.test(v.fingerprint) &&
-    uuid(v.id) &&
-    date(v.createdAt);
+  const valid = validIntent;
   let intent = read(root, path, valid);
   if (!intent) {
     const proposed = { version: 1, fingerprint, id: randomUUID(), createdAt: now().toISOString() };
