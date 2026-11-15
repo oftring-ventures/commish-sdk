@@ -15,7 +15,8 @@ import {
   unlinkSync,
   writeFileSync,
 } from "node:fs";
-import { basename, dirname, join, posix, resolve } from "node:path";
+import { homedir } from "node:os";
+import { basename, dirname, join, resolve } from "node:path";
 import manifest from "../package.json" with { type: "json" };
 import guidance from "./agent-guidance.json" with { type: "json" };
 import { commishCli, initGuide } from "./init-command.mjs";
@@ -148,25 +149,38 @@ function skillPlan(previous, skill, remove) {
   return remove ? null : skill;
 }
 
-// Beside a CLAUDE.md, Claude Code loads AGENTS.md only through an import: an "@AGENTS.md" or
-// "@./AGENTS.md" token outside code spans and fenced code blocks. Naming the file in a sentence
-// does not load it.
-function importsAgentsFile(text) {
+// Whether a path written in CLAUDE.md, or a link from it, is this directory's AGENTS.md.
+// Relative paths start at the directory, "~/" at the home directory; the directory is
+// resolved through links, the file itself is never opened.
+function isAgentsFile(root, path) {
+  const target = path.startsWith("~/") ? join(homedir(), path.slice(2)) : resolve(root, path);
+  if (basename(target) !== agentsFile) return false;
+  try {
+    return realpathSync(dirname(target)) === realpathSync(root);
+  } catch {
+    return false;
+  }
+}
+// Beside a CLAUDE.md, Claude Code loads AGENTS.md only through an import: an "@path" token
+// that resolves to the file ("@AGENTS.md", "@./AGENTS.md", an absolute or "~/" path), outside
+// code spans and fenced code blocks. Naming the file in a sentence does not load it.
+function importsAgentsFile(root, text) {
   let fence;
   return text.split(/\r?\n/).some((line) => {
-    const mark = line.match(/^\s*(`{3,}|~{3,})/)?.[1];
+    // A fence is indented at most three spaces; a backtick fence has no backtick after it.
+    const [, mark, rest] = line.match(/^ {0,3}(`{3,}|~{3,})(.*)$/) ?? [];
     if (fence) {
-      if (mark?.[0] === fence[0] && mark.length >= fence.length) fence = undefined;
+      if (mark?.[0] === fence[0] && mark.length >= fence.length && !rest.trim()) fence = undefined;
       return false;
     }
-    if (mark) {
+    if (mark && !(mark[0] === "`" && rest.includes("`"))) {
       fence = mark;
       return false;
     }
-    return line
-      .replace(/`[^`]*`/g, " ")
-      .split(/\s+/)
-      .some((word) => word[0] === "@" && posix.normalize(word.slice(1)) === agentsFile);
+    // A path ends at the first space that has no backslash before it.
+    return [...line.replace(/`[^`]*`/g, " ").matchAll(/(?:^|\s)@((?:\\ |\S)+)/g)].some(([, path]) =>
+      isAgentsFile(root, path.replaceAll("\\ ", " ")),
+    );
   });
 }
 
@@ -200,12 +214,9 @@ export function planAgentSetup(root, remove = false) {
     const path = join(root, "CLAUDE.md");
     // A CLAUDE.md linked to AGENTS.md is that file; any other link is not followed.
     if (lstatSync(path).isSymbolicLink())
-      claudeMd =
-        resolve(root, readlinkSync(path)) === join(root, agentsFile)
-          ? "references_agents_md"
-          : "not_inspected";
+      claudeMd = isAgentsFile(root, readlinkSync(path)) ? "references_agents_md" : "not_inspected";
     else
-      claudeMd = importsAgentsFile(read(root, "CLAUDE.md"))
+      claudeMd = importsAgentsFile(root, read(root, "CLAUDE.md"))
         ? "references_agents_md"
         : "agents_md_not_referenced";
   } catch (error) {

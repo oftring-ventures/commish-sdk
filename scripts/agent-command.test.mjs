@@ -7,6 +7,7 @@ import {
   mkdtempSync,
   readdirSync,
   readFileSync,
+  realpathSync,
   rmSync,
   symlinkSync,
   writeFileSync,
@@ -375,6 +376,11 @@ test("CLAUDE.md is reported and never edited", (t) => {
       "agents_md_not_referenced",
     ],
     ["Mail docs@AGENTS.md, see @AGENTS.md.bak and @docs/AGENTS.md\n", "agents_md_not_referenced"],
+    // Four spaces make an indented code block, not a fence, so the import after it is live.
+    ["Example:\n\n    ```\n\n@AGENTS.md\n", "references_agents_md"],
+    ["``` not a fence `x`\n@AGENTS.md\n", "references_agents_md"],
+    // Up to three spaces still open a fence, and only a bare fence line closes it.
+    ["   ```md\n@AGENTS.md\n``` still code\n@AGENTS.md\n   ```\n", "agents_md_not_referenced"],
   ]) {
     const root = repository(t, { "CLAUDE.md": body });
     const written = receipt(root, "--write");
@@ -417,11 +423,51 @@ test("CLAUDE.md is reported and never edited", (t) => {
   assert.deepEqual(receipt(mentioned, "--remove").nextSteps, [
     "rerun_the_same_arguments_with_--write",
   ]);
+  // An absolute or home-relative import counts when it resolves to this AGENTS.md, however
+  // the directory is spelled, and removal then names the import it leaves dangling.
+  const state = (root, body, home = root) => {
+    writeFileSync(join(root, "CLAUDE.md"), body);
+    const result = spawnSync(
+      process.execPath,
+      [executable, "agent", "setup", "--remove", "--json"],
+      {
+        cwd: root,
+        encoding: "utf8",
+        env: { PATH: process.env.PATH, HOME: home },
+      },
+    );
+    const { claudeMd, nextSteps } = JSON.parse(result.stdout);
+    return [claudeMd, nextSteps.includes("remove_agents_md_reference_from_claude_md")];
+  };
+  const absolute = repository(t, { "docs/AGENTS.md": "", "my docs/keep": "" });
+  receipt(absolute, "--write");
+  const elsewhere = repository(t);
+  for (const [path, imported] of [
+    [join(absolute, "AGENTS.md"), true],
+    [join(realpathSync(absolute), "AGENTS.md"), true],
+    [`${absolute}/docs/../AGENTS.md`, true],
+    [`${absolute}/my\\ docs/../AGENTS.md`, true],
+    [join(absolute, "docs", "AGENTS.md"), false],
+    [join(absolute, "missing", "AGENTS.md"), false],
+    [join(elsewhere, "AGENTS.md"), false],
+    [`${absolute}/my docs/../AGENTS.md`, false],
+  ])
+    assert.deepEqual(
+      state(absolute, `Rules: @${path}\n`),
+      [imported ? "references_agents_md" : "agents_md_not_referenced", imported],
+      path,
+    );
+  assert.deepEqual(state(absolute, "@~/AGENTS.md\n"), ["references_agents_md", true]);
+  assert.deepEqual(state(absolute, "@~/AGENTS.md\n", elsewhere), [
+    "agents_md_not_referenced",
+    false,
+  ]);
   // A CLAUDE.md linked to AGENTS.md is that file; a link elsewhere is not followed.
   for (const [target, state] of [
     ["AGENTS.md", "references_agents_md"],
     ["./AGENTS.md", "references_agents_md"],
     ["docs/AGENTS.md", "not_inspected"],
+    ["/AGENTS.md", "not_inspected"],
   ]) {
     const linked = repository(t, { "docs/AGENTS.md": "@AGENTS.md\n" });
     symlinkSync(target, join(linked, "CLAUDE.md"));

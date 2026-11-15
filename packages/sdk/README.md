@@ -152,8 +152,8 @@ for every project.
   is reported as a conflict and left alone.
 - `CLAUDE.md` is never edited. When it exists without importing `AGENTS.md`,
   the receipt reports `claudeMd: "agents_md_not_referenced"`; add a line
-  `@AGENTS.md` to it so Claude Code loads the section. Only an `@AGENTS.md` or
-  `@./AGENTS.md` import outside code counts, as does a `CLAUDE.md` that is a
+  `@AGENTS.md` to it so Claude Code loads the section. Only an import outside code that resolves to
+  this `AGENTS.md` counts (`@AGENTS.md`, `@./AGENTS.md`, an absolute or `~/` path), as does a `CLAUDE.md` that is a
   link to `AGENTS.md`; naming the file in a sentence does not load it.
 
 Both texts are cut from the `commish init` playbook of the CLI that writes them;
