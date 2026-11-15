@@ -26,10 +26,10 @@ const canonical = (v) =>
         )
       : value,
   );
-function read(root, path, validate) {
+function read(root, path, validate, recover = true) {
   let raw;
   try {
-    raw = readSetupFile(root, path, { privateFile: true });
+    raw = readSetupFile(root, path, { privateFile: true, recover });
   } catch (error) {
     if (error.message === "setup_file_missing") return null;
     throw error;
@@ -97,17 +97,17 @@ const validIntent = (v) =>
   uuid(v.id) &&
   date(v.createdAt);
 // What setup has recorded so far, for commands that only report: nothing is
-// created, so a repository that never ran setup stays untouched.
+// created or repaired, so the directory is left exactly as it was found.
 export function readSetupProgress(root, mode) {
   if (!["test", "live"].includes(mode)) fail("invalid_setup_step");
   const directory = `.commish/setup/${mode}`;
   return {
     directory,
-    intent: read(root, `${directory}/intent.json`, validIntent),
+    intent: read(root, `${directory}/intent.json`, validIntent, false),
     ...Object.fromEntries(
       Object.keys(schemas).map((name) => [
         name,
-        read(root, `${directory}/${name}.json`, schemas[name]),
+        read(root, `${directory}/${name}.json`, schemas[name], false),
       ]),
     ),
   };

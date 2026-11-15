@@ -766,11 +766,16 @@ commish status --json
 | `resources_provisioned` | The application, program and credential are recorded and `credentials.env` exists, plus the webhook endpoint and `webhook.env` when a webhook is configured. |
 
 It reads local files only, makes no request and changes nothing. Key material
-is checked for presence and shape and never printed. Text is the default
+is checked for presence and shape and never printed. A state file that an
+interrupted setup left half-published is refused with
+`unsafe_file_permissions` rather than repaired; rerun the same `commish setup`
+command, which repairs it. Text is the default
 output; `--json` prints one object with `status` (`complete` or `incomplete`),
 `steps`, `nextStep` and `next`. Exit 0 means every step is met, 2 that a step is
-unmet and 1 an error. Each mode keeps its own progress: `--mode live` reports
-the LIVE setup. A met step is recorded progress, not verification:
+unmet and 1 an error. Each mode keeps its own progress. The mode is the one
+`commish setup` would use: `--mode`, else the configuration file's `mode` (Test
+when it names none), and only without a configuration file `COMMISH_MODE`,
+else Test. A met step is recorded progress, not verification:
 `integrationVerified` stays false.
 
 ### Diagnose and test
