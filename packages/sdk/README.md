@@ -71,8 +71,10 @@ founder, platform operator or a maintainer's release-acceptance process.
 | Run read-only management automation | Explicitly approved read scopes, up to 30 days. It survives sign-out but remains subject to expiry, revocation, account suspension and manager access. |
 | Connect Stripe or accept creator terms/Page publication | The relevant account holder completes provider consent or their own participation/publication choice. CLI approval does not make those choices for them. |
 
-Longer-lived management writes exist only in Test, through an onboarding grant. `--non-interactive` removes
-terminal prompts; it does not bypass browser authentication or consent.
+Longer-lived management writes exist only in Test, through an onboarding grant. No command prompts on the
+terminal: a missing input fails before any request with an error that names it.
+`--non-interactive` states that contract and every command accepts it; it does
+not bypass browser authentication or consent.
 `--no-open` lets an agent present the approval link instead of opening it.
 Session management grants also require the approving browser session to remain
 signed in. [Management authorization](#authorize-management-access) describes
@@ -251,7 +253,15 @@ that reads output only after the command exits can still pass it on. Once the
 owner has connected Stripe, `commish doctor` reports `stripe_connection`; a new
 approval is not needed for that step alone.
 
-Progress and handoff events go to stderr; `--json` produces one final receipt on
+Progress and handoff events go to stderr, one JSON object per line with
+`--json`. Each stage is reported once as it is reached: `authorization_required`,
+`authorized`, `provisioned` (resources exist and the credential files are
+written), `publish_required`, `browser_action_required`, `destination_verified`
+and `stripe_connected`. `waiting` carries the `code` of what is still
+outstanding: it repeats while the destination check fails, and
+`stripe_not_connected` is reported once while the CLI polls for Stripe. A stage
+that was not reached before the wait ended is not reported; the final receipt
+says what remains. `--json` produces one final receipt on
 stdout. Exit 0 means practical configuration completed, 2 means input or browser
 action remains, 1 means a sanitized error, and 130 means interruption. A
 `configured` receipt can still list activation, Stripe, LIVE eligibility or TEST
@@ -376,7 +386,9 @@ snapshot. Stop iteration to stop fetching. Read methods need no idempotency key.
 
 `membership.data.termsAcceptance` preserves the latest recorded immutable
 program term and custom commission offer. Null means no recorded acceptance.
-`program.data.terms` is current configuration and may be newer. These are
+`program.data.terms` is current configuration and may be newer. A term's
+`returnWindowDays` is the days a buyer may return a purchase (0 to 180); it is
+optional in the type because a term may not report one. These are
 diagnostic facts; existing transaction-time eligibility checks remain authoritative.
 Platform legal acceptance and creator admission are hosted creator responsibilities.
 
@@ -618,7 +630,13 @@ and mode scoped; webhook metadata requires a workspace key.
 
 Successful commands emit one JSON object on stdout. Errors emit a sanitized
 JSON object on stderr with a stable code and, when available, HTTP status,
-request ID and `retryAfter` seconds. Errors from HTTP 429, 502, 503 and 504
+request ID and `retryAfter` seconds. An error caused by an input that was not
+supplied lists it in `missing`, in the form it is supplied (for example
+`["--program <id>"]`, `["--body-file <path>", "--idempotency-key <identity>"]`
+or `["COMMISH_SECRET_KEY"]`); supplied values are never echoed. A write's `--body-file` follows the same
+rules as [`manage --body-file`](#explicit-management-writes): a refused file
+fails before any request with `code: "invalid_body_file"` and one of the same
+fixed `reason` values. Errors from HTTP 429, 502, 503 and 504
 responses are marked `retryable`. No mutation retries automatically. Retain each write's exact input
 and idempotency identity when resolving uncertainty. `--all` follows at most
 100 pages; `--max-pages` can lower that bound. Check `complete` and retain the
@@ -680,6 +698,25 @@ commish auth revoke --auth-file .commish/management/REQUEST/authorization.json -
 servers may be selected with `--management-url` or `COMMISH_MANAGEMENT_URL`;
 they receive the credential, so use only an endpoint you trust. The CLI pins a
 stored authorization to its original endpoint and refuses redirects.
+
+`manage products.list` lists the products of the Stripe account connected to
+the workspace in the credential's mode, each with its active prices, so the ids
+for a program's `eligibleStripeProductIds` need not be asked for. It needs
+`resources.read`, which setup's onboarding access already holds, and fails with
+`stripe_connection_required` until Stripe is connected in that mode:
+
+```sh
+commish manage products.list --limit 20 --all --max-pages 10 \
+  --auth-file .commish/management/REQUEST/authorization.json --json
+```
+
+A page holds at most 20 products (10 by default) and the server allows ten
+`products.list` calls a minute per credential. `--all` on its own therefore
+cannot finish a catalog of more than 200 products: the eleventh page fails with
+`rate_limited` and, as for any failed later page, the pages already read are
+not returned. Keep `--max-pages` at 10 or fewer, counting other `products.list`
+calls in the same minute. When `complete` is `false`, wait a minute and continue
+with `--cursor <nextCursor>`.
 
 ### Explicit management writes
 

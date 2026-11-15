@@ -98,6 +98,16 @@ export async function runSetup(
     if (signal?.aborted) throw new Error("setup_interrupted");
     const result = { ...provisioned, onboarding };
     result.readinessCheckedAt = new Date(now()).toISOString();
+    // Resources and credential files exist from here on, whatever still waits.
+    notify({
+      status: "provisioned",
+      mode: result.mode,
+      workspaceId: result.workspaceId,
+      applicationId: result.applicationId,
+      programId: result.programId,
+      credentialsFile: result.credentialsFile,
+      webhookFile: result.webhookFile,
+    });
     const needsStripe = () =>
       config.stripe === "connect" && result.readiness.stripeStatus !== "connected";
     let refreshPending = false;
@@ -130,6 +140,9 @@ export async function runSetup(
       now() + options.waitSeconds * 1000,
       Date.parse(authorized.receipt.expiresAt) - 1000,
     );
+    // A successful poll is silent, so each stage is announced once as it is
+    // reached: a caller following stderr can tell a finished step from a wait.
+    let stripeWaitAnnounced = false;
     while (pending() && now() < deadline) {
       if (signal?.aborted) throw new Error("setup_interrupted");
       await sleep(Math.min(2000, deadline - now()));
@@ -141,12 +154,20 @@ export async function runSetup(
           });
           result.proof = null;
           refreshPending = true;
+          notify({ status: "destination_verified", origin: config.destination.origin });
         }
+        const awaitedStripe = needsStripe();
         result.readiness = await session.readReadiness(readinessInput);
         if (result.readiness.program.applicationId !== result.applicationId)
           throw new Error("setup_config_conflict");
         result.readinessCheckedAt = new Date(now()).toISOString();
         refreshPending = false;
+        if (awaitedStripe && !needsStripe())
+          notify({ status: "stripe_connected", mode: result.mode });
+        else if (needsStripe() && !result.proof && !stripeWaitAnnounced) {
+          stripeWaitAnnounced = true;
+          notify({ status: "waiting", code: "stripe_not_connected" });
+        }
       } catch (error) {
         if (reauthorize.includes(error?.message)) {
           return {

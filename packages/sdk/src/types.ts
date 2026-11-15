@@ -171,6 +171,9 @@ export type ProgramTerm = {
     | { kind: "lifetime" }
     | { kind: "fixed_months"; months: number };
   perSaleCap: { amount: number; currency: "usd" } | null;
+  // Days a buyer may return a purchase, from 0 to 180. Absent when the server
+  // does not report one for this term.
+  returnWindowDays?: number;
   disclosureText: string;
   prohibitedClaims: string[];
   effectiveAt: string;

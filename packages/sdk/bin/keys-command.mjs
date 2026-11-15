@@ -1,5 +1,5 @@
 import { createHash, randomBytes } from "node:crypto";
-import { argumentsFor, errorReceipt, fail } from "./cli-http.mjs";
+import { argumentsFor, errorReceipt, fail, missingInput } from "./cli-http.mjs";
 import { managementClient } from "./management-client.mjs";
 import { readSetupFile, writeSetupFile } from "./setup-files.mjs";
 import { protectPrivateState } from "./setup-progress.mjs";
@@ -39,9 +39,17 @@ export async function executeKeys(args, options = {}) {
     ["help", "json", "workspace-scope", "non-interactive"],
   );
   if (v.help || !p.length) return keysHelp();
+  if (p.length !== 1 || !["create", "rotate"].includes(p[0])) fail("invalid_arguments");
+  const absent = [
+    ...(v.application === undefined && !v["workspace-scope"]
+      ? ["--application <id> or --workspace-scope"]
+      : []),
+    ...(p[0] === "rotate" && v.key === undefined ? ["--key <id>"] : []),
+    ...(v.label === undefined ? ["--label <label>"] : []),
+    ...(v["idempotency-key"] === undefined ? ["--idempotency-key <identity>"] : []),
+  ];
+  if (absent.length) missingInput(absent);
   if (
-    p.length !== 1 ||
-    !["create", "rotate"].includes(p[0]) ||
     Boolean(v.application) === Boolean(v["workspace-scope"]) ||
     (v.application && !/^app_[A-Za-z0-9_-]{12,}$/.test(v.application)) ||
     !v.label?.trim() ||

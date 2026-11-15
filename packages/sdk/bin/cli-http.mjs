@@ -9,6 +9,12 @@ export class CliError extends Error {
 export const fail = (code) => {
   throw new CliError(code);
 };
+// The CLI never prompts on the terminal, with or without --non-interactive: a
+// required input that was not supplied fails here, named in the form it is
+// supplied. Names are fixed text; no supplied value reaches the error.
+export const missingInput = (missing, code = "missing_input") => {
+  throw new CliError(code, { missing });
+};
 export function argumentsFor(args, strings = [], booleans = [], repeated = []) {
   let parsed;
   try {
@@ -76,6 +82,7 @@ const safeCodes = new Set([
   "conflict",
   "program_activation_preflight_required",
   "program_not_active",
+  "stripe_connection_required",
   "creator_role_required",
   "creator_handle_required",
   "creator_handle_unavailable",
