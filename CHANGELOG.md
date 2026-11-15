@@ -3,6 +3,42 @@
 Notable changes to `@commish/sdk`, `@commish/next`, and `commish`, which release
 together with one version. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## 0.8.0 - 2026-11-15
+
+### Added
+
+- `commish status` reports locally recorded setup progress, whether management
+  access is still usable, and the remaining onboarding steps from diagnostics.
+  `--app-url` selects the Commish application origin for its read-only checks.
+- `commish agent setup` installs repository agent guidance, including the Pages
+  rules where Pages is installed; `--remove` removes the managed guidance again.
+  The CLAUDE.md report counts actual AGENTS.md imports rather than examples in
+  comments or fenced code blocks.
+- The management catalog includes `products.list` for listing the workspace's
+  connected Stripe products and prices. `stripe_connection_required` is a
+  recognized safe API error code.
+- `ProgramTerm.returnWindowDays` is available in the SDK's public types.
+
+### Fixed
+
+- `commish api --body-file` explains refused files with a fixed `reason` and
+  `guidance`, without echoing their paths or contents.
+- Commands with missing required inputs return `missing_input` and name the
+  fields in `missing`, including when `--non-interactive` is supplied.
+
+### Changed
+
+- Scripts consuming CLI error codes must handle `missing_input` instead of
+  `invalid_arguments` for `doctor` without `--program`, `auth login` without
+  workspace, target or scopes, `keys create|rotate` and
+  `test fixture|rehearsal|webhook` with missing flags, and resource aliases
+  without their required ID. `manage webhooks.secret` without `--output-file`
+  now returns `missing_input` instead of `unsafe_file_path`.
+- Setup reports its later stages on the progress stream. The init playbook and
+  agent guide recommend `commish status` when resuming an installation.
+- The SDK, Next adapter and `commish` launcher release together at 0.8.0.
+  The launcher pins `@commish/sdk@0.8.0`; Next accepts `@commish/sdk@~0.8.0`.
+
 ## 0.7.1 - 2026-11-14
 
 ### Fixed
