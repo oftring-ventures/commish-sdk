@@ -98,7 +98,7 @@ Report package installation, configuration verification and the attributed TEST 
 export const initHelp = () => ({
   status: "help",
   command: "init [--json]",
-  flags: ["--json", "--help"],
+  flags: ["--json", "--non-interactive", "--help"],
   purpose:
     "Prints a setup playbook for coding agents from a local scan of this repository. Reads package.json and checks which lockfiles and app directories exist.",
   mutations: false,
@@ -108,7 +108,7 @@ export const initHelp = () => ({
 export function runInitCommand(args, { root = process.cwd(), out = console.log } = {}) {
   if (
     args.some((arg) => ["--help", "-h"].includes(arg)) &&
-    args.every((arg) => ["--help", "-h", "--json"].includes(arg)) &&
+    args.every((arg) => ["--help", "-h", "--json", "--non-interactive"].includes(arg)) &&
     new Set(args).size === args.length
   ) {
     out(
@@ -118,7 +118,10 @@ export function runInitCommand(args, { root = process.cwd(), out = console.log }
     );
     return 0;
   }
-  if (args.some((arg) => arg !== "--json") || new Set(args).size !== args.length) {
+  if (
+    args.some((arg) => !["--json", "--non-interactive"].includes(arg)) ||
+    new Set(args).size !== args.length
+  ) {
     console.error(
       args.includes("--json")
         ? JSON.stringify({ status: "error", code: "invalid_arguments" })
