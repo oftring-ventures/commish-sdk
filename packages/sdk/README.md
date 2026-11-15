@@ -386,7 +386,9 @@ snapshot. Stop iteration to stop fetching. Read methods need no idempotency key.
 
 `membership.data.termsAcceptance` preserves the latest recorded immutable
 program term and custom commission offer. Null means no recorded acceptance.
-`program.data.terms` is current configuration and may be newer. These are
+`program.data.terms` is current configuration and may be newer. A term's
+`returnWindowDays` is the days a buyer may return a purchase (0 to 180); it is
+optional in the type because a term may not report one. These are
 diagnostic facts; existing transaction-time eligibility checks remain authoritative.
 Platform legal acceptance and creator admission are hosted creator responsibilities.
 

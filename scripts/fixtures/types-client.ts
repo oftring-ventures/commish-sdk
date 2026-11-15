@@ -52,6 +52,16 @@ async function read(commish: Commish) {
   void payoutMode;
   const result = await commish.memberships.retrieve("mbr_123456789012");
   const version: number | undefined = result.data.termsAcceptance?.terms?.version;
+  const program = await commish.programs.retrieve("prg_123456789012");
+  const returnWindow: number | undefined = program.data.terms?.returnWindowDays;
+  const term = program.data.terms;
+  if (term) {
+    // @ts-expect-error The return window is optional: a present term may not report one.
+    const required: number = term.returnWindowDays;
+    const window: number | undefined = term.returnWindowDays;
+    void [required, window];
+  }
+  void returnWindow;
   const members = await commish.memberships.list({ limit: 1 });
   const next: string | null = members.next_cursor;
   for await (const member of commish.memberships.iterate()) {
