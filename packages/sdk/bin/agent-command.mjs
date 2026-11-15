@@ -15,7 +15,8 @@ import {
   unlinkSync,
   writeFileSync,
 } from "node:fs";
-import { basename, dirname, join } from "node:path";
+import { homedir } from "node:os";
+import { basename, dirname, join, resolve } from "node:path";
 import manifest from "../package.json" with { type: "json" };
 import guidance from "./agent-guidance.json" with { type: "json" };
 import { commishCli, initGuide } from "./init-command.mjs";
@@ -148,6 +149,43 @@ function skillPlan(previous, skill, remove) {
   return remove ? null : skill;
 }
 
+// Whether a path written in CLAUDE.md, or a link from it, is this directory's AGENTS.md.
+// Relative paths start at the directory, "~/" at the home directory; the directory is
+// resolved through links, the file itself is never opened.
+function isAgentsFile(root, path) {
+  const target = path.startsWith("~/") ? join(homedir(), path.slice(2)) : resolve(root, path);
+  if (basename(target) !== agentsFile) return false;
+  try {
+    return realpathSync(dirname(target)) === realpathSync(root);
+  } catch {
+    return false;
+  }
+}
+// Beside a CLAUDE.md, Claude Code loads AGENTS.md only through an import: an "@path" token
+// that resolves to the file ("@AGENTS.md", "@./AGENTS.md", an absolute or "~/" path), outside
+// code spans and fenced code blocks. Naming the file in a sentence does not load it.
+function importsAgentsFile(root, text) {
+  let fence;
+  return text.split(/\r?\n/).some((line) => {
+    // A fence is indented at most three spaces; a backtick fence has no backtick after it.
+    const [, mark, rest] = line.match(/^ {0,3}(`{3,}|~{3,})(.*)$/) ?? [];
+    if (fence) {
+      if (mark?.[0] === fence[0] && mark.length >= fence.length && !rest.trim()) fence = undefined;
+      return false;
+    }
+    if (mark && !(mark[0] === "`" && rest.includes("`"))) {
+      fence = mark;
+      return false;
+    }
+    // A code span opens with a run of backticks and closes at the next run of the same
+    // length; a run without a partner is ordinary text. A path ends at the first space that
+    // has no backslash before it.
+    return [
+      ...line.replace(/(?<!`)(`+)(?!`).*?(?<!`)\1(?!`)/g, " ").matchAll(/(?:^|\s)@((?:\\ |\S)+)/g),
+    ].some(([, path]) => isAgentsFile(root, path.replaceAll("\\ ", " ")));
+  });
+}
+
 // Planning reads the two files and CLAUDE.md, never following a symbolic link.
 export function planAgentSetup(root, remove = false) {
   const content = agentGuidance(root);
@@ -176,8 +214,13 @@ export function planAgentSetup(root, remove = false) {
   let claudeMd = "absent";
   try {
     const path = join(root, "CLAUDE.md");
-    const text = lstatSync(path).isSymbolicLink() ? readlinkSync(path) : read(root, "CLAUDE.md");
-    claudeMd = text.includes(agentsFile) ? "references_agents_md" : "agents_md_not_referenced";
+    // A CLAUDE.md linked to AGENTS.md is that file; any other link is not followed.
+    if (lstatSync(path).isSymbolicLink())
+      claudeMd = isAgentsFile(root, readlinkSync(path)) ? "references_agents_md" : "not_inspected";
+    else
+      claudeMd = importsAgentsFile(root, read(root, "CLAUDE.md"))
+        ? "references_agents_md"
+        : "agents_md_not_referenced";
   } catch (error) {
     if (error?.code !== "ENOENT") claudeMd = "not_inspected";
   }
@@ -380,12 +423,12 @@ export function runAgentSetupCommand(
             ...(result.warnings.length ? [`Warnings: ${result.warnings.join(", ")}`] : []),
             ...(unreferenced
               ? [
-                  `CLAUDE.md does not mention ${agentsFile}. Add a line "@${agentsFile}" to it so Claude Code loads the Commish section; this command never edits CLAUDE.md.`,
+                  `CLAUDE.md does not import ${agentsFile}. Add a line "@${agentsFile}" to it so Claude Code loads the Commish section; this command never edits CLAUDE.md.`,
                 ]
               : []),
             ...(dangling
               ? [
-                  `CLAUDE.md mentions ${agentsFile}, which this removal ${write ? "deleted" : "deletes"}. Take that reference out of CLAUDE.md; this command never edits it.`,
+                  `CLAUDE.md loads ${agentsFile}, which this removal ${write ? "deleted" : "deletes"}. Take that import or link out of CLAUDE.md; this command never edits it.`,
                 ]
               : []),
           ].join("\n"),
