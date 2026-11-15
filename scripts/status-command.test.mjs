@@ -1,5 +1,13 @@
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, readdirSync, rmSync, utimesSync, writeFileSync } from "node:fs";
+import {
+  linkSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  rmSync,
+  utimesSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test from "node:test";
@@ -75,7 +83,7 @@ const hook = {
   eventTypes: ["conversion.created"],
 };
 function grantFile(root, letter, patch = {}) {
-  const token = `cm_mgmt_${patch.mode ?? "test"}_${letter.repeat(43)}`,
+  const token = `cm_mgmt_${patch.mode ?? "test"}_${letter.repeat(43).slice(0, 43)}`,
     hash = tokenHash(token),
     path = `.commish/management/${hash.slice(0, 24)}/authorization.json`;
   const proposal = {
@@ -249,7 +257,23 @@ test("a repository that never ran setup is reported offline and left untouched",
   });
   assert.equal(ready.steps[0].status, "met");
   assert.deepEqual([ready.nextStep, ready.next], ["setup_approved", provision("<config>")]);
+  // An incomplete file named with --config is planned with --config too.
+  write(root, "partial.json", { version: 1, stripe: "later" }, 0o644);
+  const named = await executeStatus(["--config", "partial.json"], {
+    root,
+    env: {},
+    fetcher: noRequest,
+  });
+  assert.deepEqual(
+    [named.nextStep, named.next],
+    [
+      "configuration",
+      { kind: "command", command: "commish setup --config <config> --plan --json" },
+    ],
+  );
+  rmSync(join(root, "partial.json"));
   // The path given to --config is never repeated.
+  assert(!JSON.stringify([ready, named]).includes(".json --"));
   assert(!JSON.stringify(ready).includes("other.json"));
   assert.deepEqual(readdirSync(root).sort(), ["commish.setup.json", "other.json"]);
 });
@@ -483,6 +507,145 @@ test("the newest authorized grant for this workspace and mode is used; others ar
     [byStep(limited).management_access.status, limited.nextStep],
     ["unmet", "management_access"],
   );
+});
+
+test("a pending request is resumed even beside an older grant, in either order", async (t) => {
+  const root = directory(t);
+  provisioned(root);
+  const older = grantFile(root, "a"),
+    newer = grantFile(root, "b");
+  utimesSync(join(root, older.path), new Date(1_700_000_000_000), new Date(1_700_000_000_000));
+  utimesSync(join(root, newer.path), new Date(), new Date());
+  const resume = (file) => ({
+    kind: "command",
+    command: `commish auth login --auth-file ${file.path} --mode test --no-open --non-interactive --json`,
+    humanAction: "open_the_approval_url_and_confirm_the_pairing_code",
+  });
+  // The grant expired, a new login is waiting for approval: the next pass resumes it.
+  for (const [states, pending] of [
+    [
+      [
+        [newer, "pending"],
+        [older, "expired"],
+      ],
+      newer,
+    ],
+    [
+      [
+        [newer, "revoked"],
+        [older, "pending"],
+      ],
+      older,
+    ],
+  ]) {
+    const management = server(states);
+    const result = await executeStatus([], { root, env: {}, fetcher: management.fetcher });
+    assert.deepEqual(management.requests, ["GET /grants", "GET /grants"]);
+    assert.deepEqual(
+      [
+        byStep(result).management_access.status,
+        byStep(result).management_access.evidence.source,
+        byStep(result).management_access.evidence.status,
+      ],
+      ["unmet", pending.path, "pending"],
+    );
+    assert.deepEqual([result.nextStep, result.next], ["management_access", resume(pending)]);
+  }
+  // With nothing pending, the newest grant tried is the one described.
+  const spent = await executeStatus([], {
+    root,
+    env: {},
+    fetcher: server([
+      [newer, "revoked"],
+      [older, "expired"],
+    ]).fetcher,
+  });
+  assert.deepEqual(
+    [
+      byStep(spent).management_access.evidence.source,
+      byStep(spent).management_access.evidence.status,
+    ],
+    [newer.path, "revoked"],
+  );
+  assert.match(spent.next.command, /^commish auth login --workspace wrk_123456789012 /);
+  // An authorized grant still wins over a pending one beside it.
+  const usable = await executeStatus([], {
+    root,
+    env: {},
+    fetcher: server([
+      [newer, "pending"],
+      [older, "authorized"],
+    ]).fetcher,
+  });
+  assert.deepEqual(
+    [usable.status, byStep(usable).management_access.evidence.source],
+    ["complete", older.path],
+  );
+});
+
+test("many stored grants do not hide the right one, and a half-published grant is not repaired", async (t) => {
+  const root = directory(t);
+  provisioned(root);
+  const letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+  for (let index = 0; index < 70; index++)
+    grantFile(
+      root,
+      `${letters[index % letters.length]}${letters[Math.floor(index / letters.length)]}_`,
+      {
+        workspaceId: "wrk_999999999999",
+      },
+    );
+  const current = grantFile(root, "a");
+  assert.equal(readdirSync(join(root, ".commish/management")).length, 71);
+  const management = server([[current, "authorized"]]);
+  const result = await executeStatus([], { root, env: {}, fetcher: management.fetcher });
+  assert.deepEqual(management.requests, ["GET /grants", diagnosticsRead]);
+  assert.equal(byStep(result).management_access.evidence.source, current.path);
+  // A stored grant left half-published is skipped; a named one is an error. Neither is repaired.
+  const leftover = `${dirname(current.path)}/.commish-setup-authorization.json.97961974-684d-46b3-aebb-2ef22ee2cec0.tmp`;
+  linkSync(join(root, current.path), join(root, leftover));
+  const before = readdirSync(root, { recursive: true }).sort();
+  const skipped = await executeStatus([], { root, env: {}, fetcher: noRequest });
+  assert.deepEqual(byStep(skipped).management_access.evidence, {
+    source: "none",
+    status: "missing",
+  });
+  await assert.rejects(
+    executeStatus(["--auth-file", current.path], { root, env: {}, fetcher: noRequest }),
+    { message: "invalid_authorization_file" },
+  );
+  assert.deepEqual(readdirSync(root, { recursive: true }).sort(), before);
+});
+
+test("a named grant for another workspace does not count for this install", async (t) => {
+  const root = directory(t);
+  provisioned(root);
+  const other = grantFile(root, "a", { workspaceId: "wrk_999999999999" });
+  for (const [args, env, source] of [
+    [["--auth-file", other.path], {}, other.path],
+    [[], { COMMISH_MANAGEMENT_TOKEN: other.token }, "COMMISH_MANAGEMENT_TOKEN"],
+  ]) {
+    const result = await executeStatus(args, {
+      root,
+      env,
+      fetcher: server([[other, "authorized"]]).fetcher,
+    });
+    assert.deepEqual(byStep(result).management_access.evidence, {
+      source,
+      status: "authorized",
+      kind: "onboarding",
+      workspaceId: "wrk_999999999999",
+      scopes,
+      expiresAt: "2099-01-01T01:00:00Z",
+      code: "workspace_mismatch",
+    });
+    assert.deepEqual(
+      [byStep(result).management_access.status, result.nextStep],
+      ["unmet", "management_access"],
+    );
+    // The next command asks for a grant on the workspace setup recorded.
+    assert.match(result.next.command, /^commish auth login --workspace wrk_123456789012 /);
+  }
 });
 
 test("a named file or token is used as given; an outage is reported, a broken file is an error", async (t) => {
@@ -798,5 +961,59 @@ test("LIVE reports what diagnostics evaluate and marks Test-only steps not appli
   assert.equal(
     none.next.command,
     `commish auth login --workspace ${workspaceId} --workspace-scope --scopes resources.read,diagnostics.read,programs.read,terms.read,destinations.read --mode live --no-open --non-interactive --json`,
+  );
+});
+
+test("the mode is the one setup would use: the flag, then the configuration, then the shell", async (t) => {
+  const root = directory(t);
+  const mode = async (args, env) => {
+    const result = await executeStatus(args, { root, env, fetcher: noRequest });
+    assert.match(result.steps[1].next.command, new RegExp(` --mode ${result.mode} `));
+    assert.equal(result.steps[1].evidence.source, `.commish/setup/${result.mode}/workspace.json`);
+    return result.mode;
+  };
+  // No configuration file: the shell decides, as for the other management commands.
+  assert.equal(await mode([], {}), "test");
+  assert.equal(await mode([], { COMMISH_MODE: "live" }), "live");
+  // A configuration that names no mode is a Test setup, whatever the shell says.
+  write(root, "commish.setup.json", config, 0o644);
+  assert.equal(await mode([], { COMMISH_MODE: "live" }), "test");
+  rmSync(join(root, "commish.setup.json"));
+  // A LIVE configuration is reported as LIVE without a flag, even when incomplete.
+  write(root, "commish.setup.json", { ...config, mode: "live" }, 0o644);
+  assert.equal(await mode([], {}), "live");
+  assert.equal(await mode([], { COMMISH_MODE: "test" }), "live");
+  assert.equal(await mode(["--mode", "test"], { COMMISH_MODE: "live" }), "test");
+  rmSync(join(root, "commish.setup.json"));
+  write(root, "commish.setup.json", { version: 1, mode: "live" }, 0o644);
+  assert.equal(await mode([], {}), "live");
+  // A mode the file cannot mean is not followed.
+  rmSync(join(root, "commish.setup.json"));
+  write(root, "commish.setup.json", { ...config, mode: "private-fixture" }, 0o644);
+  assert.equal(await mode([], {}), "test");
+  await assert.rejects(executeStatus([], { root, env: { COMMISH_MODE: "staging" } }), {
+    message: "invalid_arguments",
+  });
+});
+
+test("a state file an interrupted setup left half-published is refused, not repaired", async (t) => {
+  const root = directory(t);
+  provisioned(root);
+  // What a setup killed between publishing a file and removing its temporary link leaves.
+  for (const name of ["workspace.json", "credentials.env"]) {
+    const leftover = `.commish/setup/test/.commish-setup-${name}.97961974-684d-46b3-aebb-2ef22ee2cec0.tmp`;
+    linkSync(join(root, `.commish/setup/test/${name}`), join(root, leftover));
+    const before = readdirSync(root, { recursive: true }).sort();
+    assert(before.includes(leftover));
+    await assert.rejects(executeStatus([], { root, env: {}, fetcher: noRequest }), {
+      message: "unsafe_file_permissions",
+    });
+    assert.deepEqual(readdirSync(root, { recursive: true }).sort(), before);
+    rmSync(join(root, leftover));
+  }
+  const repaired = await executeStatus([], { root, env: {}, fetcher: noRequest });
+  assert.deepEqual(
+    repaired.steps.slice(0, 3).map((item) => item.status),
+    ["met", "met", "met"],
   );
 });

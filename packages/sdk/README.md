@@ -810,19 +810,27 @@ one request, using the grant's own bearer: `--auth-file` or
 `.commish/management/` for this workspace and mode that includes
 `diagnostics.read` (the onboarding grant from setup qualifies). When no grant is
 usable, the next command asks for one: an onboarding grant in Test, a
-read-only session in LIVE; a stored request that is still pending is resumed.
-One diagnostics read then answers every remaining step, so the evidence window
-is the one `commish doctor` describes.
+read-only session in LIVE; a stored request that is still pending is resumed,
+even when an older grant sits beside it. A grant named with `--auth-file` or
+the token that belongs to another workspace than the one setup recorded does
+not count: it is reported with `workspace_mismatch`. One diagnostics read then
+answers every remaining step, so the evidence window is the one
+`commish doctor` describes.
 
 The command changes nothing: it makes two reads and writes no file. Key
 material and bearers are checked for presence and shape and never printed, and
-server text is never repeated. Text is the default output; `--json` prints one
-object with `status` (`complete` or `incomplete`), `steps`, `nextStep` and
-`next`. Exit 0 means every step is met or not applicable, 2 that a step is unmet
-or unknown and 1 an error. Each mode keeps its own progress: `--mode live`
-reports the LIVE setup, where the Test-only steps are `not_applicable` and
-provider readiness is `unknown`. A complete status is recorded progress and
-observed evidence, not verification: `integrationVerified` stays false.
+server text is never repeated. A state file that an interrupted setup left
+half-published is refused with `unsafe_file_permissions` rather than repaired;
+rerun the same `commish setup` command, which repairs it. Text is the default
+output; `--json` prints one object with `status` (`complete` or `incomplete`),
+`steps`, `nextStep` and `next`. Exit 0 means every step is met or not
+applicable, 2 that a step is unmet or unknown and 1 an error. Each mode keeps
+its own progress. The mode is the one `commish setup` would use: `--mode`, else
+the configuration file's `mode` (Test when it names none), and only without a
+configuration file `COMMISH_MODE`, else Test. In LIVE the Test-only steps are
+`not_applicable` and provider readiness is `unknown`. A complete status is
+recorded progress and observed evidence, not verification:
+`integrationVerified` stays false.
 
 ### Diagnose and test
 

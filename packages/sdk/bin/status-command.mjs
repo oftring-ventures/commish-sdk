@@ -89,7 +89,8 @@ export const statusHelp = () => ({
   authorization:
     "Uses --auth-file or COMMISH_MANAGEMENT_TOKEN; otherwise the newest stored grant for this workspace and mode that includes diagnostics.read. Without one, the steps that need it are unknown.",
   mutations: false,
-  defaultMode: "test",
+  // The install setup would address: its configuration decides before the shell.
+  mode: "--mode, else the configuration file's mode (test when it names none), else COMMISH_MODE, else test",
   output: "text; --json prints one JSON object on stdout",
   exitCodes: { 0: "every_step_met_or_not_applicable", 1: "error", 2: "a_step_is_unmet_or_unknown" },
   integrationVerified: false,
@@ -110,15 +111,22 @@ function readConfiguration(root, path) {
     return { state: "invalid_config", fields: ["config"] };
   }
   if (!record(input)) return { state: "invalid_config", fields: ["config"] };
-  const parsed = parseSetupConfig(input);
-  return parsed.kind === "ready"
-    ? { state: "ready", config: parsed.config }
-    : { state: parsed.kind, fields: parsed.fields };
+  // Setup reads the mode from this file and defaults it to test.
+  const mode = input.mode === undefined ? "test" : input.mode,
+    parsed = parseSetupConfig(input);
+  return {
+    ...(parsed.kind === "ready"
+      ? { state: "ready", config: parsed.config }
+      : { state: parsed.kind, fields: parsed.fields }),
+    ...(["test", "live"].includes(mode) ? { mode } : {}),
+  };
 }
 // Presence and shape only: no key material is kept or reported.
 function privateFile(root, path, pattern) {
   try {
-    return pattern.test(readSetupFile(root, path, { privateFile: true })) ? "present" : "invalid";
+    return pattern.test(readSetupFile(root, path, { privateFile: true, recover: false }))
+      ? "present"
+      : "invalid";
   } catch (error) {
     if (error.message === "setup_file_missing") return "absent";
     throw error;
@@ -135,11 +143,10 @@ function storedGrants(root, mode, workspaceId) {
   }
   return entries
     .filter((entry) => entry.isDirectory() && /^[0-9a-f]{24}$/.test(entry.name))
-    .slice(0, 64)
     .flatMap((entry) => {
       const path = `.commish/management/${entry.name}/authorization.json`;
       try {
-        const { proposal } = readManagementAuthorization(root, path);
+        const { proposal } = readManagementAuthorization(root, path, { recover: false });
         return proposal.mode === mode &&
           proposal.workspaceId === workspaceId &&
           proposal.scopes.includes("diagnostics.read")
@@ -167,9 +174,11 @@ export async function executeStatus(args, options = {}) {
   );
   if (v.help) return statusHelp();
   if (p.length) fail("invalid_arguments");
-  const mode = managementMode(v.mode, env),
-    configuration = readConfiguration(root, v.config ?? defaultConfig),
-    config = configuration.state === "ready" ? configuration.config : null;
+  const configuration = readConfiguration(root, v.config ?? defaultConfig),
+    config = configuration.state === "ready" ? configuration.config : null,
+    mode = managementMode(v.mode ?? configuration.mode, env),
+    // The path given to --config is not repeated; commands name where it goes.
+    configFlag = `--config ${v.config === undefined ? defaultConfig : "<config>"}`;
   let journal;
   try {
     journal = readSetupProgress(root, mode);
@@ -182,10 +191,9 @@ export async function executeStatus(args, options = {}) {
     applicationId = journal.application?.id ?? null,
     programId = journal.program?.id ?? null;
   const approval = { humanAction: "open_the_approval_url_and_confirm_the_pairing_code" };
-  // The path given to --config is not repeated; the command names where it goes.
   const provision = {
     kind: "command",
-    command: `commish setup --config ${v.config === undefined ? defaultConfig : "<config>"} --mode ${mode} --no-open --non-interactive --json`,
+    command: `commish setup ${configFlag} --mode ${mode} --no-open --non-interactive --json`,
     ...approval,
   };
   const report = [];
@@ -204,7 +212,14 @@ export async function executeStatus(args, options = {}) {
       ...(configuration.fields ? { fields: configuration.fields } : {}),
       ...(journal.intent ? { setupStartedAt: journal.intent.createdAt } : {}),
     },
-    configured ? {} : { next: { kind: "command", command: "commish setup --plan --json" } },
+    configured
+      ? {}
+      : {
+          next: {
+            kind: "command",
+            command: `commish setup ${v.config === undefined ? "" : `${configFlag} `}--plan --json`,
+          },
+        },
   );
   add(
     "setup_approved",
@@ -255,8 +270,8 @@ export async function executeStatus(args, options = {}) {
       ? storedGrants(root, mode, workspaceId)
       : [];
   let client = null,
-    access = { source: "none", status: "missing" },
     authFile;
+  const tried = [];
   for (const path of candidates) {
     const source = path ?? "COMMISH_MANAGEMENT_TOKEN";
     let candidate;
@@ -269,6 +284,7 @@ export async function executeStatus(args, options = {}) {
         url: v["management-url"],
         fetcher: options.fetcher,
         signal: options.signal,
+        recover: false,
       });
     } catch (error) {
       // A file or token the caller named must be usable; a stored one is skipped.
@@ -277,33 +293,42 @@ export async function executeStatus(args, options = {}) {
     }
     try {
       const grant = await candidate.status();
-      access = {
+      // A named grant for another workspace cannot answer for this install.
+      const foreign = workspaceId !== null && grant.workspaceId !== workspaceId;
+      tried.push({
         source,
         status: grant.status,
         kind: grant.kind,
         workspaceId: grant.workspaceId,
         scopes: grant.scopes,
         expiresAt: grant.expiresAt,
-      };
-      if (grant.status === "authorized") {
+        ...(foreign ? { code: "workspace_mismatch" } : {}),
+      });
+      if (grant.status === "authorized" && !foreign) {
         client = candidate;
         authFile = path;
         break;
       }
     } catch (error) {
       if (!(error instanceof CliError)) throw error;
-      access = { source, status: "unavailable", code: failureCode(error) };
+      tried.push({ source, status: "unavailable", code: failureCode(error) });
       // An outage is the same for every candidate; a refused grant is not.
       if (error.message === "service_unavailable" || error.detail?.retryable) break;
     }
   }
+  // Without an authorized grant, a request that is still pending is the one to
+  // report, so it is resumed instead of replaced; otherwise the newest tried.
+  const access = client
+    ? tried.at(-1)
+    : (tried.find((state) => state.status === "pending" && !state.code) ??
+      tried[0] ?? { source: "none", status: "missing" });
   const usable = client !== null && access.scopes.includes("diagnostics.read");
   const login = !workspaceId
     ? provision
     : {
         kind: "command",
         command:
-          access.status === "pending" && access.source.startsWith(".commish/")
+          access.status === "pending" && !access.code && access.source.startsWith(".commish/")
             ? `commish auth login --auth-file ${access.source} --mode ${mode} --no-open --non-interactive --json`
             : `commish auth login --workspace ${workspaceId} --workspace-scope ` +
               (mode === "test"
