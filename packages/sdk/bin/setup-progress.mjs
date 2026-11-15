@@ -112,13 +112,10 @@ export function readSetupProgress(root, mode) {
     ),
   };
 }
-// This journal contains identities only. A new browser grant is required on
-// every run; neither session authority nor API/signing keys are stored here.
-export function openSetupProgress(
-  root,
-  input,
-  { now = () => new Date(), appUrl = "https://app.commish.sh" } = {},
-) {
+// The identity of one setup: its complete configuration and the deployment it
+// addresses. A rerun resumes only while this is unchanged, so anything that
+// reports on a setup compares with the same function.
+export function setupAppOrigin(appUrl = "https://app.commish.sh") {
   let endpoint;
   try {
     endpoint = new URL(appUrl);
@@ -138,12 +135,27 @@ export function openSetupProgress(
     )
   )
     fail("invalid_app_url");
-  const parsed = parseSetupConfig(input);
+  return endpoint.origin;
+}
+export function setupFingerprint(input, appUrl) {
+  const appOrigin = setupAppOrigin(appUrl),
+    parsed = parseSetupConfig(input);
   if (parsed.kind !== "ready") fail("invalid_setup_config");
-  const config = parsed.config,
-    fingerprint = createHash("sha256")
-      .update(canonical({ config, appOrigin: endpoint.origin }))
-      .digest("hex");
+  return {
+    config: parsed.config,
+    fingerprint: createHash("sha256")
+      .update(canonical({ config: parsed.config, appOrigin }))
+      .digest("hex"),
+  };
+}
+// This journal contains identities only. A new browser grant is required on
+// every run; neither session authority nor API/signing keys are stored here.
+export function openSetupProgress(
+  root,
+  input,
+  { now = () => new Date(), appUrl = "https://app.commish.sh" } = {},
+) {
+  const { config, fingerprint } = setupFingerprint(input, appUrl);
   protectPrivateState(root);
   const directory = `.commish/setup/${config.mode}`,
     path = `${directory}/intent.json`;
