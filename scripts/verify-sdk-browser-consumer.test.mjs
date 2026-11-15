@@ -11,7 +11,7 @@ function fixture() {
     Object.entries({
       "package/package.json": JSON.stringify({
         name: "@commish/sdk",
-        version: "0.7.1",
+        version: "0.8.0",
         type: "module",
         exports: { "./browser": { types: "./dist/browser.d.ts", default: "./dist/browser.js" } },
       }),
