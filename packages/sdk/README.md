@@ -838,20 +838,26 @@ commish status --json
 | --- | --- |
 | `configuration` | `commish.setup.json` (or `--config`) is complete, or setup already started from flags. |
 | `setup_approved` | A workspace owner approved setup: `.commish/setup/<mode>/workspace.json` records the workspace. |
-| `resources_provisioned` | The application, program and credential are recorded and `credentials.env` exists, plus the webhook endpoint and `webhook.env` when a webhook is configured. |
+| `resources_provisioned` | The application, program and credential are recorded and `credentials.env` is the file setup wrote, plus the webhook endpoint and `webhook.env` when a webhook is configured or recorded. |
 
 It reads local files only, makes no request and changes nothing. The
 credential file counts only when it is the one setup wrote: its fields, key
 formats, mode and the recorded application and program are checked, and no
 value is printed. A setup that was started from flags has no configuration
 file to name, so its next action is guidance to repeat the original command
-rather than a command. A state file that an
+rather than a command. Setup records the webhook endpoint last and keeps no
+note of what was asked for, so `resources_provisioned` is `met` only when the
+evidence says whether a webhook belongs to the setup (`evidence.webhook`): a
+complete configuration (`configured` or `not_configured`) or a recorded
+endpoint (`recorded`). Without either it is `unknown` with
+`webhook_request_not_recorded`, never `met`: restore the configuration file,
+or repeat the original command, which resumes and is safe to repeat. A state file that an
 interrupted setup left half-published is refused with
 `unsafe_file_permissions` rather than repaired; rerun the same `commish setup`
 command, which repairs it. Text is the default
 output; `--json` prints one object with `status` (`complete` or `incomplete`),
 `steps`, `nextStep` and `next`. Exit 0 means every step is met, 2 that a step is
-unmet and 1 an error. Each mode keeps its own progress. The mode is the one
+unmet or unknown and 1 an error. Each mode keeps its own progress. The mode is the one
 `commish setup` would use: `--mode`, else the configuration file's `mode` (Test
 when it names none), and only without a configuration file `COMMISH_MODE`,
 else Test. A met step is recorded progress, not verification:

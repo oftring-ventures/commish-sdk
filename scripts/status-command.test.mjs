@@ -109,6 +109,7 @@ test("a repository that never ran setup is reported offline and left untouched",
           applicationId: null,
           programId: null,
           credentialId: null,
+          webhook: "unknown",
           credentialsFile: "absent",
         },
         next: provision(),
@@ -187,6 +188,7 @@ test("recorded setup progress is reported step by step without revealing key mat
     applicationId,
     programId,
     credentialId: "key_123456789012",
+    webhook: "not_configured",
     credentialsFile: "present",
   });
   for (const secret of ["k".repeat(43), "p".repeat(32)])
@@ -202,8 +204,8 @@ test("recorded setup progress is reported step by step without revealing key mat
   rmSync(join(root, "commish.setup.json"));
   const flags = await executeStatus([], { root, env: {}, fetcher: noRequest });
   assert.deepEqual(
-    [flags.status, flags.steps[0].status, flags.steps[0].evidence.configuration],
-    ["complete", "met", "missing"],
+    [flags.steps[0].status, flags.steps[0].evidence.configuration],
+    ["met", "missing"],
   );
   // A configured webhook needs its endpoint and signing secret file too.
   write(root, "commish.setup.json", { ...config, webhook: hook }, 0o644);
@@ -217,6 +219,7 @@ test("recorded setup progress is reported step by step without revealing key mat
         applicationId,
         programId,
         credentialId: "key_123456789012",
+        webhook: "configured",
         webhookId: null,
         credentialsFile: "present",
         webhookFile: "absent",
@@ -424,4 +427,99 @@ test("a credential file counts only when it is the one setup wrote for these res
   ])
     assert.deepEqual(await check(body), ["unmet", "invalid", true], body.split("\n")[1]);
   assert.deepEqual(await check(`COMMISH_MODE=test\n${ids}${keys}`), ["met", "present", false]);
+});
+
+test("without its configuration, a setup that may still owe a webhook is unknown, never complete", async (t) => {
+  const root = directory(t);
+  provisioned(root);
+  rmSync(join(root, "commish.setup.json"));
+  const read = () => executeStatus([], { root, env: {}, fetcher: noRequest });
+  const repeat = {
+    kind: "guidance",
+    guidance:
+      "Setup was started from flags, so there is no configuration file to rerun. Repeat the original commish setup command with the same flags, or restore its configuration file; setup resumes from the recorded progress.",
+    humanAction: "open_the_approval_url_and_confirm_the_pairing_code",
+  };
+  // A flags-only setup interrupted after the credential and before its webhook, and
+  // one that asked for no webhook and finished, leave exactly these files.
+  const ambiguous = await read();
+  assert.deepEqual(byStep(ambiguous).resources_provisioned, {
+    step: "resources_provisioned",
+    status: "unknown",
+    evidence: {
+      source: ".commish/setup/test",
+      applicationId,
+      programId,
+      credentialId: "key_123456789012",
+      webhook: "unknown",
+      credentialsFile: "present",
+    },
+    reason: "webhook_request_not_recorded",
+    next: repeat,
+  });
+  assert.deepEqual(
+    [ambiguous.status, ambiguous.nextStep, ambiguous.next],
+    ["incomplete", "resources_provisioned", repeat],
+  );
+  const output = [];
+  assert.equal(
+    await runStatusCommand([], { root, env: {}, fetcher: noRequest, out: (v) => output.push(v) }),
+    2,
+  );
+  assert.match(
+    output[0],
+    /\n {2}unknown {8}resources_provisioned \(webhook_request_not_recorded\)\nNext \(resources_provisioned\): Setup was started from flags, /,
+  );
+  // Interrupted after the endpoint was created and before its secret was saved.
+  write(root, ".commish/setup/test/webhook.json", { id: "whe_123456789012" });
+  const half = byStep(await read()).resources_provisioned;
+  assert.deepEqual(
+    [half.status, half.evidence.webhook, half.evidence.webhookFile, half.reason],
+    ["unmet", "recorded", "absent", undefined],
+  );
+  // The endpoint is the last resource setup records: with it and its secret, setup finished.
+  write(
+    root,
+    ".commish/setup/test/webhook.env",
+    `COMMISH_WEBHOOK_SIGNING_SECRET=whsec_${"w".repeat(32)}\n`,
+  );
+  const finished = await read();
+  assert.deepEqual(
+    [
+      finished.status,
+      byStep(finished).resources_provisioned.status,
+      byStep(finished).resources_provisioned.evidence.webhook,
+    ],
+    ["complete", "met", "recorded"],
+  );
+  rmSync(join(root, ".commish/setup/test/webhook.json"));
+  rmSync(join(root, ".commish/setup/test/webhook.env"));
+  // Restoring the configuration settles it either way.
+  write(root, "commish.setup.json", config, 0o644);
+  const none = await read();
+  assert.deepEqual(
+    [none.status, byStep(none).resources_provisioned.evidence.webhook],
+    ["complete", "not_configured"],
+  );
+  write(root, "commish.setup.json", { ...config, webhook: hook }, 0o644);
+  const owed = await read();
+  assert.deepEqual(
+    [
+      byStep(owed).resources_provisioned.status,
+      byStep(owed).resources_provisioned.evidence.webhook,
+      owed.next,
+    ],
+    ["unmet", "configured", provision()],
+  );
+  // A configuration that is present but incomplete says nothing about the webhook either.
+  write(root, "commish.setup.json", { version: 1, stripe: "later" }, 0o644);
+  const partial = await read();
+  assert.deepEqual(
+    [
+      partial.nextStep,
+      byStep(partial).resources_provisioned.status,
+      byStep(partial).resources_provisioned.reason,
+    ],
+    ["configuration", "unknown", "webhook_request_not_recorded"],
+  );
 });

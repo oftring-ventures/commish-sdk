@@ -16,7 +16,7 @@ export const statusHelp = () => ({
   purpose:
     "Reports each setup step recorded for the install in the current directory with its status, the evidence that status rests on and the exact next command.",
   steps,
-  stepStatuses: ["met", "unmet"],
+  stepStatuses: ["met", "unmet", "unknown"],
   reads: {
     localFiles: [
       defaultConfig,
@@ -29,7 +29,7 @@ export const statusHelp = () => ({
   // The install setup would address: its configuration decides before the shell.
   mode: "--mode, else the configuration file's mode (test when it names none), else COMMISH_MODE, else test",
   output: "text; --json prints one JSON object on stdout",
-  exitCodes: { 0: "every_step_met", 1: "error", 2: "a_step_is_unmet" },
+  exitCodes: { 0: "every_step_met", 1: "error", 2: "a_step_is_unmet_or_unknown" },
   integrationVerified: false,
 });
 
@@ -141,7 +141,18 @@ export async function executeStatus(args, options = {}) {
     { source: `${journal.directory}/workspace.json`, workspaceId },
     workspaceId ? {} : { next: provision },
   );
-  const wantsWebhook = Boolean(config?.webhook) || journal.webhook !== null;
+  // Whether a webhook belongs to this setup. Setup records the endpoint last,
+  // after the credential, and keeps no note of what was asked for: without a
+  // complete configuration and without a recorded endpoint it cannot be told
+  // whether provisioning finished or stopped before the webhook.
+  const webhook = config?.webhook
+      ? "configured"
+      : journal.webhook !== null
+        ? "recorded"
+        : config
+          ? "not_configured"
+          : "unknown",
+    wantsWebhook = webhook === "configured" || webhook === "recorded";
   const files = {
     credentialsFile: privateFile(
       root,
@@ -161,20 +172,31 @@ export async function executeStatus(args, options = {}) {
     Boolean(applicationId && programId && journal.credential) &&
     files.credentialsFile === "present" &&
     (!wantsWebhook || (journal.webhook !== null && files.webhookFile === "present"));
+  // Met rests on the recorded resources plus a known answer about the webhook.
+  const settled = provisioned && webhook !== "unknown";
   add(
     "resources_provisioned",
-    provisioned ? "met" : "unmet",
+    settled ? "met" : provisioned ? "unknown" : "unmet",
     {
       source: journal.directory,
       applicationId,
       programId,
       credentialId: journal.credential?.id ?? null,
+      webhook,
       ...(wantsWebhook ? { webhookId: journal.webhook?.id ?? null } : {}),
       ...files,
     },
-    provisioned ? {} : { next: provision },
+    settled
+      ? {}
+      : {
+          ...(provisioned ? { reason: "webhook_request_not_recorded" } : {}),
+          next: provision,
+        },
   );
-  const open = report.find((item) => item.status === "unmet");
+  // The first step, in order, that someone can act on.
+  const open = report.find(
+    (item) => item.status === "unmet" || (item.status === "unknown" && item.next),
+  );
   return {
     version: 1,
     status: report.every((item) => ["met", "not_applicable"].includes(item.status))
@@ -196,7 +218,7 @@ function statusText(result) {
       `commish ${result.command}\n\n${result.purpose}\n` +
       `Steps: ${result.steps.join(", ")}.\n` +
       "Reads commish.setup.json and .commish/setup/ in the current directory. Makes no request and changes nothing.\n" +
-      "Exit 0 means every step is met, 2 that a step is unmet, 1 an error. Use --json for evidence."
+      "Exit 0 means every step is met, 2 that a step is unmet or unknown, 1 an error. Use --json for evidence."
     );
   const next = result.next;
   return (
