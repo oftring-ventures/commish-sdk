@@ -63,6 +63,7 @@ test("the default run plans both files and writes nothing", (t) => {
   const before = tree(root);
   const plan = receipt(root);
   assert.equal(plan.status, "plan");
+  assert.equal(plan.action, "install");
   assert.equal(plan.sdkVersion, version);
   assert.deepEqual(
     [plan.mutations, plan.networkRequests, plan.integrationVerified],
@@ -128,7 +129,7 @@ test("--write creates the section and the skill from the playbook, and a rerun c
   ]);
 });
 
-test("an existing AGENTS.md keeps every byte outside the markers, through insertion and update", (t) => {
+test("an existing AGENTS.md keeps every byte outside the markers, through update and removal", (t) => {
   for (const existing of [
     "# Shop\n\nUse pnpm.\n",
     "# Shop\r\n\r\nUse pnpm.\r\n",
@@ -153,7 +154,47 @@ test("an existing AGENTS.md keeps every byte outside the markers, through insert
     assert.deepEqual(statuses(receipt(root)), ["AGENTS.md: update", `${skill}: unchanged`]);
     assert.equal(statuses(receipt(root, "--write"))[0], "AGENTS.md: updated");
     assert.equal(text(root, "AGENTS.md"), `${installed}${eol}## After${eol}`);
+    writeFileSync(join(root, "AGENTS.md"), installed);
+    const removed = receipt(root, "--remove", "--write");
+    assert.equal(removed.status, "files_removed");
+    assert.deepEqual(statuses(removed), ["AGENTS.md: updated", `${skill}: deleted`]);
+    // Byte for byte when the file ended with a line break; otherwise the inserted one stays.
+    assert.equal(text(root, "AGENTS.md"), existing.endsWith("\n") ? existing : existing + eol);
+    assert(!existsSync(join(root, ".claude")));
+    assert.deepEqual(statuses(receipt(root, "--remove", "--write")), [
+      "AGENTS.md: unchanged",
+      `${skill}: absent`,
+    ]);
   }
+});
+
+test("removal restores a repository that had neither file and leaves other skills alone", (t) => {
+  const root = repository(t);
+  const before = tree(root);
+  receipt(root, "--write");
+  assert.deepEqual(statuses(receipt(root, "--remove")), ["AGENTS.md: delete", `${skill}: delete`]);
+  assert(existsSync(join(root, skill)));
+  assert.deepEqual(statuses(receipt(root, "--remove", "--write")), [
+    "AGENTS.md: deleted",
+    `${skill}: deleted`,
+  ]);
+  assert.deepEqual(tree(root), before);
+  const shared = repository(t, { ".claude/skills/other/SKILL.md": "custom" });
+  receipt(shared, "--write");
+  receipt(shared, "--remove", "--write");
+  assert.deepEqual(readdirSync(join(shared, ".claude/skills")), ["other"]);
+  // Blank lines that were there before the install come back; only a file with no bytes goes.
+  const blank = repository(t, { "AGENTS.md": "\n\n" });
+  receipt(blank, "--write");
+  assert.equal(statuses(receipt(blank, "--remove", "--write"))[0], "AGENTS.md: updated");
+  assert.equal(text(blank, "AGENTS.md"), "\n\n");
+  // Removal works where an install is refused, so a stray one can be cleaned up.
+  rmSync(join(blank, "package.json"));
+  assert.equal(receipt(blank, "--remove").status, "plan");
+  // A skill this command did not write is neither replaced nor removed.
+  const custom = repository(t, { [skill]: "my own skill\n" });
+  assert.equal(statuses(receipt(custom, "--remove", "--write"))[1], `${skill}: unchanged`);
+  assert.equal(text(custom, skill), "my own skill\n");
 });
 
 test("conflicts change no file and report a reason without echoing content", (t) => {
@@ -276,13 +317,31 @@ test("a write that fails reports what it had already changed", {
       ],
     ],
   );
-  assert.match(failure.guidance, /^The files listed as created or updated changed/);
+  assert.match(failure.guidance, /^The files listed as created, updated or deleted changed/);
   assert.equal(text(partial, "AGENTS.md"), existing);
   assert(existsSync(join(partial, skill)));
   assert.match(
     repeated.stderr,
     /^Agent setup failed: agent_guidance_unavailable\.\nNo files changed\. /,
   );
+  // Removal takes the section out first; a skill it then cannot delete is named.
+  chmodSync(directory, 0o755);
+  receipt(blocked, "--write");
+  chmodSync(directory, 0o555);
+  const third = run(blocked, "--remove", "--write", "--json");
+  chmodSync(directory, 0o755);
+  assert.deepEqual(
+    [third.status, JSON.parse(third.stderr).mutations, JSON.parse(third.stderr).files],
+    [
+      1,
+      true,
+      [
+        { path: "AGENTS.md", status: "updated" },
+        { path: skill, status: "not_removed" },
+      ],
+    ],
+  );
+  assert.equal(text(blocked, "AGENTS.md"), existing);
   // Once the cause is gone, a rerun converges.
   assert.deepEqual(statuses(receipt(partial, "--write")), [
     "AGENTS.md: updated",
@@ -320,7 +379,28 @@ test("CLAUDE.md is reported and never edited", (t) => {
       state === "agents_md_not_referenced",
     );
     assert.equal(text(root, "CLAUDE.md"), body);
+    // Removing a section from a file that stays leaves the import valid.
+    writeFileSync(join(root, "AGENTS.md"), `# Shop\n${text(root, "AGENTS.md")}`);
+    assert.deepEqual(receipt(root, "--remove").nextSteps, [
+      "rerun_the_same_arguments_with_--write",
+    ]);
   }
+  // Removal that deletes AGENTS.md says the import an install asked for now dangles.
+  const imported = repository(t, { "CLAUDE.md": "@AGENTS.md\n" });
+  receipt(imported, "--write");
+  assert.deepEqual(receipt(imported, "--remove").nextSteps, [
+    "rerun_the_same_arguments_with_--write",
+    "remove_agents_md_reference_from_claude_md",
+  ]);
+  assert.match(
+    run(imported, "--remove").stdout,
+    /\nCLAUDE\.md mentions AGENTS\.md, which this removal deletes\./,
+  );
+  assert.deepEqual(receipt(imported, "--remove", "--write").nextSteps, [
+    "remove_agents_md_reference_from_claude_md",
+    "review_and_commit_the_changed_files",
+  ]);
+  assert.equal(text(imported, "CLAUDE.md"), "@AGENTS.md\n");
   const linked = repository(t);
   symlinkSync("AGENTS.md", join(linked, "CLAUDE.md"));
   assert.equal(receipt(linked).claudeMd, "references_agents_md");
@@ -334,7 +414,6 @@ test("arguments are closed, help is local, and the CLI lists the command", (t) =
     ["private-fixture"],
     ["--write", "--write"],
     ["--help", "--write"],
-    ["--remove"],
   ]) {
     const refused = run(root, ...args, "--json");
     assert.deepEqual([refused.status, refused.stdout], [1, ""]);
@@ -345,7 +424,7 @@ test("arguments are closed, help is local, and the CLI lists the command", (t) =
   assert.equal(receipt(root, "--non-interactive").status, "plan");
   const help = run(root, "--help");
   assert.deepEqual([help.status, help.stderr], [0, ""]);
-  assert.match(help.stdout, /^Usage: commish agent setup \[--write\] \[--json\]\n/);
+  assert.match(help.stdout, /^Usage: commish agent setup \[--write\] \[--remove\] \[--json\]\n/);
   const described = receipt(root, "-h");
   assert.equal(described.status, "help");
   assert.deepEqual(described.files, ["AGENTS.md", skill]);

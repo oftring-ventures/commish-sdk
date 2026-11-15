@@ -468,7 +468,7 @@ if (Object.hasOwn(managementRunners, args[0])) {
         "doctor [options]",
         "test [command]",
         "agent --json",
-        "agent setup [--write] [--json]",
+        "agent setup [--write] [--remove] [--json]",
         ...apiHelp().commands.slice(3),
       ],
       requiredEnvironment: verifyEnvironment,
