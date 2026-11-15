@@ -177,10 +177,12 @@ function importsAgentsFile(root, text) {
       fence = mark;
       return false;
     }
-    // A path ends at the first space that has no backslash before it.
-    return [...line.replace(/`[^`]*`/g, " ").matchAll(/(?:^|\s)@((?:\\ |\S)+)/g)].some(([, path]) =>
-      isAgentsFile(root, path.replaceAll("\\ ", " ")),
-    );
+    // A code span opens with a run of backticks and closes at the next run of the same
+    // length; a run without a partner is ordinary text. A path ends at the first space that
+    // has no backslash before it.
+    return [
+      ...line.replace(/(?<!`)(`+)(?!`).*?(?<!`)\1(?!`)/g, " ").matchAll(/(?:^|\s)@((?:\\ |\S)+)/g),
+    ].some(([, path]) => isAgentsFile(root, path.replaceAll("\\ ", " ")));
   });
 }
 

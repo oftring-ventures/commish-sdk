@@ -376,6 +376,11 @@ test("CLAUDE.md is reported and never edited", (t) => {
       "agents_md_not_referenced",
     ],
     ["Mail docs@AGENTS.md, see @AGENTS.md.bak and @docs/AGENTS.md\n", "agents_md_not_referenced"],
+    // A code span closes at a backtick run of the same length, so one that holds a backtick
+    // ends where it should, and a run without a partner opens nothing.
+    ["Use `` ` `` syntax. Import @AGENTS.md and run `npm test`.\n", "references_agents_md"],
+    ["Two `` backticks open nothing. Import @AGENTS.md here.\n", "references_agents_md"],
+    ["Still code: ``@AGENTS.md ` @AGENTS.md`` and ` @AGENTS.md `\n", "agents_md_not_referenced"],
     // Four spaces make an indented code block, not a fence, so the import after it is live.
     ["Example:\n\n    ```\n\n@AGENTS.md\n", "references_agents_md"],
     ["``` not a fence `x`\n@AGENTS.md\n", "references_agents_md"],
