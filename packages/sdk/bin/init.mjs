@@ -170,7 +170,7 @@ const json = args.includes("--json");
 // version and usage touch no files, so they still answer there.
 const informational =
   (args.length === 1 && ["--version", "-v"].includes(args[0])) ||
-  args.every((arg) => ["help", "--help", "-h", "--json"].includes(arg));
+  args.every((arg) => ["help", "--help", "-h", "--json", "--non-interactive"].includes(arg));
 if (process.platform === "win32" && !informational) {
   console.error(
     json
@@ -208,7 +208,7 @@ if (Object.hasOwn(managementRunners, args[0])) {
   process.exitCode = await runApiCommand(args);
 } else if (
   args[0] === "agent" &&
-  args.slice(1).every((arg) => ["--json", "--help"].includes(arg))
+  args.slice(1).every((arg) => ["--json", "--help", "--non-interactive"].includes(arg))
 ) {
   console.log(
     JSON.stringify({
@@ -442,7 +442,7 @@ if (Object.hasOwn(managementRunners, args[0])) {
 } else {
   const valid =
     args.length === 0 ||
-    (args.every((arg) => ["help", "--help", "-h", "--json"].includes(arg)) &&
+    (args.every((arg) => ["help", "--help", "-h", "--json", "--non-interactive"].includes(arg)) &&
       new Set(args).size === args.length);
   if (!valid) {
     console.error(

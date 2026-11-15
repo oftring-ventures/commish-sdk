@@ -219,6 +219,7 @@ export async function executeTest(args, options = {}) {
   )
     fail("loopback_url_required");
   const secret = env.COMMISH_WEBHOOK_SIGNING_SECRET;
+  if (!secret) missingInput(["COMMISH_WEBHOOK_SIGNING_SECRET"], "webhook_secret_required");
   if (!/^whsec_[A-Za-z0-9_-]{12,512}$/.test(secret ?? "")) fail("webhook_secret_required");
   const event = {
     id: `evt_cli_fixture_${randomUUID().replaceAll("-", "")}`,

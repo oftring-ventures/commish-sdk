@@ -128,6 +128,13 @@ test("a missing input fails before any request and is named the way it is suppli
     [executeTest, ["fixture"], {}, "missing_input", ["--program <id>"]],
     [executeTest, ["rehearsal"], grant, "missing_input", ["--program <id>"]],
     [executeTest, ["webhook"], {}, "missing_input", ["--url <loopback-url>"]],
+    [
+      executeTest,
+      ["webhook", "--url", "http://127.0.0.1:3000/hook"],
+      {},
+      "webhook_secret_required",
+      ["COMMISH_WEBHOOK_SIGNING_SECRET"],
+    ],
   ];
   // The flag changes nothing: the same error names the same inputs either way.
   for (const [execute, args, env, code, missing] of cases)
@@ -165,6 +172,14 @@ test("a malformed value is refused without being named or echoed", async (t) => 
     });
     assert.notEqual(error.message, "missing_input");
   }
+  await assert.rejects(
+    executeTest(["webhook", "--url", "http://127.0.0.1:3000/hook"], {
+      root,
+      env: { COMMISH_WEBHOOK_SIGNING_SECRET: "private-fixture" },
+      fetcher: noRequest,
+    }),
+    (error) => error.message === "webhook_secret_required" && error.detail.missing === undefined,
+  );
   // A set but malformed credential is not reported as missing.
   await assert.rejects(
     executeApi(["customers", "list"], {
@@ -220,5 +235,25 @@ test("verify and init accept the flag, and verify names the variables that are n
     assert.deepEqual([result.status, result.stderr], [0, ""], args.join(" "));
     JSON.parse(result.stdout);
   }
+  // The static documents take the flag too, so it can be passed to every command.
+  for (const args of [
+    ["agent", "--json", "--non-interactive"],
+    ["agent", "--non-interactive", "--json"],
+    ["--help", "--json", "--non-interactive"],
+    ["help", "--non-interactive", "--json"],
+  ]) {
+    const result = run(args);
+    assert.deepEqual([result.status, result.stderr], [0, ""], args.join(" "));
+    assert.equal(
+      JSON.parse(result.stdout).setupGuide?.output.prompts ??
+        JSON.parse(result.stdout).setup.output.prompts,
+      "none; --non-interactive is accepted by every command",
+    );
+  }
+  assert.equal(run(["--help", "--non-interactive"]).status, 0);
+  assert.equal(
+    JSON.parse(run(["agent", "--json", "--private-fixture"]).stderr).code,
+    "invalid_arguments",
+  );
   assert.deepEqual(readdirSync(root), []);
 });
