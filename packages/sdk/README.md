@@ -752,8 +752,8 @@ financial guards remain in force.
 ### See where an install stands
 
 `commish status` reports, for the install in the current directory, each setup
-step with its status, the evidence that status rests on and the exact next
-command:
+step and whether management access is still usable, with its status, the
+evidence that status rests on and the exact next command:
 
 ```sh
 commish status --json
@@ -764,9 +764,20 @@ commish status --json
 | `configuration` | `commish.setup.json` (or `--config`) is complete, or setup already started from flags. |
 | `setup_approved` | A workspace owner approved setup: `.commish/setup/<mode>/workspace.json` records the workspace. |
 | `resources_provisioned` | The application, program and credential are recorded and `credentials.env` exists, plus the webhook endpoint and `webhook.env` when a webhook is configured. |
+| `management_access` | A management grant for this workspace and mode is authorized and includes `diagnostics.read`. |
 
-It reads local files only, makes no request and changes nothing. Key material
-is checked for presence and shape and never printed. Text is the default
+The first three steps read local files only. Management access is checked with
+one request, using the grant's own bearer: `--auth-file` or
+`COMMISH_MANAGEMENT_TOKEN` when given, otherwise the newest grant stored under
+`.commish/management/` for this workspace and mode that includes
+`diagnostics.read` (the onboarding grant from setup qualifies). The evidence
+names the file and the grant's state, scopes and expiry. When no grant is
+usable, the next command asks for one: an onboarding grant in Test, a
+read-only session in LIVE; a stored request that is still pending is resumed.
+An unreachable service is reported as `unavailable` with its code.
+
+The command changes nothing. Key material and bearers are checked for presence
+and shape and never printed. Text is the default
 output; `--json` prints one object with `status` (`complete` or `incomplete`),
 `steps`, `nextStep` and `next`. Exit 0 means every step is met, 2 that a step is
 unmet and 1 an error. Each mode keeps its own progress: `--mode live` reports
