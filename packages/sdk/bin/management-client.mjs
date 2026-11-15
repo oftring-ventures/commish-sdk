@@ -69,10 +69,10 @@ export function validateManagementGrant(value, token, expected) {
     fail("authorization_context_mismatch");
   return value;
 }
-export function readManagementAuthorization(root, filename) {
+export function readManagementAuthorization(root, filename, { recover = true } = {}) {
   let state;
   try {
-    state = JSON.parse(readSetupFile(root, filename, { privateFile: true }));
+    state = JSON.parse(readSetupFile(root, filename, { privateFile: true, recover }));
   } catch {
     fail("invalid_authorization_file");
   }
@@ -115,9 +115,11 @@ export function managementClient({
   url,
   fetcher = fetch,
   signal,
+  // false for a caller that only reports: a half-published file is refused, not repaired.
+  recover = true,
 } = {}) {
   const mode = managementMode(selected, env);
-  const stored = authFile ? readManagementAuthorization(root, authFile) : null;
+  const stored = authFile ? readManagementAuthorization(root, authFile, { recover }) : null;
   if (stored && env.COMMISH_MANAGEMENT_TOKEN) fail("ambiguous_authorization");
   const token = stored?.token ?? env.COMMISH_MANAGEMENT_TOKEN;
   if (token === undefined)
