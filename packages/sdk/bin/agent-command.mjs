@@ -17,6 +17,7 @@ import {
 } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import manifest from "../package.json" with { type: "json" };
+import guidance from "./agent-guidance.json" with { type: "json" };
 import { commishCli, initGuide } from "./init-command.mjs";
 import { readSetupFile } from "./setup-files.mjs";
 import { inspectRepository } from "./setup-plan.mjs";
@@ -33,7 +34,8 @@ const fail = (code) => {
 };
 
 // The section and the skill are cut from the `commish init` playbook of this CLI
-// version, so they cannot say anything the playbook does not.
+// version, so they cannot say anything the playbook does not. The Pages block is
+// the copyable section of @commish/next's agent guide (agent-guidance.json).
 export function agentGuidance(root) {
   const repository = inspectRepository(root);
   const cli = commishCli(repository);
@@ -50,6 +52,15 @@ export function agentGuidance(root) {
     (name) => parts.get(name) || fail("agent_guidance_unavailable"),
   );
   const { version } = manifest;
+  const pages = ["app", "src/app"].some((app) =>
+    ["ts", "js"].some((extension) => {
+      try {
+        return lstatSync(join(root, app, `commish-pages.${extension}`)).isFile();
+      } catch {
+        return false;
+      }
+    }),
+  );
   const section = [
     markers.begin,
     "## Commish",
@@ -60,6 +71,7 @@ export function agentGuidance(root) {
     "",
     rules,
     `- ${report}`,
+    ...(pages ? ["", "### Commish Pages", "", ...guidance.pages] : []),
     markers.end,
   ].join("\n");
   const skill = `---
@@ -89,7 +101,7 @@ ${report}
 
 ${references}
 `;
-  return { cli, section, skill, warnings: repository.warnings };
+  return { cli, section, skill, pages, warnings: repository.warnings };
 }
 
 function read(root, path) {
@@ -169,7 +181,7 @@ export function planAgentSetup(root, remove = false) {
   } catch (error) {
     if (error?.code !== "ENOENT") claudeMd = "not_inspected";
   }
-  return { files, claudeMd, warnings: content.warnings };
+  return { files, claudeMd, pagesGuidance: content.pages, warnings: content.warnings };
 }
 
 function directory(root, path, create) {
@@ -346,6 +358,7 @@ export function runAgentSetupCommand(
         path,
         status: write ? (done[status] ?? status) : status,
       })),
+      pagesGuidance: !remove && plan.pagesGuidance,
       claudeMd: plan.claudeMd,
       warnings: plan.warnings,
       nextSteps: [

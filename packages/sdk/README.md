@@ -154,7 +154,9 @@ for every project.
   the receipt reports `claudeMd: "agents_md_not_referenced"`; add a line
   `@AGENTS.md` to it so Claude Code loads the section.
 
-Both texts are cut from the `commish init` playbook of the CLI that writes them.
+Both texts are cut from the `commish init` playbook of the CLI that writes them;
+when Creator Pages are installed the section also carries the copyable block of
+the [Pages agent guide](https://github.com/oftring-ventures/commish-sdk/blob/v0.7.1/packages/next/guides/agents.md).
 Rerun the command with `--write` after upgrading. `--remove` plans, and with
 `--write` performs, the removal of the section and the skill; it works in any
 directory. An `AGENTS.md` that ended with a line break comes back byte for byte;
