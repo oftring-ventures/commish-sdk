@@ -293,6 +293,55 @@ test("management calls preserve bounded pagination and reject wrong mode or repe
     /invalid_arguments/,
   );
 });
+test("manage runs products.list from the catalog and names a missing Stripe connection", async () => {
+  const pages = [
+    { items: [{ id: "prod_a", name: "Pro", active: true, prices: [], pricesTruncated: false }] },
+    { items: [{ id: "prod_b", name: "Team", active: true, prices: [], pricesTruncated: false }] },
+  ];
+  const seen = [];
+  const result = await executeManagement(
+    ["products.list", "--limit", "1", "--query", "active=true", "--all"],
+    {
+      env,
+      fetcher: async (url, init) => {
+        const query = new URL(url).searchParams;
+        assert.equal(init.method, "GET");
+        assert.equal(new URL(url).pathname, "/api/management/v1/products.list");
+        seen.push(Object.fromEntries(query));
+        const page = pages[seen.length - 1];
+        return envelope("products.list", {
+          ...page,
+          nextCursor: seen.length < pages.length ? page.items[0].id : null,
+        });
+      },
+    },
+  );
+  assert.deepEqual(seen, [
+    { limit: "1", active: "true" },
+    { limit: "1", active: "true", cursor: "prod_a" },
+  ]);
+  assert.deepEqual(
+    [result.complete, result.pages, result.data.map((item) => item.id)],
+    [true, 2, ["prod_a", "prod_b"]],
+  );
+  // The server caps a page at 20 products and the filter at Stripe's two values.
+  for (const args of [
+    ["--limit", "21"],
+    ["--query", "stripeAccountId=acct_123"],
+  ])
+    await assert.rejects(
+      executeManagement(["products.list", ...args], { env, fetcher: noRequest }),
+      /invalid_arguments/,
+    );
+  await assert.rejects(
+    executeManagement(["products.list"], {
+      env,
+      fetcher: async () =>
+        Response.json({ error: { code: "stripe_connection_required" } }, { status: 409 }),
+    }),
+    (error) => error.message === "stripe_connection_required" && error.detail.httpStatus === 409,
+  );
+});
 test("a refused body file says why with fixed reasons, before any request and without echoing it", async (t) => {
   const root = directory(t),
     outside = directory(t),
