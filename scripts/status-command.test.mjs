@@ -27,7 +27,7 @@ const workspaceId = "wrk_123456789012",
   applicationId = "app_123456789012",
   programId = "prg_123456789012",
   api = "https://app.commish.sh/api/management/v1";
-const scopes = ["diagnostics.read", "programs.write", "destinations.write"];
+const scopes = ["diagnostics.read", "programs.write", "destinations.write", "terms.read"];
 const config = {
   version: 1,
   application: { name: "Guestbook" },
@@ -119,19 +119,80 @@ const grantFor = ({ challengeHash, ...proposal }, status) => ({
   requestExpiresAt: "2099-01-01T00:00:00Z",
   expiresAt: status === "pending" ? null : "2099-01-01T01:00:00Z",
 });
-// A management API that knows each stored grant's state.
-function server(grants, { fail, base = api } = {}) {
+const activated = "2026-11-14T21:11:28.86061+00:00";
+const met = [
+  "program_active",
+  "active_terms",
+  "verified_origin",
+  "stripe_connection",
+  "eligible_products",
+  "stable_customer_identity",
+  "attributed_checkout",
+  "provider_event_receipt",
+  "attributed_conversion_observed",
+  "commission_observed",
+];
+// A management API that knows each stored grant's state and one diagnostics report.
+function server(
+  grants,
+  {
+    checks = {},
+    testActivatedAt = activated,
+    mode = "test",
+    fail,
+    failDiagnostics,
+    patch,
+    base = api,
+  } = {},
+) {
   const requests = [];
   const fetcher = async (url, init) => {
     const grant = grants.find(([file]) => init.headers.authorization === `Bearer ${file.token}`);
     requests.push(`${init.method} ${url.slice(base.length)}`);
     assert(grant, "unknown bearer");
     if (fail) return Response.json({ error: { code: fail } }, { status: 503 });
-    assert.equal(url, `${base}/grants`);
-    return Response.json({ data: grantFor(grant[0].proposal, grant[1]) });
+    if (failDiagnostics && url !== `${base}/grants`)
+      return Response.json(
+        { error: { code: failDiagnostics } },
+        { status: failDiagnostics === "rate_limited" ? 429 : 404 },
+      );
+    if (url === `${base}/grants`)
+      return Response.json({ data: grantFor(grant[0].proposal, grant[1]) });
+    assert.equal(url, `${base}/diagnostics.get?programId=${programId}`);
+    return Response.json({
+      data: {
+        protocol: "commish-management-v1",
+        operation: "diagnostics.get",
+        workspaceId,
+        applicationId: null,
+        mode,
+        result: {
+          report: {
+            version: 1,
+            mode,
+            programId,
+            status: "incomplete",
+            integrationVerified: false,
+            unmetConditions: [],
+            checks: [
+              ...met.map((code) => ({
+                code,
+                status: checks[code] ?? "met",
+                action: "private-fixture server text",
+              })),
+              { code: "related_webhook_delivered", status: checks.webhook ?? "not_applicable" },
+            ].filter((check) => check.status !== "absent"),
+            testActivatedAt,
+            ...patch,
+          },
+        },
+      },
+    });
   };
   return { fetcher, requests };
 }
+const diagnosticsRead = `GET /diagnostics.get?programId=${programId}`;
+const statuses = (result) => result.steps.map((item) => `${item.step}:${item.status}`);
 const byStep = (result) => Object.fromEntries(result.steps.map((item) => [item.step, item]));
 const provision = (config = "commish.setup.json") => ({
   kind: "command",
@@ -142,50 +203,62 @@ const provision = (config = "commish.setup.json") => ({
 test("a repository that never ran setup is reported offline and left untouched", async (t) => {
   const root = directory(t);
   const result = await executeStatus(["--json"], { root, env: {}, fetcher: noRequest });
-  assert.deepEqual(result, {
-    version: 1,
-    status: "incomplete",
-    mode: "test",
-    workspaceId: null,
-    applicationId: null,
-    programId: null,
-    steps: [
-      {
-        step: "configuration",
-        status: "unmet",
-        evidence: { source: "commish.setup.json", configuration: "missing" },
-        next: { kind: "command", command: "commish setup --plan --json" },
-      },
-      {
-        step: "setup_approved",
-        status: "unmet",
-        evidence: { source: ".commish/setup/test/workspace.json", workspaceId: null },
-        next: provision(),
-      },
-      {
-        step: "resources_provisioned",
-        status: "unmet",
-        evidence: {
-          source: ".commish/setup/test",
-          applicationId: null,
-          programId: null,
-          credentialId: null,
-          webhook: "unknown",
-          credentialsFile: "absent",
+  assert.deepEqual(
+    { ...result, steps: result.steps.slice(0, 4) },
+    {
+      version: 1,
+      status: "incomplete",
+      mode: "test",
+      workspaceId: null,
+      applicationId: null,
+      programId: null,
+      steps: [
+        {
+          step: "configuration",
+          status: "unmet",
+          evidence: { source: "commish.setup.json", configuration: "missing" },
+          next: { kind: "command", command: "commish setup --plan --json" },
         },
-        next: provision(),
-      },
-      {
-        step: "management_access",
-        status: "unmet",
-        evidence: { source: "none", status: "missing" },
-        next: provision(),
-      },
-    ],
-    nextStep: "configuration",
-    next: { kind: "command", command: "commish setup --plan --json" },
-    integrationVerified: false,
-  });
+        {
+          step: "setup_approved",
+          status: "unmet",
+          evidence: { source: ".commish/setup/test/workspace.json", workspaceId: null },
+          next: provision(),
+        },
+        {
+          step: "resources_provisioned",
+          status: "unmet",
+          evidence: {
+            source: ".commish/setup/test",
+            applicationId: null,
+            programId: null,
+            credentialId: null,
+            webhook: "unknown",
+            credentialsFile: "absent",
+          },
+          next: provision(),
+        },
+        {
+          step: "management_access",
+          status: "unmet",
+          evidence: { source: "none", status: "missing" },
+          next: provision(),
+        },
+      ],
+      nextStep: "configuration",
+      next: { kind: "command", command: "commish setup --plan --json" },
+      integrationVerified: false,
+    },
+  );
+  // Nothing was provisioned, so there is no program to ask about.
+  assert.deepEqual(
+    result.steps.slice(4).map(({ step, ...rest }) => rest),
+    Array(8).fill({
+      status: "unknown",
+      evidence: { source: "diagnostics.get" },
+      reason: "program_not_provisioned",
+    }),
+  );
   assert.deepEqual(
     result.steps.map((item) => item.step),
     statusHelp().steps,
@@ -237,7 +310,7 @@ test("recorded setup progress is reported step by step without revealing key mat
   write(root, ".commish/setup/test/workspace.json", { id: workspaceId });
   const approved = await executeStatus([], { root, env: {}, fetcher: noRequest });
   assert.deepEqual(
-    approved.steps.map((item) => item.status),
+    approved.steps.slice(0, 4).map((item) => item.status),
     ["met", "met", "unmet", "unmet"],
   );
   assert.deepEqual([approved.nextStep, approved.next], ["resources_provisioned", provision()]);
@@ -253,9 +326,10 @@ test("recorded setup progress is reported step by step without revealing key mat
     [workspaceId, applicationId, programId, "management_access"],
   );
   assert.deepEqual(
-    done.steps.map((item) => item.status),
+    done.steps.slice(0, 4).map((item) => item.status),
     ["met", "met", "met", "unmet"],
   );
+  assert(done.steps.slice(4).every((item) => item.reason === "management_access_required"));
   assert.deepEqual(byStep(done).configuration.evidence, {
     source: "commish.setup.json",
     configuration: "ready",
@@ -275,7 +349,7 @@ test("recorded setup progress is reported step by step without revealing key mat
   // Progress is kept per mode: LIVE has recorded nothing here.
   const live = await executeStatus(["--mode", "live"], { root, env: {}, fetcher: noRequest });
   assert.deepEqual(
-    live.steps.map((item) => item.status),
+    live.steps.slice(0, 4).map((item) => item.status),
     ["met", "unmet", "unmet", "unmet"],
   );
   assert.match(live.next.command, / --mode live /);
@@ -344,6 +418,10 @@ test("text is the default output, --json one object, and errors are sanitized", 
         "  unmet          setup_approved\n" +
         "  unmet          resources_provisioned\n" +
         "  unmet          management_access\n" +
+        statusHelp()
+          .steps.slice(4)
+          .map((step) => `  unknown        ${step} (program_not_provisioned)\n`)
+          .join("") +
         "Next (configuration): run commish setup --plan --json\n" +
         "Integration remains unverified by this command. Use --json for evidence.",
     ],
@@ -406,7 +484,7 @@ test("the newest authorized grant for this workspace and mode is used; others ar
     [narrow, "authorized"],
   ]);
   const result = await executeStatus([], { root, env: {}, fetcher: management.fetcher });
-  assert.deepEqual(management.requests, ["GET /grants", "GET /grants"]);
+  assert.deepEqual(management.requests, ["GET /grants", "GET /grants", diagnosticsRead]);
   assert.deepEqual([result.status, result.nextStep, result.next], ["complete", null, null]);
   assert.deepEqual(byStep(result).management_access, {
     step: "management_access",
@@ -551,7 +629,7 @@ test("many stored grants do not hide the right one, and a half-published grant i
   assert.equal(readdirSync(join(root, ".commish/management")).length, 71);
   const management = server([[current, "authorized"]]);
   const result = await executeStatus([], { root, env: {}, fetcher: management.fetcher });
-  assert.deepEqual(management.requests, ["GET /grants"]);
+  assert.deepEqual(management.requests, ["GET /grants", diagnosticsRead]);
   assert.equal(byStep(result).management_access.evidence.source, current.path);
   // A stored grant left half-published is skipped; a named one is an error. Neither is repaired.
   const leftover = `${dirname(current.path)}/.commish-setup-authorization.json.97961974-684d-46b3-aebb-2ef22ee2cec0.tmp`;
@@ -614,7 +692,7 @@ test("a named file or token is used as given; an outage is reported, a broken fi
     env: {},
     fetcher: explicit.fetcher,
   });
-  assert.deepEqual(explicit.requests, ["GET /grants"]);
+  assert.deepEqual(explicit.requests, ["GET /grants", diagnosticsRead]);
   assert.equal(byStep(result).management_access.evidence.source, named.path);
   rmSync(join(root, ".commish/management"), { recursive: true });
   const token = await executeStatus([], {
@@ -638,6 +716,7 @@ test("a named file or token is used as given; an outage is reported, a broken fi
     code: "service_unavailable",
   });
   assert.equal(down.nextStep, "management_access");
+  assert.equal(byStep(down).stripe_connected.reason, "management_access_required");
   for (const [args, env, code] of [
     [["--auth-file", "missing.json"], {}, "invalid_authorization_file"],
     [
@@ -670,6 +749,395 @@ test("LIVE asks for a read-only session, and setup comes first when nothing is r
       humanAction: "open_the_approval_url_and_confirm_the_pairing_code",
     },
   });
+});
+
+test("a provisioned install reports each remaining step with its evidence and next action", async (t) => {
+  const root = directory(t);
+  provisioned(root);
+  const file = grantFile(root, "a");
+  const before = readdirSync(root, { recursive: true }).sort();
+  const { fetcher, requests } = server([[file, "authorized"]], {
+    testActivatedAt: null,
+    checks: {
+      verified_origin: "unmet",
+      stripe_connection: "unmet",
+      program_active: "unmet",
+      active_terms: "unmet",
+      stable_customer_identity: "unmet",
+      attributed_checkout: "unmet",
+      attributed_conversion_observed: "unmet",
+      commission_observed: "unmet",
+    },
+  });
+  const result = await executeStatus([], { root, env: {}, fetcher });
+  assert.deepEqual(requests, ["GET /grants", `GET /diagnostics.get?programId=${programId}`]);
+  assert.deepEqual(statuses(result), [
+    "configuration:met",
+    "setup_approved:met",
+    "resources_provisioned:met",
+    "management_access:met",
+    "destination_verified:unmet",
+    "stripe_connected:unmet",
+    "eligible_products:met",
+    "program_active:unmet",
+    "rehearsal:unknown",
+    "attributed_test_conversion:unmet",
+    "webhook_delivery:not_applicable",
+    "integration_activated:unmet",
+  ]);
+  const steps = byStep(result),
+    auth = ` --auth-file ${file.path} --mode test --json`;
+  assert.deepEqual(steps.management_access.evidence, {
+    source: file.path,
+    status: "authorized",
+    kind: "onboarding",
+    workspaceId,
+    scopes,
+    expiresAt: "2099-01-01T01:00:00Z",
+  });
+  assert.deepEqual(steps.resources_provisioned.evidence, {
+    source: ".commish/setup/test",
+    applicationId,
+    programId,
+    credentialId: "key_123456789012",
+    webhook: "not_configured",
+    credentialsFile: "present",
+  });
+  assert.equal(result.nextStep, "destination_verified");
+  assert.deepEqual(result.next, steps.destination_verified.next);
+  assert.deepEqual(steps.destination_verified.next, {
+    kind: "command",
+    before:
+      "Deploy public/.well-known/commish-verification.txt so that https://guestbook.example/.well-known/commish-verification.txt serves it.",
+    command: `commish manage destinations.verify --body-file commish-destination.json${auth}`,
+    bodyFile: "commish-destination.json",
+    body: { applicationId, origin: "https://guestbook.example" },
+  });
+  assert.deepEqual(steps.stripe_connected.next, {
+    kind: "browser",
+    url: `https://app.commish.sh/cli/setup/workspace/${workspaceId}/stripe?mode=test`,
+    actor: "workspace_owner_or_admin",
+    action: "connect_stripe",
+  });
+  assert.deepEqual(steps.program_active.evidence.checks, {
+    program_active: "unmet",
+    active_terms: "unmet",
+  });
+  assert.equal(
+    steps.program_active.next.command,
+    `commish manage programs.activate --body-file commish-activate.json${auth}`,
+  );
+  assert.equal(steps.program_active.next.body.programId, programId);
+  assert.equal(steps.rehearsal.reason, "no_read_operation_reports_the_test_partnership");
+  // The step cannot turn met by itself, so its action says what follows.
+  assert.deepEqual(steps.rehearsal.next, {
+    kind: "command",
+    command: `commish test rehearsal --program ${programId} --auth-file ${file.path} --mode test --json`,
+    followedBy: {
+      kind: "guidance",
+      guidance:
+        "Open the returned referralUrl and complete a Test purchase in your product. This step is met once that conversion is attributed; running the command again returns the same link.",
+    },
+  });
+  assert.match(steps.attributed_test_conversion.next.guidance, /client_reference_id/);
+  assert.equal(
+    steps.integration_activated.next.url,
+    `https://app.commish.sh/dashboard/workspace/${workspaceId}/programs/${programId}?tab=integration`,
+  );
+  // Evidence and identifiers only: no bearer, key material or server text.
+  const printed = JSON.stringify(result);
+  for (const secret of [file.token, "k".repeat(43), "p".repeat(32), "private-fixture"])
+    assert(!printed.includes(secret));
+  assert.deepEqual(readdirSync(root, { recursive: true }).sort(), before);
+});
+
+test("a finished install is complete, and the text output names the next action otherwise", async (t) => {
+  const root = directory(t);
+  provisioned(root);
+  const file = grantFile(root, "a");
+  const run = async (args, report) => {
+    const output = [],
+      errors = [];
+    const code = await runStatusCommand(args, {
+      root,
+      env: {},
+      fetcher: server([[file, "authorized"]], report).fetcher,
+      out: (value) => output.push(value),
+      diagnostic: (value) => errors.push(value),
+    });
+    assert.deepEqual([output.length, errors], [1, []]);
+    return [code, output[0]];
+  };
+  const done = { testActivatedAt: "2026-11-14T21:11:28.86061+00:00" };
+  const [code, json] = await run(["--json", "--non-interactive"], done);
+  const result = JSON.parse(json);
+  assert.deepEqual(
+    [code, result.status, result.nextStep, result.next, result.integrationVerified],
+    [0, "complete", null, null, false],
+  );
+  assert.equal(byStep(result).rehearsal.status, "met");
+  // The instant is reprinted, never the server's own text.
+  assert.equal(
+    byStep(result).integration_activated.evidence.testActivatedAt,
+    "2026-11-14T21:11:28.860Z",
+  );
+  const [, legacy] = await run(["--json"], {
+    testActivatedAt: "Sat Nov 14 2026 21:11:28 GMT+0000 (private-fixture)",
+  });
+  assert.equal(
+    byStep(JSON.parse(legacy)).integration_activated.evidence.testActivatedAt,
+    "2026-11-14T21:11:28.000Z",
+  );
+  assert(!legacy.includes("private-fixture"));
+  const [, text] = await run([], done);
+  assert.match(text, /^Commish status \(TEST\): complete\.\n {2}met {12}configuration\n/);
+  assert.match(text, /Every step is met\./);
+  const [waiting, pending] = await run([], { checks: { stripe_connection: "unmet" } });
+  assert.equal(waiting, 2);
+  assert.match(pending, /^Commish status \(TEST\): incomplete\.\n/);
+  assert.match(
+    pending,
+    /\nNext \(stripe_connected\): open https:\/\/app\.commish\.sh\/cli\/setup\/workspace\/wrk_123456789012\/stripe\?mode=test in the browser \(connect stripe\)\.\n/,
+  );
+  // A subscribed webhook that has not delivered is a step of its own.
+  const [, hooks] = await run(["--json"], { ...done, checks: { webhook: "unmet" } });
+  assert.deepEqual(
+    [JSON.parse(hooks).nextStep, JSON.parse(hooks).next.kind],
+    ["webhook_delivery", "guidance"],
+  );
+});
+
+test("a write is only suggested with a grant that can run it, and a rehearsal says what follows", async (t) => {
+  const root = directory(t);
+  provisioned(root);
+  // A read-only session beside nothing else: enough to read, not to act.
+  const reader = grantFile(root, "a", {
+    kind: "session",
+    scopes: ["diagnostics.read"],
+    expiresIn: 3600,
+  });
+  const unmet = {
+    testActivatedAt: null,
+    checks: {
+      verified_origin: "unmet",
+      program_active: "unmet",
+      attributed_checkout: "unmet",
+      attributed_conversion_observed: "unmet",
+      commission_observed: "unmet",
+    },
+  };
+  const result = await executeStatus([], {
+    root,
+    env: {},
+    fetcher: server([[reader, "authorized"]], unmet).fetcher,
+  });
+  const steps = byStep(result),
+    login = `commish auth login --workspace ${workspaceId} --workspace-scope --onboarding --scopes resources.read,diagnostics.read,programs.read,programs.write,terms.read,terms.write,destinations.read,destinations.write,credentials.read --mode test --no-open --non-interactive --json`,
+    granted = " --auth-file <authorizationFile> --mode test --json";
+  assert.equal(steps.management_access.status, "met");
+  assert.deepEqual(steps.destination_verified.next, {
+    kind: "command",
+    command: login,
+    humanAction: "open_the_approval_url_and_confirm_the_pairing_code",
+    requiredScopes: ["destinations.write"],
+    followedBy: {
+      kind: "command",
+      before:
+        "Deploy public/.well-known/commish-verification.txt so that https://guestbook.example/.well-known/commish-verification.txt serves it.",
+      command: `commish manage destinations.verify --body-file commish-destination.json${granted}`,
+      bodyFile: "commish-destination.json",
+      body: { applicationId, origin: "https://guestbook.example" },
+    },
+  });
+  assert.deepEqual(
+    [
+      steps.program_active.next.command,
+      steps.program_active.next.requiredScopes,
+      steps.program_active.next.followedBy.command,
+      steps.program_active.next.followedBy.before,
+    ],
+    [
+      login,
+      ["terms.read", "programs.write"],
+      `commish manage programs.activate --body-file commish-activate.json${granted}`,
+      `Read the term version to activate: commish manage terms.list --program ${programId}${granted}`,
+    ],
+  );
+  assert.deepEqual(
+    [
+      steps.rehearsal.next.command,
+      steps.rehearsal.next.requiredScopes,
+      steps.rehearsal.next.followedBy.command,
+      steps.rehearsal.next.followedBy.followedBy.kind,
+    ],
+    [
+      login,
+      ["programs.write"],
+      `commish test rehearsal --program ${programId} --auth-file <authorizationFile> --mode test --json`,
+      "guidance",
+    ],
+  );
+  // No command anywhere names the grant that cannot run it.
+  for (const step of ["destination_verified", "program_active", "rehearsal"])
+    assert(!JSON.stringify(steps[step].next).includes(reader.path), step);
+  // Reads and browser actions are unaffected.
+  assert.equal(steps.integration_activated.next.kind, "browser");
+  // LIVE: the read-only session status asks for cannot activate either.
+  write(root, "commish.setup.json", { ...config, mode: "live" }, 0o644);
+  for (const [name, id] of [
+    ["workspace", workspaceId],
+    ["application", applicationId],
+    ["program", programId],
+    ["credential", "key_123456789012"],
+  ])
+    write(root, `.commish/setup/live/${name}.json`, { id });
+  write(
+    root,
+    ".commish/setup/live/credentials.env",
+    `COMMISH_MODE=live\nCOMMISH_APPLICATION_ID=${applicationId}\nCOMMISH_PROGRAM_ID=${programId}\n` +
+      `COMMISH_PUBLISHABLE_KEY=cm_live_pk_${"p".repeat(32)}\nCOMMISH_SECRET_KEY=cm_live_sk_${"k".repeat(43)}\n`,
+  );
+  const session = grantFile(root, "b", {
+    mode: "live",
+    kind: "session",
+    scopes: ["resources.read", "diagnostics.read", "programs.read", "terms.read"],
+    expiresIn: 3600,
+  });
+  const live = await executeStatus([], {
+    root,
+    env: {},
+    fetcher: server([[session, "authorized"]], {
+      mode: "live",
+      checks: { program_active: "unmet" },
+    }).fetcher,
+  });
+  assert.deepEqual(
+    [live.nextStep, live.next.command, live.next.requiredScopes, live.next.followedBy.command],
+    [
+      "program_active",
+      `commish auth login --workspace ${workspaceId} --workspace-scope --scopes terms.read,programs.write --mode live --no-open --non-interactive --json`,
+      ["programs.write"],
+      "commish manage programs.activate --body-file commish-activate.json --auth-file <authorizationFile> --mode live --json",
+    ],
+  );
+  // Text mode prints the whole chain.
+  rmSync(join(root, ".commish/setup/live"), { recursive: true });
+  write(root, "commish.setup.json", config, 0o644);
+  const output = [];
+  await runStatusCommand([], {
+    root,
+    env: {},
+    fetcher: server([[reader, "authorized"]], {
+      testActivatedAt: null,
+      checks: { attributed_conversion_observed: "unmet", attributed_checkout: "unmet" },
+    }).fetcher,
+    out: (value) => output.push(value),
+  });
+  assert.match(
+    output[0],
+    /\nNext \(rehearsal\): run commish auth login [^\n]+\nThen a person must open the approval url and confirm the pairing code\.\nAfter that: run commish test rehearsal --program prg_123456789012 --auth-file <authorizationFile> --mode test --json\nAfter that: Open the returned referralUrl and complete a Test purchase in your product\./,
+  );
+});
+
+test("a failed, partial or malformed diagnostics read is unknown with a reason, never met or unmet", async (t) => {
+  const root = directory(t);
+  provisioned(root);
+  const file = grantFile(root, "a");
+  const read = (report) =>
+    executeStatus([], { root, env: {}, fetcher: server([[file, "authorized"]], report).fetcher });
+  for (const [report, reason] of [
+    [{ failDiagnostics: "rate_limited" }, "rate_limited"],
+    [{ failDiagnostics: "program_not_found" }, "program_not_found"],
+    [{ patch: { testActivatedAt: 5 } }, "invalid_response"],
+    [
+      { patch: { checks: [{ code: "program_active", status: "private-fixture" }] } },
+      "invalid_response",
+    ],
+    [{ patch: { programId: "prg_999999999999" } }, "invalid_response"],
+  ]) {
+    const result = await read(report);
+    assert.equal(byStep(result).management_access.status, "met");
+    assert.deepEqual(
+      result.steps.slice(4).map(({ step, ...rest }) => rest),
+      Array(8).fill({ status: "unknown", evidence: { source: "diagnostics.get" }, reason }),
+    );
+    assert.deepEqual([result.status, result.nextStep, result.next], ["incomplete", null, null]);
+    assert(!JSON.stringify(result).includes("private-fixture"));
+  }
+  // A check the report leaves out or did not evaluate is not guessed.
+  const partial = await read({
+    checks: { stripe_connection: "absent", verified_origin: "not_evaluated" },
+  });
+  assert.deepEqual(
+    [byStep(partial).stripe_connected.status, byStep(partial).stripe_connected.reason],
+    ["unknown", "check_not_reported"],
+  );
+  assert.deepEqual(byStep(partial).destination_verified, {
+    step: "destination_verified",
+    status: "unknown",
+    evidence: { source: "diagnostics.get", checks: { verified_origin: "not_evaluated" } },
+    reason: "check_not_reported",
+  });
+  assert.equal(byStep(partial).eligible_products.status, "met");
+});
+
+test("LIVE reports what diagnostics evaluate and marks Test-only steps not applicable", async (t) => {
+  const root = directory(t);
+  write(root, "commish.setup.json", { ...config, mode: "live" }, 0o644);
+  for (const [name, id] of [
+    ["workspace", workspaceId],
+    ["application", applicationId],
+    ["program", programId],
+    ["credential", "key_123456789012"],
+  ])
+    write(root, `.commish/setup/live/${name}.json`, { id });
+  write(
+    root,
+    ".commish/setup/live/credentials.env",
+    `COMMISH_MODE=live\nCOMMISH_APPLICATION_ID=${applicationId}\nCOMMISH_PROGRAM_ID=${programId}\n` +
+      `COMMISH_PUBLISHABLE_KEY=cm_live_pk_${"p".repeat(32)}\nCOMMISH_SECRET_KEY=cm_live_sk_${"k".repeat(43)}\n`,
+  );
+  const file = grantFile(root, "a", {
+    mode: "live",
+    kind: "session",
+    scopes: ["diagnostics.read"],
+    expiresIn: 3600,
+  });
+  const gates = Object.fromEntries(
+    [
+      "verified_origin",
+      "stripe_connection",
+      "eligible_products",
+      "stable_customer_identity",
+      "attributed_checkout",
+      "provider_event_receipt",
+    ].map((code) => [code, "absent"]),
+  );
+  const result = await executeStatus(["--mode", "live"], {
+    root,
+    env: {},
+    fetcher: server([[file, "authorized"]], { mode: "live", checks: gates }).fetcher,
+  });
+  assert.deepEqual(statuses(result).slice(3), [
+    "management_access:met",
+    "destination_verified:unknown",
+    "stripe_connected:unknown",
+    "eligible_products:unknown",
+    "program_active:met",
+    "rehearsal:not_applicable",
+    "attributed_test_conversion:unknown",
+    "webhook_delivery:not_applicable",
+    "integration_activated:not_applicable",
+  ]);
+  assert.equal(byStep(result).stripe_connected.reason, "not_evaluated_in_live");
+  assert.deepEqual([result.status, result.nextStep], ["incomplete", null]);
+  // Without a grant, LIVE asks for a read-only session rather than onboarding.
+  rmSync(join(root, ".commish/management"), { recursive: true });
+  const none = await executeStatus(["--mode", "live"], { root, env: {}, fetcher: noRequest });
+  assert.equal(
+    none.next.command,
+    `commish auth login --workspace ${workspaceId} --workspace-scope --scopes resources.read,diagnostics.read,programs.read,terms.read,destinations.read --mode live --no-open --non-interactive --json`,
+  );
 });
 
 test("the mode is the one setup would use: the flag, then the configuration, then the shell", async (t) => {
@@ -1087,6 +1555,34 @@ test("a recorded key without its file gets guidance, because setup would refuse 
   );
 });
 
+test("with a conflicting configuration, later actions take nothing from it", async (t) => {
+  const root = directory(t);
+  provisioned(root);
+  const file = grantFile(root, "a");
+  write(
+    root,
+    "commish.setup.json",
+    { ...config, destination: { ...config.destination, origin: "https://other.example" } },
+    0o644,
+  );
+  const result = await executeStatus([], {
+    root,
+    env: {},
+    fetcher: server([[file, "authorized"]], { checks: { verified_origin: "unmet" } }).fetcher,
+  });
+  // The recorded program is still read from the server, but the install is not complete,
+  // the first action is to restore the configuration, and no command quotes the edited file.
+  assert.deepEqual(
+    [result.status, result.nextStep, byStep(result).configuration.reason],
+    ["incomplete", "configuration", "setup_config_conflict"],
+  );
+  assert.deepEqual(
+    [byStep(result).destination_verified.status, byStep(result).destination_verified.next.body],
+    ["unmet", { applicationId, origin: "<origin>" }],
+  );
+  assert(!JSON.stringify(result).includes("other.example"));
+});
+
 // A printed command has to run as written, in the environment status ran in and
 // against the deployment status addressed. These helpers run each one through
 // the executable. Every endpoint in these scenarios is a closed loopback port,
@@ -1128,7 +1624,7 @@ const reached = { exit: 1, outcome: "service_unavailable" };
 test("every command status prints runs as written, in the same environment and against the same deployment", async (t) => {
   const onboarding =
     "resources.read,diagnostics.read,programs.read,programs.write,terms.read,terms.write,destinations.read,destinations.write,credentials.read";
-  const scenario = async (name, { prepare, args = [], env = {}, grants = [] }, check) => {
+  const scenario = async (name, { prepare, args = [], env = {}, grants = [], report }, check) => {
     const root = directory(t);
     const files = prepare(root) ?? {};
     const result = await executeStatus(args, {
@@ -1136,7 +1632,7 @@ test("every command status prints runs as written, in the same environment and a
       env,
       fetcher: server(
         grants.map(([key, state]) => [files[key], state]),
-        { base: loopApi },
+        { base: loopApi, ...report },
       ).fetcher,
     });
     const commands = result.steps.flatMap((item) => commandsOf(item.next));
@@ -1342,6 +1838,216 @@ test("every command status prints runs as written, in the same environment and a
       );
       assert.equal(run(root, env, login.command).outcome, "service_unavailable");
     },
+  );
+});
+
+test("every command the remaining steps print runs as written too, with the grant it names", async (t) => {
+  const onboarding =
+    "resources.read,diagnostics.read,programs.read,programs.write,terms.read,terms.write,destinations.read,destinations.write,credentials.read";
+  // Everything a diagnostics-backed step can ask for at once.
+  const open = {
+    testActivatedAt: null,
+    checks: {
+      verified_origin: "unmet",
+      program_active: "unmet",
+      attributed_checkout: "unmet",
+      attributed_conversion_observed: "unmet",
+      commission_observed: "unmet",
+    },
+  };
+  const full = [...scopes, "resources.read"];
+  // Each command an action carries: its own, the one inside `before`, and those that follow.
+  const expand = (action) =>
+    commandsOf(action).flatMap((item) => [
+      ...(/(commish manage [^\n]+)$/.exec(item.before ?? "") ?? [])
+        .slice(1)
+        .map((command) => ({ command, environment: item.environment })),
+      item,
+    ]);
+  const printed = (result) =>
+    ["destination_verified", "program_active", "rehearsal"].flatMap((step) =>
+      expand(byStep(result)[step].next),
+    );
+  // Runs one action: writes the body it names, then the command as written.
+  const exercise = (root, env, action, substitute) => {
+    if (action.bodyFile) writeFileSync(join(root, action.bodyFile), JSON.stringify(action.body));
+    return run(root, env, action.command, substitute).outcome;
+  };
+  const stage = async ({ prepare, args = [], env = {}, state = "authorized", report = open }) => {
+    const root = directory(t);
+    const file = prepare(root);
+    const result = await executeStatus(args, {
+      root,
+      env,
+      fetcher: server([[file, state]], { base: loopApi, ...report }).fetcher,
+    });
+    assert(!JSON.stringify(result).includes(file.token));
+    return { root, env, file, result, actions: printed(result) };
+  };
+  const stored = (patch) => (root) => {
+    provisioned(root);
+    return grantFile(root, "a", patch, loopApi);
+  };
+  const token = (patch) => (root) => {
+    const grant = stored(patch)(root);
+    rmSync(join(root, ".commish/management"), { recursive: true });
+    return grant;
+  };
+  const bearer = `cm_mgmt_test_${"a".repeat(43)}`;
+
+  // 1. The onboarding grant from a stored file, in a shell that says LIVE.
+  const held = await stage({ prepare: stored(), env: { COMMISH_MODE: "live" } });
+  const auth = ` --auth-file ${held.file.path} --mode test --json`;
+  assert.deepEqual(
+    held.actions.map((action) => action.command),
+    [
+      `commish manage destinations.verify --body-file commish-destination.json${auth}`,
+      `commish manage terms.list --program ${programId}${auth}`,
+      `commish manage programs.activate --body-file commish-activate.json${auth}`,
+      `commish test rehearsal --program ${programId}${auth}`,
+    ],
+  );
+  for (const action of held.actions) {
+    assert.equal(action.environment, undefined);
+    assert.equal(exercise(held.root, held.env, action), "service_unavailable", action.command);
+  }
+
+  // 2. The same grant as a token: no file to name; the endpoint is carried when
+  //    the command would not find it by itself, and left out when it would.
+  for (const [args, env, endpoint] of [
+    [
+      ["--management-url", loopApi],
+      { COMMISH_MANAGEMENT_TOKEN: bearer },
+      ` --management-url ${loopApi}`,
+    ],
+    [[], { COMMISH_MANAGEMENT_TOKEN: bearer, COMMISH_MANAGEMENT_URL: loopApi }, ""],
+    [["--app-url", loop], { COMMISH_MANAGEMENT_TOKEN: bearer }, ` --management-url ${loopApi}`],
+  ]) {
+    const byToken = await stage({
+      prepare: (root) => {
+        const grant = token({ scopes: full })(root);
+        if (args.includes("--app-url")) intent(root, config, loop);
+        return grant;
+      },
+      args,
+      env,
+    });
+    assert.deepEqual(
+      byToken.actions.map((action) => action.command),
+      [
+        `commish manage destinations.verify --body-file commish-destination.json${endpoint} --mode test --json`,
+        `commish manage terms.list --program ${programId}${endpoint} --mode test --json`,
+        `commish manage programs.activate --body-file commish-activate.json${endpoint} --mode test --json`,
+        `commish test rehearsal --program ${programId}${endpoint} --mode test --json`,
+      ],
+    );
+    for (const action of byToken.actions)
+      assert.equal(
+        exercise(byToken.root, byToken.env, action),
+        "service_unavailable",
+        action.command,
+      );
+  }
+
+  // 3. A read-only stored grant: the login goes to that grant's deployment, and
+  //    what follows runs with the file the login leaves behind.
+  const reader = await stage({
+    prepare: stored({ kind: "session", scopes: ["diagnostics.read"], expiresIn: 3600 }),
+  });
+  const login = `commish auth login --workspace ${workspaceId} --workspace-scope --onboarding --scopes ${onboarding} --mode test --management-url ${loopApi} --no-open --non-interactive --json`;
+  for (const step of ["destination_verified", "program_active", "rehearsal"]) {
+    const action = byStep(reader.result)[step].next;
+    assert.deepEqual([action.command, action.environment], [login, undefined], step);
+    const started = run(reader.root, reader.env, action.command);
+    assert.equal(started.outcome, "service_unavailable", step);
+    // auth login stores its request before it asks, and names the file.
+    const granted = { "<authorizationFile>": started.receipt.authorizationFile };
+    assert.match(
+      granted["<authorizationFile>"],
+      /^\.commish\/management\/[0-9a-f]{24}\/authorization\.json$/,
+    );
+    const follows = expand(action.followedBy);
+    assert.equal(follows.length, step === "program_active" ? 2 : 1, step);
+    for (const follow of follows) {
+      assert(
+        follow.command.endsWith(" --auth-file <authorizationFile> --mode test --json"),
+        follow.command,
+      );
+      assert.equal(
+        exercise(reader.root, reader.env, follow, granted),
+        "service_unavailable",
+        follow.command,
+      );
+    }
+  }
+
+  // 4. A read-only token: the login and what follows both need the variable unset.
+  const limited = await stage({
+    prepare: token({ kind: "session", scopes: ["diagnostics.read"], expiresIn: 3600 }),
+    args: ["--management-url", loopApi],
+    env: { COMMISH_MANAGEMENT_TOKEN: bearer },
+  });
+  const { COMMISH_MANAGEMENT_TOKEN: _, ...cleared } = limited.env;
+  const first = byStep(limited.result).program_active.next;
+  assert.deepEqual(
+    [first.command, first.environment, first.followedBy.environment],
+    [login, { unset: ["COMMISH_MANAGEMENT_TOKEN"] }, { unset: ["COMMISH_MANAGEMENT_TOKEN"] }],
+  );
+  assert.equal(run(limited.root, limited.env, first.command).outcome, "ambiguous_authorization");
+  const begun = run(limited.root, cleared, first.command);
+  assert.equal(begun.outcome, "service_unavailable");
+  const file = { "<authorizationFile>": begun.receipt.authorizationFile };
+  assert.equal(
+    exercise(limited.root, limited.env, first.followedBy, file),
+    "ambiguous_authorization",
+  );
+  assert.equal(exercise(limited.root, cleared, first.followedBy, file), "service_unavailable");
+
+  // 5. LIVE with the read-only session status itself asks for: a write session
+  //    with exactly the scopes the write needs, on the same deployment.
+  const live = await stage({
+    prepare: (root) => {
+      write(root, "commish.setup.json", { ...config, mode: "live" }, 0o644);
+      for (const [name, id] of [
+        ["workspace", workspaceId],
+        ["application", applicationId],
+        ["program", programId],
+        ["credential", "key_123456789012"],
+      ])
+        write(root, `.commish/setup/live/${name}.json`, { id });
+      write(
+        root,
+        ".commish/setup/live/credentials.env",
+        `COMMISH_MODE=live\nCOMMISH_APPLICATION_ID=${applicationId}\nCOMMISH_PROGRAM_ID=${programId}\n` +
+          `COMMISH_PUBLISHABLE_KEY=cm_live_pk_${"p".repeat(32)}\nCOMMISH_SECRET_KEY=cm_live_sk_${"k".repeat(43)}\n`,
+      );
+      return grantFile(
+        root,
+        "b",
+        {
+          mode: "live",
+          kind: "session",
+          scopes: ["diagnostics.read", "terms.read"],
+          expiresIn: 3600,
+        },
+        loopApi,
+      );
+    },
+    env: { COMMISH_MODE: "test" },
+    report: { mode: "live", checks: { program_active: "unmet" } },
+  });
+  const activate = byStep(live.result).program_active.next;
+  assert.equal(
+    activate.command,
+    `commish auth login --workspace ${workspaceId} --workspace-scope --scopes terms.read,programs.write --mode live --management-url ${loopApi} --no-open --non-interactive --json`,
+  );
+  const session = run(live.root, live.env, activate.command);
+  assert.equal(session.outcome, "service_unavailable");
+  assert.equal(
+    exercise(live.root, live.env, activate.followedBy, {
+      "<authorizationFile>": session.receipt.authorizationFile,
+    }),
+    "service_unavailable",
   );
 });
 

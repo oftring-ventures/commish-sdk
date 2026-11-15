@@ -1,6 +1,7 @@
 import { lstatSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { argumentsFor, CliError, errorReceipt, fail } from "./cli-http.mjs";
+import { readDiagnostics } from "./doctor-command.mjs";
 import {
   managementClient,
   managementMode,
@@ -15,8 +16,50 @@ import { setupCredentialMatches } from "./setup-secrets.mjs";
 
 const defaultConfig = "commish.setup.json";
 // Onboarding in the order an install reaches it. The first three read local
-// files only; management access is checked with the grant's own bearer.
-const steps = ["configuration", "setup_approved", "resources_provisioned", "management_access"];
+// files only; the rest need a management grant with diagnostics.read.
+const steps = [
+  "configuration",
+  "setup_approved",
+  "resources_provisioned",
+  "management_access",
+  "destination_verified",
+  "stripe_connected",
+  "eligible_products",
+  "program_active",
+  "rehearsal",
+  "attributed_test_conversion",
+  "webhook_delivery",
+  "integration_activated",
+];
+// The diagnostics checks each remote step rests on.
+const checksFor = {
+  destination_verified: ["verified_origin"],
+  stripe_connected: ["stripe_connection"],
+  eligible_products: ["eligible_products"],
+  program_active: ["program_active", "active_terms"],
+  attributed_test_conversion: [
+    "stable_customer_identity",
+    "attributed_checkout",
+    "provider_event_receipt",
+    "attributed_conversion_observed",
+    "commission_observed",
+  ],
+  webhook_delivery: ["related_webhook_delivered"],
+};
+// Fixed guidance for what the application or its owner still has to do. Server
+// text is never repeated: a report is evidence, not instructions.
+const conversionGuidance = {
+  stable_customer_identity:
+    "Set the Checkout session's client_reference_id to your own stable customer ID, then repeat the Test purchase.",
+  attributed_checkout:
+    "Open the referral link from commish test rehearsal and complete a Test purchase in your product.",
+  provider_event_receipt:
+    "Let the matching Stripe Test event reach Commish through the connected Stripe account, then check again.",
+  attributed_conversion_observed:
+    "Open the referral link from commish test rehearsal and complete a Test purchase in your product.",
+  commission_observed:
+    "Read the conversion's commissions (commish conversions commissions <conversionId>) and resolve eligibility.",
+};
 export const statusHelp = () => ({
   version: 1,
   status: "help",
@@ -32,9 +75,9 @@ export const statusHelp = () => ({
     "--help",
   ],
   purpose:
-    "Reports each setup step recorded for the install in the current directory, and whether management access is still usable, with its status, the evidence that status rests on and the exact next command.",
+    "Reports each onboarding step for the install in the current directory with its status, the evidence that status rests on and the exact next command or browser action.",
   steps,
-  stepStatuses: ["met", "unmet", "unknown"],
+  stepStatuses: ["met", "unmet", "not_applicable", "unknown"],
   reads: {
     localFiles: [
       defaultConfig,
@@ -42,10 +85,11 @@ export const statusHelp = () => ({
       ".commish/setup/<mode>/credentials.env (checked against the mode and recorded resources, never printed)",
       ".commish/management/<request-id>/authorization.json",
     ],
-    requests: ["GET /grants"],
+    requests: ["GET /grants", "diagnostics.get"],
+    requiredScope: "diagnostics.read",
   },
   authorization:
-    "Uses --auth-file or COMMISH_MANAGEMENT_TOKEN; otherwise the newest stored grant for this workspace and mode that includes diagnostics.read, the scope the remaining onboarding checks need.",
+    "Uses --auth-file or COMMISH_MANAGEMENT_TOKEN; otherwise the newest stored grant for this workspace and mode that includes diagnostics.read. Without one, the steps that need it are unknown.",
   // A step is met only if commish setup, rerun now with these inputs, would also
   // treat it as done.
   sameSetup:
@@ -58,7 +102,7 @@ export const statusHelp = () => ({
   // The install setup would address: its configuration decides before the shell.
   mode: "--mode, else the configuration file's mode (test when it names none), else COMMISH_MODE, else test",
   output: "text; --json prints one JSON object on stdout",
-  exitCodes: { 0: "every_step_met", 1: "error", 2: "a_step_is_unmet_or_unknown" },
+  exitCodes: { 0: "every_step_met_or_not_applicable", 1: "error", 2: "a_step_is_unmet_or_unknown" },
   integrationVerified: false,
 });
 
@@ -423,6 +467,194 @@ export async function executeStatus(args, options = {}) {
         ...withoutToken,
       };
   add("management_access", usable ? "met" : "unmet", access, usable ? {} : { next: login });
+
+  // One diagnostics read answers every remaining step.
+  let checks = null,
+    activatedAt = null,
+    reason = !programId ? "program_not_provisioned" : !usable ? "management_access_required" : null;
+  if (!reason)
+    try {
+      const diagnostics = (await readDiagnostics(client, programId)).data.report;
+      activatedAt = diagnostics.testActivatedAt ?? null;
+      if (
+        !Array.isArray(diagnostics.checks) ||
+        diagnostics.checks.some(
+          (check) =>
+            !record(check) ||
+            typeof check.code !== "string" ||
+            !["met", "unmet", "not_applicable", "not_evaluated"].includes(check.status),
+        ) ||
+        (activatedAt !== null &&
+          (typeof activatedAt !== "string" || !Number.isFinite(Date.parse(activatedAt))))
+      )
+        fail("invalid_response");
+      // Reprinted from the parsed instant, so only a timestamp can reach output.
+      if (activatedAt !== null) activatedAt = new Date(activatedAt).toISOString();
+      checks = new Map(diagnostics.checks.map((check) => [check.code, check.status]));
+    } catch (error) {
+      if (!(error instanceof CliError)) throw error;
+      reason = failureCode(error);
+    }
+  const origin = new URL(client?.baseUrl ?? endpoint).origin,
+    dashboard = `${origin}/dashboard/workspace/${workspaceId}/programs/${programId}`,
+    owner = { actor: "workspace_owner_or_admin" };
+  const actions = (tail) => ({
+    destination_verified: {
+      kind: "command",
+      before: `Deploy ${config?.destination.proofFile ?? "the destination proof file"} so that ${config?.destination.origin ?? "<origin>"}/.well-known/commish-verification.txt serves it.`,
+      command: `commish manage destinations.verify --body-file commish-destination.json${tail}`,
+      bodyFile: "commish-destination.json",
+      body: { applicationId, origin: config?.destination.origin ?? "<origin>" },
+    },
+    stripe_connected: {
+      kind: "browser",
+      url: `${origin}/cli/setup/workspace/${workspaceId}/stripe?mode=${mode}`,
+      ...owner,
+      action: "connect_stripe",
+    },
+    eligible_products: {
+      kind: "browser",
+      url: dashboard,
+      ...owner,
+      action: "choose_the_stripe_products_that_earn_commission",
+    },
+    // The expected status and version are the state setup leaves; the server
+    // refuses the write if the program has moved on.
+    program_active: {
+      kind: "command",
+      before: `Read the term version to activate: commish manage terms.list --program ${programId}${tail}`,
+      command: `commish manage programs.activate --body-file commish-activate.json${tail}`,
+      bodyFile: "commish-activate.json",
+      body: {
+        programId,
+        termVersion: "<version from terms.list>",
+        expectedCurrentTermVersion: null,
+        expectedCurrentStatus: "draft",
+      },
+    },
+    rehearsal: {
+      kind: "command",
+      // --mode is explicit: a shell with COMMISH_MODE=live would otherwise refuse it.
+      command: `commish test rehearsal --program ${programId}${tail}`,
+      // The step stays unknown until a purchase is attributed, so say what follows.
+      followedBy: {
+        kind: "guidance",
+        guidance:
+          "Open the returned referralUrl and complete a Test purchase in your product. This step is met once that conversion is attributed; running the command again returns the same link.",
+      },
+    },
+    webhook_delivery: {
+      kind: "guidance",
+      guidance:
+        "Subscribe the webhook endpoint to conversion and commission events, then inspect its deliveries and replay eligible failures.",
+    },
+    integration_activated: {
+      kind: "browser",
+      url: `${dashboard}?tab=integration`,
+      ...owner,
+      action: "run_diagnostics_then_activate_integration",
+    },
+  });
+  // A command in next must be one the grant in hand can run. Where its scopes
+  // lack what the command needs, next asks for a grant that has them and
+  // followedBy carries the command to run with the file that login returns.
+  const needs = {
+    destination_verified: ["destinations.write"],
+    program_active: ["terms.read", "programs.write"],
+    rehearsal: ["programs.write"],
+  };
+  // With the grant in hand: its file, or for a token in the environment the
+  // endpoint status used when the command would not resolve it by itself.
+  const held = actions(
+      `${
+        authFile === undefined
+          ? client && client.baseUrl !== ambient
+            ? ` --management-url ${client.baseUrl}`
+            : ""
+          : ` --auth-file ${plain(authFile) ? authFile : "<auth-file>"}`
+      } --mode ${mode} --json`,
+    ),
+    granted = actions(` --auth-file <authorizationFile> --mode ${mode} --json`);
+  const next = Object.fromEntries(
+    Object.keys(held).map((step) => {
+      const lacking = (needs[step] ?? []).filter((scope) => !access.scopes?.includes(scope));
+      return [
+        step,
+        lacking.length
+          ? {
+              kind: "command",
+              command:
+                `commish auth login --workspace ${workspaceId} --workspace-scope ` +
+                (mode === "test"
+                  ? `--onboarding --scopes ${setupOnboardingScopes.join(",")}`
+                  : `--scopes ${needs[step].join(",")}`) +
+                ` --mode ${mode}${endpointFlag} --no-open --non-interactive --json`,
+              ...approval,
+              ...withoutToken,
+              requiredScopes: lacking,
+              // The new file is used on its own: a token beside it is refused.
+              followedBy: { ...granted[step], ...withoutToken },
+            }
+          : held[step],
+      ];
+    }),
+  );
+  const source = "diagnostics.get";
+  for (const step of steps.slice(4)) {
+    if (reason) add(step, "unknown", { source }, { reason });
+    else if (mode === "live" && ["rehearsal", "integration_activated"].includes(step))
+      add(step, "not_applicable", { source: "mode" });
+    else if (step === "rehearsal") {
+      // No read reports the Test partnership itself; an attributed conversion
+      // proves a referral link existed and was used. Rehearsing again is safe.
+      const state = checks.get("attributed_conversion_observed");
+      add(
+        step,
+        state === "met" ? "met" : "unknown",
+        { source, checks: state === undefined ? {} : { attributed_conversion_observed: state } },
+        state === "met"
+          ? {}
+          : { reason: "no_read_operation_reports_the_test_partnership", next: next.rehearsal },
+      );
+    } else if (step === "integration_activated")
+      add(
+        step,
+        activatedAt ? "met" : "unmet",
+        { source, testActivatedAt: activatedAt },
+        activatedAt ? {} : { next: next[step] },
+      );
+    else {
+      const observed = Object.fromEntries(
+          checksFor[step]
+            .filter((code) => checks.has(code))
+            .map((code) => [code, checks.get(code)]),
+        ),
+        states = Object.values(observed),
+        evidence = { source, checks: observed };
+      if (states.length !== checksFor[step].length || states.includes("not_evaluated"))
+        // LIVE reports provider readiness as one unevaluated check.
+        add(step, "unknown", evidence, {
+          reason: mode === "live" ? "not_evaluated_in_live" : "check_not_reported",
+        });
+      else if (states.includes("unmet"))
+        add(step, "unmet", evidence, {
+          next:
+            step === "attributed_test_conversion"
+              ? {
+                  kind: "guidance",
+                  guidance:
+                    conversionGuidance[checksFor[step].find((code) => observed[code] === "unmet")],
+                }
+              : next[step],
+        });
+      else
+        add(
+          step,
+          states.every((state) => state === "not_applicable") ? "not_applicable" : "met",
+          evidence,
+        );
+    }
+  }
   // The first step, in order, that someone can act on.
   const open = report.find(
     (item) => item.status === "unmet" || (item.status === "unknown" && item.next),
@@ -447,10 +679,20 @@ function statusText(result) {
     return (
       `commish ${result.command}\n\n${result.purpose}\n` +
       `Steps: ${result.steps.join(", ")}.\n` +
-      "Reads commish.setup.json and .commish/ in the current directory, then checks the management grant with one request. Changes nothing.\n" +
+      "Reads commish.setup.json and .commish/ in the current directory, then the management grant and one diagnostics report. Changes nothing.\n" +
       "Exit 0 means every step is met, 2 that a step is unmet or unknown, 1 an error. Use --json for evidence."
     );
-  const next = result.next;
+  // One action as text; followedBy is what comes after it, in the same shapes.
+  const action = (next) =>
+    (next.environment ? `first unset ${next.environment.unset.join(", ")}, then ` : "") +
+    (next.kind === "browser"
+      ? `open ${next.url} in the browser (${next.action.replaceAll("_", " ")}).`
+      : next.kind === "command"
+        ? `${next.before ? `${next.before}\nThen run: ` : "run "}${next.command}` +
+          (next.body ? `\nBody file ${next.bodyFile}: ${JSON.stringify(next.body)}` : "")
+        : next.guidance) +
+    (next.humanAction ? `\nThen a person must ${next.humanAction.replaceAll("_", " ")}.` : "") +
+    (next.followedBy ? `\nAfter that: ${action(next.followedBy)}` : "");
   return (
     `Commish status (${result.mode.toUpperCase()}): ${result.status}.\n` +
     result.steps
@@ -459,10 +701,11 @@ function statusText(result) {
           `  ${item.status.padEnd(14)} ${item.step}${item.reason ? ` (${item.reason})` : ""}\n`,
       )
       .join("") +
-    (next
-      ? `Next (${result.nextStep}): ${next.environment ? `first unset ${next.environment.unset.join(", ")}, then ` : ""}${next.kind === "command" ? `run ${next.command}` : next.guidance}` +
-        (next.humanAction ? `\nThen a person must ${next.humanAction.replaceAll("_", " ")}.` : "")
-      : "Every step is met.") +
+    (result.next
+      ? `Next (${result.nextStep}): ${action(result.next)}`
+      : result.status === "complete"
+        ? "Every step is met."
+        : "No next action is known; see --json for the reasons.") +
     "\nIntegration remains unverified by this command. Use --json for evidence."
   );
 }
