@@ -324,6 +324,31 @@ test("manage runs products.list from the catalog and names a missing Stripe conn
     [result.complete, result.pages, result.data.map((item) => item.id)],
     [true, 2, ["prod_a", "prod_b"]],
   );
+  // The server allows ten calls a minute: a bounded run returns its pages and where to resume.
+  const bounded = await executeManagement(["products.list", "--all", "--max-pages", "1"], {
+    env,
+    fetcher: async () => envelope("products.list", { ...pages[0], nextCursor: "prod_a" }),
+  });
+  assert.deepEqual(
+    [bounded.complete, bounded.nextCursor, bounded.data.length],
+    [false, "prod_a", 1],
+  );
+  // An unbounded run that reaches the limit fails whole, as any failed later page does.
+  let requests = 0;
+  await assert.rejects(
+    executeManagement(["products.list", "--all"], {
+      env,
+      fetcher: async () =>
+        ++requests < 11
+          ? envelope("products.list", { ...pages[0], nextCursor: `prod_${requests}` })
+          : Response.json(
+              { error: { code: "rate_limited" } },
+              { status: 429, headers: { "retry-after": "60" } },
+            ),
+    }),
+    (error) =>
+      error.message === "rate_limited" && error.detail.retryAfter === 60 && requests === 11,
+  );
   // The server caps a page at 20 products and the filter at Stripe's two values.
   for (const args of [
     ["--limit", "21"],
