@@ -94,6 +94,10 @@ export const statusHelp = () => ({
   // treat it as done.
   sameSetup:
     "The configuration, --mode and --app-url are compared with the fingerprint setup recorded; a difference is setup_config_conflict and nothing recorded counts for this configuration.",
+  // A printed command runs as written, here: it carries the inputs status was
+  // given or resolved, and says what the environment has to look like.
+  commands:
+    "Each command carries --mode and, where status was given or resolved them, --config, --app-url, --management-url and --auth-file. environment.unset names a variable to clear first. A path that is not plain (letters, digits, . _ - /) is shown as <config> or <auth-file>; <authorizationFile> is the file a preceding auth login returns.",
   mutations: false,
   // The install setup would address: its configuration decides before the shell.
   mode: "--mode, else the configuration file's mode (test when it names none), else COMMISH_MODE, else test",
@@ -102,6 +106,8 @@ export const statusHelp = () => ({
   integrationVerified: false,
 });
 
+// A path that can be pasted into a command line as it is.
+const plain = (value) => /^[A-Za-z0-9._][A-Za-z0-9._/-]*$/.test(value);
 const record = (value) => value !== null && typeof value === "object" && !Array.isArray(value);
 function readConfiguration(root, path, modeFlag) {
   let text, input;
@@ -181,16 +187,23 @@ export async function executeStatus(args, options = {}) {
   );
   if (v.help) return statusHelp();
   if (p.length) fail("invalid_arguments");
+  let appOrigin;
   try {
-    setupAppOrigin(v["app-url"]);
+    appOrigin = setupAppOrigin(v["app-url"]);
   } catch {
     fail("invalid_arguments");
   }
   const configuration = readConfiguration(root, v.config ?? defaultConfig, v.mode),
     mode = managementMode(v.mode ?? configuration.mode, env),
-    // Values given to --config and --app-url are not repeated; commands name where they go.
-    configFlag = `--config ${v.config === undefined ? defaultConfig : "<config>"}`,
-    appFlag = v["app-url"] === undefined ? "" : " --app-url <app-url>";
+    // Printed commands carry what status was given, so they address the same
+    // file and deployment. Both values were validated above.
+    configFlag = `--config ${v.config === undefined ? defaultConfig : plain(v.config) ? v.config : "<config>"}`,
+    appFlag = v["app-url"] === undefined ? "" : ` --app-url ${appOrigin}`,
+    // The management endpoint status was told to use: its own flag, else the
+    // app URL's. Undefined leaves it to the grant file or the environment.
+    managementFlag =
+      v["management-url"] ??
+      (v["app-url"] === undefined ? undefined : `${appOrigin}/api/management/v1`);
   let journal;
   try {
     journal = readSetupProgress(root, mode);
@@ -261,7 +274,7 @@ export async function executeStatus(args, options = {}) {
         : {
             next: {
               kind: "command",
-              command: `commish setup ${v.config === undefined ? "" : `${configFlag} `}--plan --json`,
+              command: `commish setup ${v.config === undefined ? "" : `${configFlag} `}${v.mode === undefined ? "" : `--mode ${mode} `}${appFlag ? `${appFlag.trim()} ` : ""}--plan --json`,
             },
           },
   );
@@ -362,7 +375,9 @@ export async function executeStatus(args, options = {}) {
       ? storedGrants(root, mode, workspaceId)
       : [];
   let client = null,
-    authFile;
+    authFile,
+    // The endpoint of the newest candidate: the deployment the stored grants are for.
+    candidateBase = null;
   const tried = [];
   for (const path of candidates) {
     const source = path ?? "COMMISH_MANAGEMENT_TOKEN";
@@ -373,7 +388,7 @@ export async function executeStatus(args, options = {}) {
         env,
         mode,
         authFile: path,
-        url: v["management-url"],
+        url: managementFlag,
         fetcher: options.fetcher,
         signal: options.signal,
         recover: false,
@@ -383,6 +398,7 @@ export async function executeStatus(args, options = {}) {
       if (explicit) throw error;
       continue;
     }
+    candidateBase ??= candidate.baseUrl;
     try {
       const grant = await candidate.status();
       // A named grant for another workspace cannot answer for this install.
@@ -415,19 +431,40 @@ export async function executeStatus(args, options = {}) {
     : (tried.find((state) => state.status === "pending" && !state.code) ??
       tried[0] ?? { source: "none", status: "missing" });
   const usable = client !== null && access.scopes.includes("diagnostics.read");
+  // What a command resolves by itself in this environment, and the endpoint
+  // status addressed. They differ when status was pointed elsewhere by a flag
+  // or by a stored grant's own endpoint; a new login then has to be told.
+  let ambient = null;
+  try {
+    ambient = managementUrl(undefined, env);
+  } catch {
+    // A malformed COMMISH_MANAGEMENT_URL: the flag below overrides it.
+  }
+  const endpoint =
+      managementFlag !== undefined
+        ? managementUrl(managementFlag, env)
+        : (candidateBase ?? ambient ?? managementUrl(undefined, {})),
+    endpointFlag = endpoint === ambient ? "" : ` --management-url ${endpoint}`;
+  // auth login refuses to start while a management token is set, and a
+  // command that names a grant file refuses to run beside one.
+  const withoutToken = env.COMMISH_MANAGEMENT_TOKEN
+    ? { environment: { unset: ["COMMISH_MANAGEMENT_TOKEN"] } }
+    : {};
+  const resumable =
+    access.status === "pending" && !access.code && access.source !== "COMMISH_MANAGEMENT_TOKEN";
   const login = !workspaceId
     ? provision
     : {
         kind: "command",
-        command:
-          access.status === "pending" && !access.code && access.source.startsWith(".commish/")
-            ? `commish auth login --auth-file ${access.source} --mode ${mode} --no-open --non-interactive --json`
-            : `commish auth login --workspace ${workspaceId} --workspace-scope ` +
-              (mode === "test"
-                ? `--onboarding --scopes ${setupOnboardingScopes.join(",")}`
-                : "--scopes resources.read,diagnostics.read,programs.read,terms.read,destinations.read") +
-              ` --mode ${mode} --no-open --non-interactive --json`,
+        command: resumable
+          ? `commish auth login --auth-file ${plain(access.source) ? access.source : "<auth-file>"} --mode ${mode} --no-open --non-interactive --json`
+          : `commish auth login --workspace ${workspaceId} --workspace-scope ` +
+            (mode === "test"
+              ? `--onboarding --scopes ${setupOnboardingScopes.join(",")}`
+              : "--scopes resources.read,diagnostics.read,programs.read,terms.read,destinations.read") +
+            ` --mode ${mode}${endpointFlag} --no-open --non-interactive --json`,
         ...approval,
+        ...withoutToken,
       };
   add("management_access", usable ? "met" : "unmet", access, usable ? {} : { next: login });
 
@@ -458,7 +495,7 @@ export async function executeStatus(args, options = {}) {
       if (!(error instanceof CliError)) throw error;
       reason = failureCode(error);
     }
-  const origin = new URL(client?.baseUrl ?? managementUrl(v["management-url"], env)).origin,
+  const origin = new URL(client?.baseUrl ?? endpoint).origin,
     dashboard = `${origin}/dashboard/workspace/${workspaceId}/programs/${programId}`,
     owner = { actor: "workspace_owner_or_admin" };
   const actions = (tail) => ({
@@ -497,7 +534,8 @@ export async function executeStatus(args, options = {}) {
     },
     rehearsal: {
       kind: "command",
-      command: `commish test rehearsal --program ${programId}${tail.replace(` --mode ${mode}`, "")}`,
+      // --mode is explicit: a shell with COMMISH_MODE=live would otherwise refuse it.
+      command: `commish test rehearsal --program ${programId}${tail}`,
       // The step stays unknown until a purchase is attributed, so say what follows.
       followedBy: {
         kind: "guidance",
@@ -525,8 +563,16 @@ export async function executeStatus(args, options = {}) {
     program_active: ["terms.read", "programs.write"],
     rehearsal: ["programs.write"],
   };
+  // With the grant in hand: its file, or for a token in the environment the
+  // endpoint status used when the command would not resolve it by itself.
   const held = actions(
-      `${authFile === undefined ? "" : ` --auth-file ${authFile}`} --mode ${mode} --json`,
+      `${
+        authFile === undefined
+          ? client && client.baseUrl !== ambient
+            ? ` --management-url ${client.baseUrl}`
+            : ""
+          : ` --auth-file ${plain(authFile) ? authFile : "<auth-file>"}`
+      } --mode ${mode} --json`,
     ),
     granted = actions(` --auth-file <authorizationFile> --mode ${mode} --json`);
   const next = Object.fromEntries(
@@ -542,10 +588,12 @@ export async function executeStatus(args, options = {}) {
                 (mode === "test"
                   ? `--onboarding --scopes ${setupOnboardingScopes.join(",")}`
                   : `--scopes ${needs[step].join(",")}`) +
-                ` --mode ${mode} --no-open --non-interactive --json`,
+                ` --mode ${mode}${endpointFlag} --no-open --non-interactive --json`,
               ...approval,
+              ...withoutToken,
               requiredScopes: lacking,
-              followedBy: granted[step],
+              // The new file is used on its own: a token beside it is refused.
+              followedBy: { ...granted[step], ...withoutToken },
             }
           : held[step],
       ];
@@ -636,6 +684,7 @@ function statusText(result) {
     );
   // One action as text; followedBy is what comes after it, in the same shapes.
   const action = (next) =>
+    (next.environment ? `first unset ${next.environment.unset.join(", ")}, then ` : "") +
     (next.kind === "browser"
       ? `open ${next.url} in the browser (${next.action.replaceAll("_", " ")}).`
       : next.kind === "command"

@@ -150,9 +150,11 @@ for every project.
 - `.claude/skills/commish/SKILL.md` gets the playbook's rules, steps and
   references for the installed version. A skill file this command did not write
   is reported as a conflict and left alone.
-- `CLAUDE.md` is never edited. When it exists without mentioning `AGENTS.md`,
+- `CLAUDE.md` is never edited. When it exists without importing `AGENTS.md`,
   the receipt reports `claudeMd: "agents_md_not_referenced"`; add a line
-  `@AGENTS.md` to it so Claude Code loads the section.
+  `@AGENTS.md` to it so Claude Code loads the section. Only an import outside code that resolves to
+  this `AGENTS.md` counts (`@AGENTS.md`, `@./AGENTS.md`, an absolute or `~/` path), as does a `CLAUDE.md` that is a
+  link to `AGENTS.md`; naming the file in a sentence does not load it.
 
 Both texts are cut from the `commish init` playbook of the CLI that writes them;
 when Creator Pages are installed the section also carries the copyable block of
@@ -162,7 +164,7 @@ Rerun the command with `--write` after upgrading. `--remove` plans, and with
 directory. An `AGENTS.md` that ended with a line break comes back byte for byte;
 one that did not keeps the line break the insertion added, and one left with no
 bytes is deleted, so a file that was empty before the install is not restored.
-When `CLAUDE.md` mentions an `AGENTS.md` that removal deletes, the receipt adds
+When `CLAUDE.md` imports an `AGENTS.md` that removal deletes, the receipt adds
 the next step `remove_agents_md_reference_from_claude_md`. `--json` returns
 one receipt listing each file as `create`, `update`, `delete`, `unchanged` or
 `absent` (`created`, `updated` and `deleted` once written). The command never
@@ -900,6 +902,23 @@ the token that belongs to another workspace than the one setup recorded does
 not count: it is reported with `workspace_mismatch`. One diagnostics read then
 answers every remaining step, so the evidence window is the one
 `commish doctor` describes.
+
+A printed command runs as written, in the environment status ran in and
+against the deployment status addressed. It carries `--mode` always and, where
+status was given or resolved them, `--config`, `--app-url`, `--management-url`
+(from the flag, from `--app-url`, or from the stored grant's own endpoint) and
+`--auth-file`. When `COMMISH_MANAGEMENT_TOKEN` is set, a suggested `auth login`
+carries `"environment": { "unset": ["COMMISH_MANAGEMENT_TOKEN"] }`, because
+`auth login` refuses to start beside a token. A path that is not plain
+(letters, digits, `.`, `_`, `-`, `/`) is shown as `<config>` or `<auth-file>`
+instead of being quoted. No token or key is ever part of a command. The same
+holds for the commands of the later steps: with a token as the grant they name
+no file and carry `--management-url` when the command would not find the
+endpoint by itself; a command that follows a login names
+`<authorizationFile>`, the file that login returns, and carries the same
+`environment.unset` because a grant file is refused beside a token; and
+`commish test rehearsal` carries `--mode test`, so a shell with
+`COMMISH_MODE=live` does not refuse it.
 
 The command changes nothing: it makes two reads and writes no file. The
 credential file counts only when it is the one setup wrote: its fields, key
