@@ -367,6 +367,14 @@ test("CLAUDE.md is reported and never edited", (t) => {
   for (const [body, state] of [
     ["# Claude\n", "agents_md_not_referenced"],
     ["@AGENTS.md\n", "references_agents_md"],
+    ["# Claude\r\n\r\nRules are in @./AGENTS.md for every agent.\r\n", "references_agents_md"],
+    // Only an import loads the file: prose, code and lookalike paths do not.
+    ["We don't yet use AGENTS.md here.\n", "agents_md_not_referenced"],
+    [
+      "Write `@AGENTS.md` to import it:\n\n```md\n@AGENTS.md\n```\n\n~~~~\n```\n@AGENTS.md\n~~~~\n",
+      "agents_md_not_referenced",
+    ],
+    ["Mail docs@AGENTS.md, see @AGENTS.md.bak and @docs/AGENTS.md\n", "agents_md_not_referenced"],
   ]) {
     const root = repository(t, { "CLAUDE.md": body });
     const written = receipt(root, "--write");
@@ -376,7 +384,7 @@ test("CLAUDE.md is reported and never edited", (t) => {
       state === "agents_md_not_referenced",
     );
     assert.equal(
-      /CLAUDE\.md does not mention AGENTS\.md/.test(run(root).stdout),
+      /CLAUDE\.md does not import AGENTS\.md/.test(run(root).stdout),
       state === "agents_md_not_referenced",
     );
     assert.equal(text(root, "CLAUDE.md"), body);
@@ -395,16 +403,32 @@ test("CLAUDE.md is reported and never edited", (t) => {
   ]);
   assert.match(
     run(imported, "--remove").stdout,
-    /\nCLAUDE\.md mentions AGENTS\.md, which this removal deletes\./,
+    /\nCLAUDE\.md loads AGENTS\.md, which this removal deletes\./,
   );
   assert.deepEqual(receipt(imported, "--remove", "--write").nextSteps, [
     "remove_agents_md_reference_from_claude_md",
     "review_and_commit_the_changed_files",
   ]);
   assert.equal(text(imported, "CLAUDE.md"), "@AGENTS.md\n");
-  const linked = repository(t);
-  symlinkSync("AGENTS.md", join(linked, "CLAUDE.md"));
-  assert.equal(receipt(linked).claudeMd, "references_agents_md");
+  // A prose mention is no import, so removal that deletes AGENTS.md leaves nothing dangling.
+  const mentioned = repository(t, { "CLAUDE.md": "We don't yet use AGENTS.md here.\n" });
+  receipt(mentioned, "--write");
+  assert.deepEqual(statuses(receipt(mentioned, "--remove"))[0], "AGENTS.md: delete");
+  assert.deepEqual(receipt(mentioned, "--remove").nextSteps, [
+    "rerun_the_same_arguments_with_--write",
+  ]);
+  // A CLAUDE.md linked to AGENTS.md is that file; a link elsewhere is not followed.
+  for (const [target, state] of [
+    ["AGENTS.md", "references_agents_md"],
+    ["./AGENTS.md", "references_agents_md"],
+    ["docs/AGENTS.md", "not_inspected"],
+  ]) {
+    const linked = repository(t, { "docs/AGENTS.md": "@AGENTS.md\n" });
+    symlinkSync(target, join(linked, "CLAUDE.md"));
+    const plan = receipt(linked);
+    assert.equal(plan.claudeMd, state, target);
+    assert.deepEqual(plan.nextSteps, ["rerun_the_same_arguments_with_--write"]);
+  }
 });
 
 test("the Pages block is the Next guide's copyable section, added only where Pages is installed", (t) => {

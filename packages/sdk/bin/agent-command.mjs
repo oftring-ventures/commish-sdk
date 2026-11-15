@@ -15,7 +15,7 @@ import {
   unlinkSync,
   writeFileSync,
 } from "node:fs";
-import { basename, dirname, join } from "node:path";
+import { basename, dirname, join, posix, resolve } from "node:path";
 import manifest from "../package.json" with { type: "json" };
 import guidance from "./agent-guidance.json" with { type: "json" };
 import { commishCli, initGuide } from "./init-command.mjs";
@@ -148,6 +148,28 @@ function skillPlan(previous, skill, remove) {
   return remove ? null : skill;
 }
 
+// Beside a CLAUDE.md, Claude Code loads AGENTS.md only through an import: an "@AGENTS.md" or
+// "@./AGENTS.md" token outside code spans and fenced code blocks. Naming the file in a sentence
+// does not load it.
+function importsAgentsFile(text) {
+  let fence;
+  return text.split(/\r?\n/).some((line) => {
+    const mark = line.match(/^\s*(`{3,}|~{3,})/)?.[1];
+    if (fence) {
+      if (mark?.[0] === fence[0] && mark.length >= fence.length) fence = undefined;
+      return false;
+    }
+    if (mark) {
+      fence = mark;
+      return false;
+    }
+    return line
+      .replace(/`[^`]*`/g, " ")
+      .split(/\s+/)
+      .some((word) => word[0] === "@" && posix.normalize(word.slice(1)) === agentsFile);
+  });
+}
+
 // Planning reads the two files and CLAUDE.md, never following a symbolic link.
 export function planAgentSetup(root, remove = false) {
   const content = agentGuidance(root);
@@ -176,8 +198,16 @@ export function planAgentSetup(root, remove = false) {
   let claudeMd = "absent";
   try {
     const path = join(root, "CLAUDE.md");
-    const text = lstatSync(path).isSymbolicLink() ? readlinkSync(path) : read(root, "CLAUDE.md");
-    claudeMd = text.includes(agentsFile) ? "references_agents_md" : "agents_md_not_referenced";
+    // A CLAUDE.md linked to AGENTS.md is that file; any other link is not followed.
+    if (lstatSync(path).isSymbolicLink())
+      claudeMd =
+        resolve(root, readlinkSync(path)) === join(root, agentsFile)
+          ? "references_agents_md"
+          : "not_inspected";
+    else
+      claudeMd = importsAgentsFile(read(root, "CLAUDE.md"))
+        ? "references_agents_md"
+        : "agents_md_not_referenced";
   } catch (error) {
     if (error?.code !== "ENOENT") claudeMd = "not_inspected";
   }
@@ -380,12 +410,12 @@ export function runAgentSetupCommand(
             ...(result.warnings.length ? [`Warnings: ${result.warnings.join(", ")}`] : []),
             ...(unreferenced
               ? [
-                  `CLAUDE.md does not mention ${agentsFile}. Add a line "@${agentsFile}" to it so Claude Code loads the Commish section; this command never edits CLAUDE.md.`,
+                  `CLAUDE.md does not import ${agentsFile}. Add a line "@${agentsFile}" to it so Claude Code loads the Commish section; this command never edits CLAUDE.md.`,
                 ]
               : []),
             ...(dangling
               ? [
-                  `CLAUDE.md mentions ${agentsFile}, which this removal ${write ? "deleted" : "deletes"}. Take that reference out of CLAUDE.md; this command never edits it.`,
+                  `CLAUDE.md loads ${agentsFile}, which this removal ${write ? "deleted" : "deletes"}. Take that import or link out of CLAUDE.md; this command never edits it.`,
                 ]
               : []),
           ].join("\n"),

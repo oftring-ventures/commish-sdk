@@ -150,9 +150,11 @@ for every project.
 - `.claude/skills/commish/SKILL.md` gets the playbook's rules, steps and
   references for the installed version. A skill file this command did not write
   is reported as a conflict and left alone.
-- `CLAUDE.md` is never edited. When it exists without mentioning `AGENTS.md`,
+- `CLAUDE.md` is never edited. When it exists without importing `AGENTS.md`,
   the receipt reports `claudeMd: "agents_md_not_referenced"`; add a line
-  `@AGENTS.md` to it so Claude Code loads the section.
+  `@AGENTS.md` to it so Claude Code loads the section. Only an `@AGENTS.md` or
+  `@./AGENTS.md` import outside code counts, as does a `CLAUDE.md` that is a
+  link to `AGENTS.md`; naming the file in a sentence does not load it.
 
 Both texts are cut from the `commish init` playbook of the CLI that writes them;
 when Creator Pages are installed the section also carries the copyable block of
@@ -162,7 +164,7 @@ Rerun the command with `--write` after upgrading. `--remove` plans, and with
 directory. An `AGENTS.md` that ended with a line break comes back byte for byte;
 one that did not keeps the line break the insertion added, and one left with no
 bytes is deleted, so a file that was empty before the install is not restored.
-When `CLAUDE.md` mentions an `AGENTS.md` that removal deletes, the receipt adds
+When `CLAUDE.md` imports an `AGENTS.md` that removal deletes, the receipt adds
 the next step `remove_agents_md_reference_from_claude_md`. `--json` returns
 one receipt listing each file as `create`, `update`, `delete`, `unchanged` or
 `absent` (`created`, `updated` and `deleted` once written). The command never
