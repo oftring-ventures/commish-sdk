@@ -22,7 +22,7 @@ import { inspectRepository } from "./setup-plan.mjs";
 
 export const agentsFile = "AGENTS.md";
 export const skillFile = ".claude/skills/commish/SKILL.md";
-// Only the text from the first marker to the second is ever replaced.
+// Each marker is a whole line. Only the text from the first to the second is ever replaced.
 export const markers = { begin: "<!-- commish:begin -->", end: "<!-- commish:end -->" };
 // The skill is a whole file; this line marks it as written by this command.
 const skillMarker = "<!-- commish:skill -->";
@@ -99,16 +99,15 @@ function read(root, path) {
   }
 }
 function located(text) {
-  const begin = text.indexOf(markers.begin),
-    end = text.indexOf(markers.end);
+  // A marker quoted inside a line of prose is not a section boundary, so it is refused.
+  const [begin, end] = [markers.begin, markers.end].map((marker) => {
+    const lines = [...text.matchAll(new RegExp(`(?<=^|\\n)${marker}(?=\\r?\\n|$)`, "g"))];
+    if (lines.length > 1 || lines.length !== text.split(marker).length - 1)
+      fail("markers_malformed");
+    return lines[0]?.index ?? -1;
+  });
   if (begin === -1 && end === -1) return null;
-  if (
-    begin === -1 ||
-    end < begin ||
-    text.indexOf(markers.begin, begin + 1) !== -1 ||
-    text.indexOf(markers.end, end + 1) !== -1
-  )
-    fail("markers_malformed");
+  if (begin === -1 || end < begin) fail("markers_malformed");
   return { before: text.slice(0, begin), after: text.slice(end + markers.end.length) };
 }
 function agentsPlan(previous, section) {
@@ -117,7 +116,7 @@ function agentsPlan(previous, section) {
   const found = located(previous);
   const text = section.replaceAll("\n", eol);
   if (found) return found.before + text + found.after;
-  const gap = previous === "" ? "" : previous.endsWith(eol) ? eol : eol + eol;
+  const gap = previous === "" ? "" : previous.endsWith("\n") ? eol : eol + eol;
   return previous + gap + text + eol;
 }
 function skillPlan(previous, skill) {
@@ -209,18 +208,19 @@ const usage = "Usage: commish agent setup [--write] [--json]";
 export const agentSetupHelp = () => ({
   status: "help",
   command: "agent setup [--write] [--json]",
-  flags: ["--write", "--json", "--help"],
+  flags: ["--write", "--json", "--non-interactive", "--help"],
   purpose:
     "Plans, and with --write installs, Commish guidance for coding agents in this repository: a marker-delimited section in AGENTS.md and a skill file, both generated from this CLI version's commish init playbook.",
   files: [agentsFile, skillFile],
   markers,
   mutations: "only_with_--write",
   networkRequests: false,
+  requires: "package.json in the working directory",
   exitCodes: { 0: "help_or_plan_or_files_written", 1: "sanitized_error_or_conflict" },
   integrationVerified: false,
 });
 const reasons = {
-  markers_malformed: `expects exactly one "${markers.begin}" line followed by one "${markers.end}" line; repair or delete the markers`,
+  markers_malformed: `expects exactly one "${markers.begin}" line followed by one "${markers.end}" line, each alone on its line and named nowhere else; repair or delete the markers`,
   not_written_by_commish: "exists and was not written by this command; move it away",
   unsafe_file_path: "is a symbolic link or not a regular file; only regular files are written",
 };
@@ -238,7 +238,7 @@ export function runAgentSetupCommand(
   };
   const help = args.some((arg) => ["--help", "-h"].includes(arg));
   if (
-    args.some((arg) => !["--write", "--json", "--help", "-h"].includes(arg)) ||
+    args.some((arg) => !["--write", "--json", "--non-interactive", "--help", "-h"].includes(arg)) ||
     new Set(args).size !== args.length ||
     (help && args.includes("--write"))
   )
@@ -247,13 +247,27 @@ export function runAgentSetupCommand(
     out(
       json
         ? JSON.stringify(agentSetupHelp())
-        : `${usage}\nPlans Commish guidance for coding agents in this repository: a section in ${agentsFile} between the\n${markers.begin} and ${markers.end} markers, and a skill at ${skillFile}.\nBoth come from this CLI version's commish init playbook. --write applies the plan and changes nothing\noutside the markers. CLAUDE.md is reported, never edited. No network requests.`,
+        : `${usage}\nPlans Commish guidance for coding agents in this repository: a section in ${agentsFile} between the\n${markers.begin} and ${markers.end} markers, and a skill at ${skillFile}.\nBoth come from this CLI version's commish init playbook. --write applies the plan and changes nothing\noutside the markers. CLAUDE.md is reported, never edited. No network requests and no prompts, so\n--non-interactive is accepted and changes nothing.`,
     );
     return 0;
   }
   const write = args.includes("--write");
+  const applied = new Set();
+  let plan;
   try {
-    const plan = planAgentSetup(realpathSync(root));
+    plan = planAgentSetup(realpathSync(root));
+    // Without package.json this is not an application: in a home directory the
+    // skill would load in every project.
+    if (plan.warnings.includes("package_manifest_missing"))
+      return error(
+        {
+          code: "application_root_not_found",
+          guidance:
+            "No files changed. Run this command in the application directory, the one with package.json.",
+          integrationVerified: false,
+        },
+        "Agent setup changed no files: this directory has no readable package.json. Run the command in the application directory.",
+      );
     const conflicts = plan.files.filter(({ status }) => status === "conflict");
     if (conflicts.length)
       return error(
@@ -269,8 +283,13 @@ export function runAgentSetupCommand(
         },
         `Agent setup changed no files:\n${conflicts.map(({ path, reason }) => `${path} ${reasons[reason] ?? `could not be read (${reason})`}.`).join("\n")}\nThen rerun the same command.`,
       );
+    // The skill goes first, so the section never points at a skill that is not there.
     if (write)
-      for (const file of plan.files) if (done[file.status]) apply(realpathSync(root), file);
+      for (const file of plan.files.toReversed())
+        if (done[file.status]) {
+          apply(realpathSync(root), file);
+          applied.add(file.path);
+        }
     const pending = plan.files.some(({ status }) => done[status]);
     const unreferenced = plan.claudeMd === "agents_md_not_referenced";
     const result = {
@@ -299,6 +318,7 @@ export function runAgentSetupCommand(
               ? `Commish agent guidance plan (${pending ? "use --write to apply" : "nothing to change"}). No files changed.`
               : "Commish agent guidance installed.",
             ...result.files.map(({ path, status }) => `${status}: ${path}`),
+            ...(result.warnings.length ? [`Warnings: ${result.warnings.join(", ")}`] : []),
             ...(unreferenced
               ? [
                   `CLAUDE.md does not mention ${agentsFile}. Add a line "@${agentsFile}" to it so Claude Code loads the Commish section; this command never edits CLAUDE.md.`,
@@ -310,13 +330,30 @@ export function runAgentSetupCommand(
   } catch (failure) {
     if (process.env.COMMISH_DEBUG === "1") diagnostic(failure);
     const code = codes.has(failure?.message) ? failure.message : "agent_guidance_unavailable";
+    // A write can fail after an earlier file changed; the receipt says which.
+    const files = (plan?.files ?? []).map(({ path, status }) => ({
+      path,
+      status: applied.has(path) ? done[status] : done[status] ? "not_written" : status,
+    }));
+    const changed = files.filter(({ path }) => applied.has(path));
+    const guidance = `${
+      changed.length
+        ? "The files listed as created or updated changed before the failure; review them."
+        : "No files changed."
+    } Rerun the same command; it plans from the current files.`;
     return error(
       {
         code,
-        guidance: "Rerun the same command; it plans from the current files.",
+        mutations: changed.length > 0,
+        ...(plan ? { files } : {}),
+        guidance,
         integrationVerified: false,
       },
-      `Agent setup failed: ${code}. Rerun the same command; it plans from the current files.`,
+      [
+        `Agent setup failed: ${code}.`,
+        ...changed.map(({ path, status }) => `${status}: ${path}`),
+        guidance,
+      ].join("\n"),
     );
   }
 }

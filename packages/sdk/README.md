@@ -135,12 +135,16 @@ and the milestones to report. It makes no network requests and writes no files;
 `--json` returns the commands alongside the Markdown.
 
 `commish agent setup` keeps that guidance where coding agents look for it. It
-plans by default and changes files only with `--write`:
+plans by default and changes files only with `--write`. Run it in the application
+directory: a directory without `package.json` is refused as
+`application_root_not_found`, so a run in a home directory cannot install a skill
+for every project.
 
 - `AGENTS.md` gets a Commish section between `<!-- commish:begin -->` and
-  `<!-- commish:end -->`. The file is created when absent. Only the text between
-  the markers is ever replaced, so a rerun updates the section in place and
-  otherwise changes nothing.
+  `<!-- commish:end -->`, each alone on its own line. The file is created when
+  absent. Only the text between the markers is ever replaced, so a rerun updates
+  the section in place and otherwise changes nothing. A file that names a marker
+  anywhere else, for example quoted in a sentence, is a conflict.
 - `.claude/skills/commish/SKILL.md` gets the playbook's rules, steps and
   references for the installed version. A skill file this command did not write
   is reported as a conflict and left alone.
@@ -151,9 +155,13 @@ plans by default and changes files only with `--write`:
 Both texts are cut from the `commish init` playbook of the CLI that writes them.
 Rerun the command with `--write` after upgrading. `--json` returns
 one receipt listing each file as `create`, `update` or `unchanged`
-(`created` and `updated` once written). Exit 0 is a plan or a
-completed write; 1 is a sanitized error such as `agent_guidance_conflict`, with a
-`reason` per file, and no file changed.
+(`created` and `updated` once written). The command never prompts, and
+`--non-interactive` is accepted. Exit 0 is a plan or a completed write; 1 is a
+sanitized error. `agent_guidance_conflict`, with a `reason` per file, and
+`application_root_not_found` change no file. Any other error carries `mutations`
+and, when a write failed part-way, `files` with what had already changed
+(`created`, `updated`) and what was `not_written`; the skill is written before
+`AGENTS.md`, and a rerun finishes the job.
 
 Since 0.2.1, `pnpm exec commish setup --plan --json` previews setup first.
 Planning reads local configuration and bounded package metadata, reports missing

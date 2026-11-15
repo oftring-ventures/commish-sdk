@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import {
+  chmodSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -85,6 +86,15 @@ test("--write creates the section and the skill from the playbook, and a rerun c
   assert(agents.startsWith(`${markers.begin}\n## Commish\n`));
   assert(agents.endsWith(`\n${markers.end}\n`));
   // One source: every rule, the report line and the steps are the playbook's own text.
+  // A new playbook section must be placed in the section or the skill, or left out, on purpose.
+  const { stdout: guide } = spawnSync(process.execPath, [executable, "init"], { cwd: root });
+  assert.deepEqual(String(guide).match(/^## .+$/gm), [
+    "## This repository",
+    "## Rules",
+    "## Steps",
+    "## Report",
+    "## References",
+  ]);
   const rules = playbook(root, "Rules");
   assert.equal(rules.split("\n").length, 4);
   for (const output of [agents, body]) {
@@ -123,6 +133,7 @@ test("an existing AGENTS.md keeps every byte outside the markers, through insert
     "# Shop\n\nUse pnpm.\n",
     "# Shop\r\n\r\nUse pnpm.\r\n",
     "# Shop\n\nNo final newline",
+    "# Shop\r\nMixed line breaks\n",
   ]) {
     const root = repository(t, { "AGENTS.md": existing });
     const eol = existing.includes("\r\n") ? "\r\n" : "\n";
@@ -132,7 +143,7 @@ test("an existing AGENTS.md keeps every byte outside the markers, through insert
     ]);
     const installed = text(root, "AGENTS.md");
     const [before, section] = installed.split(markers.begin);
-    assert.equal(before, existing.endsWith(eol) ? existing + eol : existing + eol + eol);
+    assert.equal(before, existing.endsWith("\n") ? existing + eol : existing + eol + eol);
     assert(section.endsWith(markers.end + eol));
     assert.equal(installed.includes("\r\n"), eol === "\r\n");
     assert.equal(installed.replaceAll("\r\n", "\n").includes("\r"), false);
@@ -162,6 +173,26 @@ test("conflicts change no file and report a reason without echoing content", (t)
     ],
     [
       repository(t, { "AGENTS.md": `private-fixture ${markers.begin}\n` }),
+      "AGENTS.md",
+      "markers_malformed",
+    ],
+    // A marker is a whole line: the pair quoted in prose is not a section to replace.
+    [
+      repository(t, {
+        "AGENTS.md": `Keep \`${markers.begin}\` private-fixture \`${markers.end}\` lines.\n`,
+      }),
+      "AGENTS.md",
+      "markers_malformed",
+    ],
+    [
+      repository(t, {
+        "AGENTS.md": `${markers.begin}\nprivate-fixture\n${markers.end}\n\nSee ${markers.end}.\n`,
+      }),
+      "AGENTS.md",
+      "markers_malformed",
+    ],
+    [
+      repository(t, { "AGENTS.md": `  ${markers.begin}\nprivate-fixture\n${markers.end}\n` }),
       "AGENTS.md",
       "markers_malformed",
     ],
@@ -202,6 +233,76 @@ test("a linked skill directory is refused before anything is written", (t) => {
   assert.deepEqual(readdirSync(join(root, "elsewhere")), ["keep"]);
 });
 
+test("a write that fails reports what it had already changed", {
+  skip: process.getuid?.() === 0,
+}, (t) => {
+  const existing = "# Shop\n";
+  // The skill is written first: when it cannot be, AGENTS.md is not touched.
+  const blocked = repository(t, { "AGENTS.md": existing, ".claude/skills/commish/keep": "" });
+  const directory = join(blocked, ".claude/skills/commish");
+  chmodSync(directory, 0o555);
+  const first = run(blocked, "--write", "--json");
+  chmodSync(directory, 0o755);
+  assert.deepEqual([first.status, first.stdout], [1, ""]);
+  assert.deepEqual(JSON.parse(first.stderr), {
+    status: "error",
+    code: "agent_guidance_unavailable",
+    mutations: false,
+    files: [
+      { path: "AGENTS.md", status: "not_written" },
+      { path: skill, status: "not_written" },
+    ],
+    guidance: "No files changed. Rerun the same command; it plans from the current files.",
+    integrationVerified: false,
+  });
+  assert.equal(text(blocked, "AGENTS.md"), existing);
+  assert.deepEqual(readdirSync(directory), ["keep"]);
+  // When AGENTS.md cannot be replaced after the skill was written, the receipt names the skill.
+  const partial = repository(t, { "AGENTS.md": existing, ".claude/keep": "" });
+  chmodSync(partial, 0o555);
+  const second = run(partial, "--write", "--json");
+  const repeated = run(partial, "--write");
+  chmodSync(partial, 0o755);
+  assert.equal(second.status, 1);
+  const failure = JSON.parse(second.stderr);
+  assert.deepEqual(
+    [failure.code, failure.mutations, failure.files],
+    [
+      "agent_guidance_unavailable",
+      true,
+      [
+        { path: "AGENTS.md", status: "not_written" },
+        { path: skill, status: "created" },
+      ],
+    ],
+  );
+  assert.match(failure.guidance, /^The files listed as created or updated changed/);
+  assert.equal(text(partial, "AGENTS.md"), existing);
+  assert(existsSync(join(partial, skill)));
+  assert.match(
+    repeated.stderr,
+    /^Agent setup failed: agent_guidance_unavailable\.\nNo files changed\. /,
+  );
+  // Once the cause is gone, a rerun converges.
+  assert.deepEqual(statuses(receipt(partial, "--write")), [
+    "AGENTS.md: updated",
+    `${skill}: unchanged`,
+  ]);
+});
+
+test("a directory without package.json is refused, so a home directory gets no skill", (t) => {
+  const root = mkdtempSync(join(tmpdir(), "commish-agent-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  for (const args of [["--json"], ["--write", "--json"], ["--write"]]) {
+    const result = run(root, ...args);
+    assert.deepEqual([result.status, result.stdout], [1, ""]);
+    if (args.includes("--json"))
+      assert.equal(JSON.parse(result.stderr).code, "application_root_not_found");
+    else assert.match(result.stderr, /^Agent setup changed no files: this directory has no/);
+  }
+  assert.deepEqual(tree(root), []);
+});
+
 test("CLAUDE.md is reported and never edited", (t) => {
   for (const [body, state] of [
     ["# Claude\n", "agents_md_not_referenced"],
@@ -240,6 +341,8 @@ test("arguments are closed, help is local, and the CLI lists the command", (t) =
     assert.deepEqual(JSON.parse(refused.stderr), { status: "error", code: "invalid_arguments" });
   }
   assert.match(run(root, "--bad").stderr, /^Usage: commish agent setup \[--write\]/);
+  // Nothing here prompts, so the flag agents pass to every command is accepted.
+  assert.equal(receipt(root, "--non-interactive").status, "plan");
   const help = run(root, "--help");
   assert.deepEqual([help.status, help.stderr], [0, ""]);
   assert.match(help.stdout, /^Usage: commish agent setup \[--write\] \[--json\]\n/);
