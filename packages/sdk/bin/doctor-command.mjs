@@ -35,18 +35,23 @@ export async function executeDoctor(args, options = {}) {
     mode: v.mode,
     url: v["management-url"],
   });
-  const receipt = await client.call("diagnostics.get", { programId: v.program });
+  const receipt = await readDiagnostics(client, v.program);
+  return { ...receipt, status: receipt.data.report.status, integrationVerified: false };
+}
+// One diagnostics read for a program, checked against the client's mode.
+export async function readDiagnostics(client, programId) {
+  const receipt = await client.call("diagnostics.get", { programId });
   const report = receipt.data?.report;
   if (
     report?.version !== 1 ||
     report.mode !== client.mode ||
-    report.programId !== v.program ||
+    report.programId !== programId ||
     !["observed", "incomplete"].includes(report.status) ||
     report.integrationVerified !== false ||
     !Array.isArray(report.unmetConditions)
   )
     fail("invalid_response");
-  return { ...receipt, status: report.status, integrationVerified: false };
+  return receipt;
 }
 export async function runDoctorCommand(
   args,

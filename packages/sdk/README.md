@@ -751,38 +751,78 @@ financial guards remain in force.
 
 ### See where an install stands
 
-`commish status` reports, for the install in the current directory, each setup
-step and whether management access is still usable, with its status, the
-evidence that status rests on and the exact next command:
+`commish status` reports, for the install in the current directory, each
+onboarding step with its status, the evidence that status rests on and the
+exact next command or browser action. Use it to resume an install, or to decide
+what to ask a person for:
 
 ```sh
 commish status --json
 ```
 
-| Step | Met when |
+| Step | Met when | Read from |
+| --- | --- | --- |
+| `configuration` | `commish.setup.json` (or `--config`) is complete, or setup already started from flags. | Local file |
+| `setup_approved` | A workspace owner approved setup: `workspace.json` records the workspace. | `.commish/setup/<mode>/` |
+| `resources_provisioned` | The application, program and credential are recorded and `credentials.env` exists, plus the webhook endpoint and `webhook.env` when a webhook is configured. | `.commish/setup/<mode>/` |
+| `management_access` | A management grant for this workspace and mode is authorized and includes `diagnostics.read`. | The grant, with its own bearer |
+| `destination_verified` | The destination origin is verified (`verified_origin`). | Diagnostics |
+| `stripe_connected` | The workspace's Stripe account is connected in this mode (`stripe_connection`). | Diagnostics |
+| `eligible_products` | The program has eligible Stripe products (`eligible_products`). | Diagnostics |
+| `program_active` | The program is active on an active term version (`program_active`, `active_terms`). | Diagnostics |
+| `rehearsal` | An attributed conversion was observed, which proves a referral link existed and was used. | Diagnostics |
+| `attributed_test_conversion` | A Test purchase met every activation gate and produced an attributed conversion and a commission. | Diagnostics |
+| `webhook_delivery` | A related webhook was delivered; `not_applicable` without an enabled endpoint. | Diagnostics |
+| `integration_activated` | The Test integration was activated (`testActivatedAt`). | Diagnostics |
+
+Each step is `met`, `unmet`, `not_applicable` or `unknown`. `unknown` always
+carries a `reason`, and is never a guess:
+
+| `reason` | Meaning |
 | --- | --- |
-| `configuration` | `commish.setup.json` (or `--config`) is complete, or setup already started from flags. |
-| `setup_approved` | A workspace owner approved setup: `.commish/setup/<mode>/workspace.json` records the workspace. |
-| `resources_provisioned` | The application, program and credential are recorded and `credentials.env` exists, plus the webhook endpoint and `webhook.env` when a webhook is configured. |
-| `management_access` | A management grant for this workspace and mode is authorized and includes `diagnostics.read`. |
+| `program_not_provisioned` | Setup has not recorded a program here, so there is nothing to ask about. |
+| `management_access_required` | No usable grant; `management_access` names the command that asks for one. |
+| `no_read_operation_reports_the_test_partnership` | Nothing reports the rehearsal partnership until a conversion is attributed. `commish test rehearsal` is safe to repeat and returns the same referral link. |
+| `not_evaluated_in_live`, `check_not_reported` | Diagnostics did not evaluate that check. Provider readiness is evaluated in Test only. |
+| an error code, such as `rate_limited` | The diagnostics read failed with that code. |
+
+`steps[].evidence` names its `source` and the facts read from it: identifiers,
+file presence, the grant's state, scopes and expiry, and the diagnostics check
+states. `next` is one of:
+
+- `{ "kind": "command", "command": "..." }`, with `before` when something has to
+  happen first, `bodyFile` and `body` when the command reads a body file, and
+  `humanAction` when a person has to approve in the browser;
+- `{ "kind": "browser", "url": "...", "actor": "workspace_owner_or_admin", "action": "..." }`
+  for the steps only a signed-in owner can take: connecting Stripe, choosing
+  eligible products and activating the integration;
+- `{ "kind": "guidance", "guidance": "..." }` for work in your application, such
+  as setting `client_reference_id`.
+
+The top-level `nextStep` and `next` repeat the first step, in order, that
+someone can act on. The activation body is a template: read the term version
+with the command in `before`; the server refuses the write if the program has
+moved on from the state setup leaves.
 
 The first three steps read local files only. Management access is checked with
 one request, using the grant's own bearer: `--auth-file` or
 `COMMISH_MANAGEMENT_TOKEN` when given, otherwise the newest grant stored under
 `.commish/management/` for this workspace and mode that includes
-`diagnostics.read` (the onboarding grant from setup qualifies). The evidence
-names the file and the grant's state, scopes and expiry. When no grant is
+`diagnostics.read` (the onboarding grant from setup qualifies). When no grant is
 usable, the next command asks for one: an onboarding grant in Test, a
 read-only session in LIVE; a stored request that is still pending is resumed.
-An unreachable service is reported as `unavailable` with its code.
+One diagnostics read then answers every remaining step, so the evidence window
+is the one `commish doctor` describes.
 
-The command changes nothing. Key material and bearers are checked for presence
-and shape and never printed. Text is the default
-output; `--json` prints one object with `status` (`complete` or `incomplete`),
-`steps`, `nextStep` and `next`. Exit 0 means every step is met, 2 that a step is
-unmet and 1 an error. Each mode keeps its own progress: `--mode live` reports
-the LIVE setup. A met step is recorded progress, not verification:
-`integrationVerified` stays false.
+The command changes nothing: it makes two reads and writes no file. Key
+material and bearers are checked for presence and shape and never printed, and
+server text is never repeated. Text is the default output; `--json` prints one
+object with `status` (`complete` or `incomplete`), `steps`, `nextStep` and
+`next`. Exit 0 means every step is met or not applicable, 2 that a step is unmet
+or unknown and 1 an error. Each mode keeps its own progress: `--mode live`
+reports the LIVE setup, where the Test-only steps are `not_applicable` and
+provider readiness is `unknown`. A complete status is recorded progress and
+observed evidence, not verification: `integrationVerified` stays false.
 
 ### Diagnose and test
 
