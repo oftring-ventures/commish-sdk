@@ -27,6 +27,8 @@ React >=19.2.8 <20. Other frameworks can use the core SDK directly.
 
 With a coding agent, start with `npx -y commish@latest`: it prints a setup
 playbook for the repository it runs in.
+`commish agent setup --write` keeps that guidance in the repository, as a
+Commish section in `AGENTS.md` and a skill file for the installed version.
 
 ```sh
 pnpm exec commish setup --plan --json
