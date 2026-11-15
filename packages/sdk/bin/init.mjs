@@ -116,6 +116,10 @@ const setupGuide = {
     progress: "stderr_json_lines",
     receipt: "one_json_object_on_stdout",
     secrets: "file_paths_only",
+    // No command reads the terminal, with or without the flag.
+    prompts: "none; --non-interactive is accepted by every command",
+    missingInput:
+      "fails_before_any_request; setup names configuration fields in fields, other commands name flags and environment variables in missing",
   },
   exitCodes: {
     0: "help_or_valid_plan_or_completed_configuration",
@@ -148,7 +152,7 @@ const verifyEnvironment = [
 const verifyHelp = {
   status: "help",
   command: "verify [--json]",
-  flags: ["--json", "--help"],
+  flags: ["--json", "--non-interactive", "--help"],
   requiredEnvironment: verifyEnvironment,
   alternativeEnvironment: {
     COMMISH_PUBLISHABLE_KEY: "NEXT_PUBLIC_COMMISH_PUBLISHABLE_KEY",
@@ -167,7 +171,7 @@ const json = args.includes("--json");
 // version and usage touch no files, so they still answer there.
 const informational =
   (args.length === 1 && ["--version", "-v"].includes(args[0])) ||
-  args.every((arg) => ["help", "--help", "-h", "--json"].includes(arg));
+  args.every((arg) => ["help", "--help", "-h", "--json", "--non-interactive"].includes(arg));
 if (process.platform === "win32" && !informational) {
   console.error(
     json
@@ -206,7 +210,7 @@ if (Object.hasOwn(managementRunners, args[0])) {
   process.exitCode = await runApiCommand(args);
 } else if (
   args[0] === "agent" &&
-  args.slice(1).every((arg) => ["--json", "--help"].includes(arg))
+  args.slice(1).every((arg) => ["--json", "--help", "--non-interactive"].includes(arg))
 ) {
   console.log(
     JSON.stringify({
@@ -265,7 +269,7 @@ if (Object.hasOwn(managementRunners, args[0])) {
 } else if (
   args[0] === "verify" &&
   args.slice(1).some((arg) => ["--help", "-h"].includes(arg)) &&
-  args.slice(1).every((arg) => ["--help", "-h", "--json"].includes(arg)) &&
+  args.slice(1).every((arg) => ["--help", "-h", "--json", "--non-interactive"].includes(arg)) &&
   new Set(args).size === args.length
 ) {
   // Help reads no environment and makes no request.
@@ -283,8 +287,13 @@ if (Object.hasOwn(managementRunners, args[0])) {
   const fail = (code) => {
     throw new Error(code);
   };
+  // Unset variables are named; a set but malformed value never is.
+  let missing = [];
   try {
-    if (args.slice(1).some((arg) => arg !== "--json") || new Set(args).size !== args.length)
+    if (
+      args.slice(1).some((arg) => !["--json", "--non-interactive"].includes(arg)) ||
+      new Set(args).size !== args.length
+    )
       fail("invalid_arguments");
     const env = process.env;
     const secret = env.COMMISH_SECRET_KEY ?? "";
@@ -296,6 +305,14 @@ if (Object.hasOwn(managementRunners, args[0])) {
     ).match(/^cm_(test|live)_pk_[A-Za-z0-9_-]{12,}$/);
     const applicationId = env.COMMISH_APPLICATION_ID ?? env.NEXT_PUBLIC_COMMISH_APPLICATION_ID;
     const programId = env.COMMISH_PROGRAM_ID;
+    missing = [
+      ...(secret ? [] : ["COMMISH_SECRET_KEY"]),
+      ...(publishable || env.COMMISH_PUBLISHABLE_KEY || env.NEXT_PUBLIC_COMMISH_PUBLISHABLE_KEY
+        ? []
+        : ["COMMISH_PUBLISHABLE_KEY"]),
+      ...(applicationId ? [] : ["COMMISH_APPLICATION_ID"]),
+      ...(programId ? [] : ["COMMISH_PROGRAM_ID"]),
+    ];
     if (
       !key ||
       !publishable ||
@@ -411,15 +428,23 @@ if (Object.hasOwn(managementRunners, args[0])) {
     if (process.env.COMMISH_DEBUG === "1") console.error(error);
     console.error(
       json
-        ? JSON.stringify({ status: "error", code, integrationVerified: false })
-        : `Verification failed: ${code}.`,
+        ? JSON.stringify({
+            status: "error",
+            code,
+            ...(code === "invalid_configuration" && missing.length ? { missing } : {}),
+            integrationVerified: false,
+          })
+        : `Verification failed: ${code}.` +
+            (code === "invalid_configuration" && missing.length
+              ? ` Not set: ${missing.join(", ")}.`
+              : ""),
     );
     process.exitCode = 1;
   }
 } else {
   const valid =
     args.length === 0 ||
-    (args.every((arg) => ["help", "--help", "-h", "--json"].includes(arg)) &&
+    (args.every((arg) => ["help", "--help", "-h", "--json", "--non-interactive"].includes(arg)) &&
       new Set(args).size === args.length);
   if (!valid) {
     console.error(

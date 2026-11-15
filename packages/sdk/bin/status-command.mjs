@@ -10,6 +10,7 @@ import { parseSetupConfig } from "./setup-config.mjs";
 import { readSetupFile } from "./setup-files.mjs";
 import { setupOnboardingScopes } from "./setup-onboarding.mjs";
 import { readSetupProgress } from "./setup-progress.mjs";
+import { setupCredentialMatches } from "./setup-secrets.mjs";
 
 const defaultConfig = "commish.setup.json";
 // Onboarding in the order an install reaches it. The first three read local
@@ -36,7 +37,7 @@ export const statusHelp = () => ({
     localFiles: [
       defaultConfig,
       ".commish/setup/<mode>/*.json",
-      ".commish/setup/<mode>/credentials.env (presence and shape only)",
+      ".commish/setup/<mode>/credentials.env (checked against the mode and recorded resources, never printed)",
       ".commish/management/<request-id>/authorization.json",
     ],
     requests: ["GET /grants"],
@@ -76,10 +77,10 @@ function readConfiguration(root, path) {
     ...(["test", "live"].includes(mode) ? { mode } : {}),
   };
 }
-// Presence and shape only: no key material is kept or reported.
-function privateFile(root, path, pattern) {
+// Whether the file is the one setup writes: no key material is kept or reported.
+function privateFile(root, path, matches) {
   try {
-    return pattern.test(readSetupFile(root, path, { privateFile: true, recover: false }))
+    return matches(readSetupFile(root, path, { privateFile: true, recover: false }))
       ? "present"
       : "invalid";
   } catch (error) {
@@ -146,9 +147,19 @@ export async function executeStatus(args, options = {}) {
     applicationId = journal.application?.id ?? null,
     programId = journal.program?.id ?? null;
   const approval = { humanAction: "open_the_approval_url_and_confirm_the_pairing_code" };
+  // A setup started from flags left no file to name, and only its caller knows
+  // the flags: naming commish.setup.json would fail with setup_file_missing.
   const provision = {
-    kind: "command",
-    command: `commish setup ${configFlag} --mode ${mode} --no-open --non-interactive --json`,
+    ...(configuration.state === "missing" && journal.intent
+      ? {
+          kind: "guidance",
+          guidance:
+            "Setup was started from flags, so there is no configuration file to rerun. Repeat the original commish setup command with the same flags, or restore its configuration file; setup resumes from the recorded progress.",
+        }
+      : {
+          kind: "command",
+          command: `commish setup ${configFlag} --mode ${mode} --no-open --non-interactive --json`,
+        }),
     ...approval,
   };
   const report = [];
@@ -187,14 +198,13 @@ export async function executeStatus(args, options = {}) {
     credentialsFile: privateFile(
       root,
       `${journal.directory}/credentials.env`,
-      new RegExp(`^COMMISH_MODE=${mode}\\n(?:COMMISH_[A-Z_]+=[\\x21-\\x7e]+\\n){4}$`),
+      // The check setup itself applies before it reuses the file.
+      (body) => setupCredentialMatches(body, { mode, applicationId, programId }),
     ),
     ...(wantsWebhook
       ? {
-          webhookFile: privateFile(
-            root,
-            `${journal.directory}/webhook.env`,
-            /^COMMISH_WEBHOOK_SIGNING_SECRET=whsec_[A-Za-z0-9_-]{32,}\n$/,
+          webhookFile: privateFile(root, `${journal.directory}/webhook.env`, (body) =>
+            /^COMMISH_WEBHOOK_SIGNING_SECRET=whsec_[A-Za-z0-9_-]{32,}\n$/.test(body),
           ),
         }
       : {}),
@@ -327,7 +337,7 @@ function statusText(result) {
       )
       .join("") +
     (next
-      ? `Next (${result.nextStep}): run ${next.command}` +
+      ? `Next (${result.nextStep}): ${next.kind === "command" ? `run ${next.command}` : next.guidance}` +
         (next.humanAction ? `\nThen a person must ${next.humanAction.replaceAll("_", " ")}.` : "")
       : "Every step is met.") +
     "\nIntegration remains unverified by this command. Use --json for evidence."
