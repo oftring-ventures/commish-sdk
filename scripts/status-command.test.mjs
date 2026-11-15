@@ -1,5 +1,13 @@
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, readdirSync, rmSync, utimesSync, writeFileSync } from "node:fs";
+import {
+  linkSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  rmSync,
+  utimesSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test from "node:test";
@@ -184,7 +192,23 @@ test("a repository that never ran setup is reported offline and left untouched",
   });
   assert.equal(ready.steps[0].status, "met");
   assert.deepEqual([ready.nextStep, ready.next], ["setup_approved", provision("<config>")]);
+  // An incomplete file named with --config is planned with --config too.
+  write(root, "partial.json", { version: 1, stripe: "later" }, 0o644);
+  const named = await executeStatus(["--config", "partial.json"], {
+    root,
+    env: {},
+    fetcher: noRequest,
+  });
+  assert.deepEqual(
+    [named.nextStep, named.next],
+    [
+      "configuration",
+      { kind: "command", command: "commish setup --config <config> --plan --json" },
+    ],
+  );
+  rmSync(join(root, "partial.json"));
   // The path given to --config is never repeated.
+  assert(!JSON.stringify([ready, named]).includes(".json --"));
   assert(!JSON.stringify(ready).includes("other.json"));
   assert.deepEqual(readdirSync(root).sort(), ["commish.setup.json", "other.json"]);
 });
@@ -485,4 +509,58 @@ test("LIVE asks for a read-only session, and setup comes first when nothing is r
       humanAction: "open_the_approval_url_and_confirm_the_pairing_code",
     },
   });
+});
+
+test("the mode is the one setup would use: the flag, then the configuration, then the shell", async (t) => {
+  const root = directory(t);
+  const mode = async (args, env) => {
+    const result = await executeStatus(args, { root, env, fetcher: noRequest });
+    assert.match(result.steps[1].next.command, new RegExp(` --mode ${result.mode} `));
+    assert.equal(result.steps[1].evidence.source, `.commish/setup/${result.mode}/workspace.json`);
+    return result.mode;
+  };
+  // No configuration file: the shell decides, as for the other management commands.
+  assert.equal(await mode([], {}), "test");
+  assert.equal(await mode([], { COMMISH_MODE: "live" }), "live");
+  // A configuration that names no mode is a Test setup, whatever the shell says.
+  write(root, "commish.setup.json", config, 0o644);
+  assert.equal(await mode([], { COMMISH_MODE: "live" }), "test");
+  rmSync(join(root, "commish.setup.json"));
+  // A LIVE configuration is reported as LIVE without a flag, even when incomplete.
+  write(root, "commish.setup.json", { ...config, mode: "live" }, 0o644);
+  assert.equal(await mode([], {}), "live");
+  assert.equal(await mode([], { COMMISH_MODE: "test" }), "live");
+  assert.equal(await mode(["--mode", "test"], { COMMISH_MODE: "live" }), "test");
+  rmSync(join(root, "commish.setup.json"));
+  write(root, "commish.setup.json", { version: 1, mode: "live" }, 0o644);
+  assert.equal(await mode([], {}), "live");
+  // A mode the file cannot mean is not followed.
+  rmSync(join(root, "commish.setup.json"));
+  write(root, "commish.setup.json", { ...config, mode: "private-fixture" }, 0o644);
+  assert.equal(await mode([], {}), "test");
+  await assert.rejects(executeStatus([], { root, env: { COMMISH_MODE: "staging" } }), {
+    message: "invalid_arguments",
+  });
+});
+
+test("a state file an interrupted setup left half-published is refused, not repaired", async (t) => {
+  const root = directory(t);
+  provisioned(root);
+  // What a setup killed between publishing a file and removing its temporary link leaves.
+  for (const name of ["workspace.json", "credentials.env"]) {
+    const leftover = `.commish/setup/test/.commish-setup-${name}.97961974-684d-46b3-aebb-2ef22ee2cec0.tmp`;
+    linkSync(join(root, `.commish/setup/test/${name}`), join(root, leftover));
+    const before = readdirSync(root, { recursive: true }).sort();
+    assert(before.includes(leftover));
+    await assert.rejects(executeStatus([], { root, env: {}, fetcher: noRequest }), {
+      message: "unsafe_file_permissions",
+    });
+    assert.deepEqual(readdirSync(root, { recursive: true }).sort(), before);
+    rmSync(join(root, leftover));
+  }
+  const repaired = await executeStatus([], { root, env: {}, fetcher: noRequest });
+  assert.deepEqual(
+    repaired.steps.slice(0, 3).map((item) => item.status),
+    ["met", "met", "met"],
+  );
 });

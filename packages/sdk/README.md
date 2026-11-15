@@ -777,11 +777,15 @@ read-only session in LIVE; a stored request that is still pending is resumed.
 An unreachable service is reported as `unavailable` with its code.
 
 The command changes nothing. Key material and bearers are checked for presence
-and shape and never printed. Text is the default
+and shape and never printed. A state file that an interrupted setup left
+half-published is refused with `unsafe_file_permissions` rather than repaired;
+rerun the same `commish setup` command, which repairs it. Text is the default
 output; `--json` prints one object with `status` (`complete` or `incomplete`),
 `steps`, `nextStep` and `next`. Exit 0 means every step is met, 2 that a step is
-unmet and 1 an error. Each mode keeps its own progress: `--mode live` reports
-the LIVE setup. A met step is recorded progress, not verification:
+unmet and 1 an error. Each mode keeps its own progress. The mode is the one
+`commish setup` would use: `--mode`, else the configuration file's `mode` (Test
+when it names none), and only without a configuration file `COMMISH_MODE`,
+else Test. A met step is recorded progress, not verification:
 `integrationVerified` stays false.
 
 ### Diagnose and test

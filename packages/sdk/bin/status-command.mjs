@@ -44,7 +44,8 @@ export const statusHelp = () => ({
   authorization:
     "Uses --auth-file or COMMISH_MANAGEMENT_TOKEN; otherwise the newest stored grant for this workspace and mode that includes diagnostics.read, the scope the remaining onboarding checks need.",
   mutations: false,
-  defaultMode: "test",
+  // The install setup would address: its configuration decides before the shell.
+  mode: "--mode, else the configuration file's mode (test when it names none), else COMMISH_MODE, else test",
   output: "text; --json prints one JSON object on stdout",
   exitCodes: { 0: "every_step_met", 1: "error", 2: "a_step_is_unmet" },
   integrationVerified: false,
@@ -65,15 +66,22 @@ function readConfiguration(root, path) {
     return { state: "invalid_config", fields: ["config"] };
   }
   if (!record(input)) return { state: "invalid_config", fields: ["config"] };
-  const parsed = parseSetupConfig(input);
-  return parsed.kind === "ready"
-    ? { state: "ready", config: parsed.config }
-    : { state: parsed.kind, fields: parsed.fields };
+  // Setup reads the mode from this file and defaults it to test.
+  const mode = input.mode === undefined ? "test" : input.mode,
+    parsed = parseSetupConfig(input);
+  return {
+    ...(parsed.kind === "ready"
+      ? { state: "ready", config: parsed.config }
+      : { state: parsed.kind, fields: parsed.fields }),
+    ...(["test", "live"].includes(mode) ? { mode } : {}),
+  };
 }
 // Presence and shape only: no key material is kept or reported.
 function privateFile(root, path, pattern) {
   try {
-    return pattern.test(readSetupFile(root, path, { privateFile: true })) ? "present" : "invalid";
+    return pattern.test(readSetupFile(root, path, { privateFile: true, recover: false }))
+      ? "present"
+      : "invalid";
   } catch (error) {
     if (error.message === "setup_file_missing") return "absent";
     throw error;
@@ -122,9 +130,11 @@ export async function executeStatus(args, options = {}) {
   );
   if (v.help) return statusHelp();
   if (p.length) fail("invalid_arguments");
-  const mode = managementMode(v.mode, env),
-    configuration = readConfiguration(root, v.config ?? defaultConfig),
-    config = configuration.state === "ready" ? configuration.config : null;
+  const configuration = readConfiguration(root, v.config ?? defaultConfig),
+    config = configuration.state === "ready" ? configuration.config : null,
+    mode = managementMode(v.mode ?? configuration.mode, env),
+    // The path given to --config is not repeated; commands name where it goes.
+    configFlag = `--config ${v.config === undefined ? defaultConfig : "<config>"}`;
   let journal;
   try {
     journal = readSetupProgress(root, mode);
@@ -137,10 +147,9 @@ export async function executeStatus(args, options = {}) {
     applicationId = journal.application?.id ?? null,
     programId = journal.program?.id ?? null;
   const approval = { humanAction: "open_the_approval_url_and_confirm_the_pairing_code" };
-  // The path given to --config is not repeated; the command names where it goes.
   const provision = {
     kind: "command",
-    command: `commish setup --config ${v.config === undefined ? defaultConfig : "<config>"} --mode ${mode} --no-open --non-interactive --json`,
+    command: `commish setup ${configFlag} --mode ${mode} --no-open --non-interactive --json`,
     ...approval,
   };
   const report = [];
@@ -159,7 +168,14 @@ export async function executeStatus(args, options = {}) {
       ...(configuration.fields ? { fields: configuration.fields } : {}),
       ...(journal.intent ? { setupStartedAt: journal.intent.createdAt } : {}),
     },
-    configured ? {} : { next: { kind: "command", command: "commish setup --plan --json" } },
+    configured
+      ? {}
+      : {
+          next: {
+            kind: "command",
+            command: `commish setup ${v.config === undefined ? "" : `${configFlag} `}--plan --json`,
+          },
+        },
   );
   add(
     "setup_approved",
