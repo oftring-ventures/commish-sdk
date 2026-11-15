@@ -647,7 +647,10 @@ and mode scoped; webhook metadata requires a workspace key.
 
 Successful commands emit one JSON object on stdout. Errors emit a sanitized
 JSON object on stderr with a stable code and, when available, HTTP status,
-request ID and `retryAfter` seconds. Errors from HTTP 429, 502, 503 and 504
+request ID and `retryAfter` seconds. A write's `--body-file` follows the same
+rules as [`manage --body-file`](#explicit-management-writes): a refused file
+fails before any request with `code: "invalid_body_file"` and one of the same
+fixed `reason` values. Errors from HTTP 429, 502, 503 and 504
 responses are marked `retryable`. No mutation retries automatically. Retain each write's exact input
 and idempotency identity when resolving uncertainty. `--all` follows at most
 100 pages; `--max-pages` can lower that bound. Check `complete` and retain the
