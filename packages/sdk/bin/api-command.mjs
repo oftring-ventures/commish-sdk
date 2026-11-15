@@ -1,6 +1,13 @@
 import catalog from "./api-catalog.json" with { type: "json" };
-import { apiUrl, argumentsFor, errorReceipt, fail, requestJson } from "./cli-http.mjs";
-import { readSetupFile } from "./setup-files.mjs";
+import { bodyFileHelp, readBodyFile } from "./body-file.mjs";
+import {
+  apiUrl,
+  argumentsFor,
+  errorReceipt,
+  fail,
+  missingInput,
+  requestJson,
+} from "./cli-http.mjs";
 
 export const resourceCommands = {
   "programs retrieve": ["getProgram", "programId"],
@@ -68,6 +75,7 @@ export function apiHelp() {
     credential: "integration_secret_key",
     pagination: { automatic: false, allMaximumPages: 100, partialReceipt: true },
     mutationPolicy: "explicit_body_file_and_idempotency_key_no_automatic_retries",
+    bodyFile: bodyFileHelp(),
     unsupported: [
       "browser_attribution_capture_use_browser_sdk",
       "management_use_management_authorization",
@@ -122,6 +130,7 @@ export async function executeApi(
   const alias = resourceCommands[`${p[0]} ${p[1]}`];
   const operationId = p[0] === "api" ? p[1] : alias?.[0];
   if (!Object.hasOwn(catalog.operations, operationId ?? "")) fail("unknown_operation");
+  if (alias?.[1] && p.length === 2) missingInput([`<${alias[1]}>`]);
   if (p.length !== (p[0] === "api" ? 2 : alias[1] ? 3 : 2)) fail("invalid_arguments");
   const op = catalog.operations[operationId],
     params = assignments(v.param),
@@ -138,32 +147,35 @@ export async function executeApi(
     if (target.has(alias[1])) fail("invalid_arguments");
     target.set(alias[1], p[2]);
   }
-  const expected = op.parameters.filter((item) => ["path", "query"].includes(item.in));
-  for (const [kind, supplied] of [
-    ["path", params],
-    ["query", query],
-  ]) {
+  const expected = op.parameters.filter((item) => ["path", "query"].includes(item.in)),
+    kinds = [
+      ["path", params, "param"],
+      ["query", query, "query"],
+    ];
+  for (const [kind, supplied] of kinds)
     for (const [name, value] of supplied) {
       const field = expected.find((item) => item.in === kind && item.name === name);
       if (!field || !validParameter(value, field.schema)) fail("invalid_arguments");
     }
-    if (expected.some((item) => item.in === kind && item.required && !supplied.has(item.name)))
-      fail("missing_input");
-  }
+  const absent = kinds.flatMap(([kind, supplied, flag]) =>
+    expected
+      .filter((item) => item.in === kind && item.required && !supplied.has(item.name))
+      .map((item) => `--${flag} ${item.name}=<value>`),
+  );
+  if (absent.length) missingInput(absent);
   if (((v.all || v["max-pages"]) && !op.paginated) || (v["max-pages"] && !v.all))
     fail("invalid_arguments");
   const maximum = v["max-pages"] ?? "100";
   if (!/^[1-9][0-9]{0,2}$/.test(maximum) || Number(maximum) > 100) fail("invalid_arguments");
   let body;
   if (op.method !== "GET") {
-    if (!v["body-file"] || !v["idempotency-key"]) fail("mutation_input_required");
+    const unsupplied = [
+      ...(v["body-file"] ? [] : ["--body-file <path>"]),
+      ...(v["idempotency-key"] ? [] : ["--idempotency-key <identity>"]),
+    ];
+    if (unsupplied.length) missingInput(unsupplied, "mutation_input_required");
     if (!/^[\x21-\x7e]{1,255}$/.test(v["idempotency-key"])) fail("invalid_arguments");
-    try {
-      body = JSON.parse(readSetupFile(root, v["body-file"], { profile: "configuration" }));
-    } catch {
-      fail("invalid_body_file");
-    }
-    if (!body || typeof body !== "object" || Array.isArray(body)) fail("invalid_body_file");
+    body = readBodyFile(root, v["body-file"]);
   } else if (v["body-file"] || v["idempotency-key"]) fail("invalid_arguments");
   const mode = v.mode ?? env.COMMISH_MODE ?? "test";
   if (!["test", "live"].includes(mode)) fail("invalid_arguments");
@@ -171,6 +183,7 @@ export async function executeApi(
   if (op.method !== "GET" && mode === "live" && v.mode !== "live") fail("live_mode_flag_required");
   const secret = env.COMMISH_SECRET_KEY ?? "",
     keyMode = secret.match(/^cm_(test|live)_sk_[A-Za-z0-9_-]{12,}$/)?.[1];
+  if (!secret) missingInput(["COMMISH_SECRET_KEY"], "invalid_configuration");
   if (!keyMode) fail("invalid_configuration");
   if (keyMode !== mode) fail("key_mode_mismatch");
   const base = apiUrl(v["api-url"] ?? env.COMMISH_API_URL ?? "https://app.commish.sh/api/v1");
