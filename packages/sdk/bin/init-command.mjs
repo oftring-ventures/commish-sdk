@@ -32,6 +32,7 @@ export function initGuide(root) {
     provision: `${cli} setup --config commish.setup.json --mode test --no-open --non-interactive --json`,
     ...(next ? { wire: `${manager.exec} commish-next --json` } : {}),
     verify: `${cli} verify --json`,
+    status: `${cli} status --json`,
   };
   return {
     status: "guide",
@@ -76,7 +77,7 @@ ${repository.warnings.includes("package_manifest_missing") ? "\n- No package.jso
 
 1. Install exact versions: \`${commands.install}\`. If the repository enforces a minimum package age, use the newest release that satisfies it.
 2. Plan without an account: \`${commands.plan}\`. It reports missing inputs by field. Collect the business choices together, then write non-secret \`commish.setup.json\` (schema: ${schema}). An empty eligible-product list means all Stripe products.
-3. Authorize and provision: \`${commands.provision}\`. Show the person the \`approvalUrl\` and \`pairingCode\` from the \`authorization_required\` JSON line on stderr; new users sign up there. The CLI waits, then provisions. After an interruption, rerun the same command.
+3. Authorize and provision: \`${commands.provision}\`. Show the person the \`approvalUrl\` and \`pairingCode\` from the \`authorization_required\` JSON line on stderr; new users sign up there. The CLI waits, then provisions. After an interruption, rerun the same command; \`${commands.status}\` shows which steps are done.
 4. Publish the generated proof file at the HTTPS URL the CLI prints. In TEST the approval in step 3 also granted onboarding access for up to one day: the setup receipt names it as \`onboarding.authorizationFile\`. When \`onboarding.status\` is \`authorized\`, pass that path as \`--auth-file\` to \`commish manage\` (for example \`destinations.verify\` once the proof is live, then \`programs.activate\`) and to \`commish doctor\`, instead of asking the person to approve again. Otherwise check it with \`commish auth status --auth-file <path> --mode test\` first.
 5. Wire the application. ${wire} Let Commish record purchases and refunds from Stripe events; do not also send them as direct conversion or refund writes.
 6. Check the configuration: supply \`.commish/setup/test/credentials.env\` to the environment, then run \`${commands.verify}\`. Configuration verified is not integration verified.
@@ -91,6 +92,7 @@ Report package installation, configuration verification and the attributed TEST 
 - Guide: ${docs}
 - SDK guide for this version: ${sdkGuide}
 - Workflow contract: \`${cli} agent --json\`; every command: \`${cli} --help\`
+- Where the install stands: \`${commands.status}\` reports each onboarding step, the evidence it rests on and the exact next command or browser action. It changes nothing. Run it when you resume or take over an install, and before you report.
 - Keep this guidance in the repository: \`${cli} agent setup\` plans, and with \`--write\` adds, a Commish section in AGENTS.md and a skill for this version.
 `;
 }

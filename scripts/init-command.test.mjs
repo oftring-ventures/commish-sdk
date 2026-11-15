@@ -75,6 +75,20 @@ test("commands follow the detected package manager and framework", (t) => {
     assert.equal(guide.integrationVerified, false);
     assert.equal(guide.commands.install, `${add} @commish/sdk@${version}`);
     assert.equal(guide.commands.plan, `${cli} setup --plan --json`);
+    // The playbook names the read-only status command, in the steps and in the references.
+    assert.equal(guide.commands.status, `${cli} status --json`);
+    assert(
+      guide.markdown.includes(
+        `After an interruption, rerun the same command; \`${cli} status --json\` shows which steps are done.`,
+      ),
+    );
+    assert(
+      guide.markdown
+        .split("## References\n")[1]
+        .includes(
+          `- Where the install stands: \`${cli} status --json\` reports each onboarding step`,
+        ),
+    );
     assert.equal(Object.hasOwn(guide.commands, "wire"), next);
     assert(guide.markdown.includes("captureReferral"));
     assert(!guide.markdown.includes("@commish/next@"));
@@ -87,6 +101,17 @@ test("commands follow the detected package manager and framework", (t) => {
   assert(!Object.hasOwn(guide.commands, "wire"));
   assert(guide.markdown.includes("Next.js without a single app directory"));
   assert(guide.markdown.includes("ambiguous_app_directory"));
+});
+
+test("the agent guide carries the status command's help under the key the top-level help uses", (t) => {
+  const root = repository(t);
+  const agent = JSON.parse(run(root, ["agent", "--json"]).stdout),
+    help = JSON.parse(run(root, ["--help", "--json"]).stdout),
+    status = JSON.parse(run(root, ["status", "--help", "--json"]).stdout);
+  assert.equal(status.status, "help");
+  assert.deepEqual(agent.onboardingStatus, status);
+  assert.deepEqual(help.onboardingStatus, status);
+  assert.equal(agent.guideVersion, 2);
 });
 
 test("a directory without package.json asks for the application root", (t) => {

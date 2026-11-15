@@ -225,6 +225,8 @@ if (Object.hasOwn(managementRunners, args[0])) {
       authorization: authHelp(),
       keys: keysHelp(),
       diagnostics: doctorHelp(),
+      // The same key as in commish --help --json.
+      onboardingStatus: statusHelp(),
       testing: testHelp(),
       workflow: [
         "discover_operations_with_commish_api_list",
