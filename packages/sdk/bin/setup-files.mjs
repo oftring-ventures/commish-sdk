@@ -75,7 +75,7 @@ function recoverPublication(target, fd, entry) {
   }
   if (fstatSync(fd).nlink !== 1) fail("unsafe_file_permissions");
 }
-function readFile(target, privateFile, maximum = limit) {
+function readFile(target, privateFile, maximum = limit, recover = true) {
   let fd;
   try {
     if (lstatSync(target).isSymbolicLink()) fail("unsafe_file_path");
@@ -84,7 +84,11 @@ function readFile(target, privateFile, maximum = limit) {
     const entry = fstatSync(fd);
     if (!entry.isFile() || entry.size > maximum) fail("invalid_setup_file");
     if (privateFile && (entry.mode & 0o077) !== 0) fail("unsafe_file_permissions");
-    if (privateFile && entry.nlink !== 1) recoverPublication(target, fd, entry);
+    if (privateFile && entry.nlink !== 1) {
+      // A caller that only reports never repairs: it refuses the file instead.
+      if (!recover) fail("unsafe_file_permissions");
+      recoverPublication(target, fd, entry);
+    }
     const bytes = Buffer.alloc(maximum + 1),
       length = readSync(fd, bytes, 0, bytes.length, 0);
     if (length > maximum) fail("invalid_setup_file");
@@ -120,7 +124,11 @@ function sanitized(error) {
 
 // Callers validate file contents before using them. Files stay within the
 // selected repository; symlink components and special files are rejected.
-export function readSetupFile(root, filename, { privateFile = false, profile = "state" } = {}) {
+export function readSetupFile(
+  root,
+  filename,
+  { privateFile = false, profile = "state", recover = true } = {},
+) {
   try {
     if (!["state", "configuration"].includes(profile) || (privateFile && profile !== "state"))
       fail("invalid_setup_file");
@@ -128,6 +136,7 @@ export function readSetupFile(root, filename, { privateFile = false, profile = "
       targetPath(root, filename, false).target,
       privateFile,
       profile === "configuration" ? 1_048_576 : limit,
+      recover,
     );
   } catch (error) {
     sanitized(error);

@@ -26,10 +26,10 @@ const canonical = (v) =>
         )
       : value,
   );
-function read(root, path, validate) {
+function read(root, path, validate, recover = true) {
   let raw;
   try {
-    raw = readSetupFile(root, path, { privateFile: true });
+    raw = readSetupFile(root, path, { privateFile: true, recover });
   } catch (error) {
     if (error.message === "setup_file_missing") return null;
     throw error;
@@ -90,13 +90,32 @@ const schemas = {
   program: (v) => keys(v, ["id"]) && id(v.id, "prg"),
   webhook: (v) => keys(v, ["id"]) && id(v.id, "whe"),
 };
-// This journal contains identities only. A new browser grant is required on
-// every run; neither session authority nor API/signing keys are stored here.
-export function openSetupProgress(
-  root,
-  input,
-  { now = () => new Date(), appUrl = "https://app.commish.sh" } = {},
-) {
+const validIntent = (v) =>
+  keys(v, ["version", "fingerprint", "id", "createdAt"]) &&
+  v.version === 1 &&
+  /^[0-9a-f]{64}$/.test(v.fingerprint) &&
+  uuid(v.id) &&
+  date(v.createdAt);
+// What setup has recorded so far, for commands that only report: nothing is
+// created or repaired, so the directory is left exactly as it was found.
+export function readSetupProgress(root, mode) {
+  if (!["test", "live"].includes(mode)) fail("invalid_setup_step");
+  const directory = `.commish/setup/${mode}`;
+  return {
+    directory,
+    intent: read(root, `${directory}/intent.json`, validIntent, false),
+    ...Object.fromEntries(
+      Object.keys(schemas).map((name) => [
+        name,
+        read(root, `${directory}/${name}.json`, schemas[name], false),
+      ]),
+    ),
+  };
+}
+// The identity of one setup: its complete configuration and the deployment it
+// addresses. A rerun resumes only while this is unchanged, so anything that
+// reports on a setup compares with the same function.
+export function setupAppOrigin(appUrl = "https://app.commish.sh") {
   let endpoint;
   try {
     endpoint = new URL(appUrl);
@@ -116,21 +135,31 @@ export function openSetupProgress(
     )
   )
     fail("invalid_app_url");
-  const parsed = parseSetupConfig(input);
+  return endpoint.origin;
+}
+export function setupFingerprint(input, appUrl) {
+  const appOrigin = setupAppOrigin(appUrl),
+    parsed = parseSetupConfig(input);
   if (parsed.kind !== "ready") fail("invalid_setup_config");
-  const config = parsed.config,
-    fingerprint = createHash("sha256")
-      .update(canonical({ config, appOrigin: endpoint.origin }))
-      .digest("hex");
+  return {
+    config: parsed.config,
+    fingerprint: createHash("sha256")
+      .update(canonical({ config: parsed.config, appOrigin }))
+      .digest("hex"),
+  };
+}
+// This journal contains identities only. A new browser grant is required on
+// every run; neither session authority nor API/signing keys are stored here.
+export function openSetupProgress(
+  root,
+  input,
+  { now = () => new Date(), appUrl = "https://app.commish.sh" } = {},
+) {
+  const { config, fingerprint } = setupFingerprint(input, appUrl);
   protectPrivateState(root);
   const directory = `.commish/setup/${config.mode}`,
     path = `${directory}/intent.json`;
-  const valid = (v) =>
-    keys(v, ["version", "fingerprint", "id", "createdAt"]) &&
-    v.version === 1 &&
-    /^[0-9a-f]{64}$/.test(v.fingerprint) &&
-    uuid(v.id) &&
-    date(v.createdAt);
+  const valid = validIntent;
   let intent = read(root, path, valid);
   if (!intent) {
     const proposed = { version: 1, fingerprint, id: randomUUID(), createdAt: now().toISOString() };

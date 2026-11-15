@@ -21,7 +21,18 @@ const run = (root, args) =>
     timeout: 5000,
     env: { PATH: process.env.PATH, COMMISH_API_URL: "http://127.0.0.1:1/api/v1" },
   });
-const commands = ["init", "setup", "verify", "agent", "api", "auth", "manage", "keys", "doctor"];
+const commands = [
+  "init",
+  "setup",
+  "verify",
+  "agent",
+  "api",
+  "auth",
+  "manage",
+  "keys",
+  "doctor",
+  "status",
+];
 const subcommands = [
   ["auth", "login"],
   ["auth", "status"],

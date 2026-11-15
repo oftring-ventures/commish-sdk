@@ -826,6 +826,56 @@ version; participants still accept their own terms. Stripe connection still
 requires provider consent in the browser. Existing LIVE eligibility and
 financial guards remain in force.
 
+### See where an install stands
+
+`commish status` reports, for the install in the current directory, each setup
+step with its status, the evidence that status rests on and the exact next
+command:
+
+```sh
+commish status --json
+```
+
+| Step | Met when |
+| --- | --- |
+| `configuration` | `commish.setup.json` (or `--config`) is complete, or setup already started from flags. |
+| `setup_approved` | A workspace owner approved setup: `.commish/setup/<mode>/workspace.json` records the workspace. |
+| `resources_provisioned` | The application, program and credential are recorded and `credentials.env` is the file setup wrote, plus the webhook endpoint and `webhook.env` when a webhook is configured or recorded. |
+
+It reads local files only, makes no request and changes nothing. The
+credential file counts only when it is the one setup wrote: its fields, key
+formats, mode and the recorded application and program are checked, and no
+value is printed. A setup that was started from flags has no configuration
+file to name, so its next action is guidance to repeat the original command
+rather than a command. A step is `met` only if `commish setup`, rerun now with the same inputs, would
+also treat it as done. Setup resumes only the setup it recorded, so the
+configuration, `--mode` and `--app-url` (pass the one setup was run with) are
+compared with the recorded fingerprint, using setup's own function. When they
+differ, `configuration` is `unmet` with `setup_config_conflict`, the recorded
+steps are `unknown` with the same reason rather than `met`, and the action is
+guidance to restore the original configuration, never a command that would
+fail. `evidence.matchesRecordedSetup` reports the comparison. In the same way,
+a recorded key whose `credentials.env` is gone or altered gets guidance to
+restore the file (`setup_credential_missing`, `setup_credential_conflict`),
+because setup never regenerates it, and an altered `webhook.env` gets guidance
+to remove it (`setup_file_conflict`). Setup records the webhook endpoint last and keeps no
+note of what was asked for, so `resources_provisioned` is `met` only when the
+evidence says whether a webhook belongs to the setup (`evidence.webhook`): a
+complete configuration (`configured` or `not_configured`) or a recorded
+endpoint (`recorded`). Without either it is `unknown` with
+`webhook_request_not_recorded`, never `met`: restore the configuration file,
+or repeat the original command, which resumes and is safe to repeat. A state file that an
+interrupted setup left half-published is refused with
+`unsafe_file_permissions` rather than repaired; rerun the same `commish setup`
+command, which repairs it. Text is the default
+output; `--json` prints one object with `status` (`complete` or `incomplete`),
+`steps`, `nextStep` and `next`. Exit 0 means every step is met, 2 that a step is
+unmet or unknown and 1 an error. Each mode keeps its own progress. The mode is the one
+`commish setup` would use: `--mode`, else the configuration file's `mode` (Test
+when it names none), and only without a configuration file `COMMISH_MODE`,
+else Test. A met step is recorded progress, not verification:
+`integrationVerified` stays false.
+
 ### Diagnose and test
 
 `doctor` requires `diagnostics.read`. It reports readiness and actual linked
