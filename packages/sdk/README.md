@@ -855,6 +855,7 @@ carries a `reason`, and is never a guess:
 
 | `reason` | Meaning |
 | --- | --- |
+| `setup_config_conflict` | The configuration, mode or app URL is not the setup recorded here; nothing recorded counts for it until the original is restored. |
 | `webhook_request_not_recorded` | The recorded resources are complete, but there is neither a complete configuration nor a recorded endpoint to say whether a webhook is still owed. |
 | `program_not_provisioned` | Setup has not recorded a program here, so there is nothing to ask about. |
 | `management_access_required` | No usable grant; `management_access` names the command that asks for one. |
@@ -905,7 +906,19 @@ credential file counts only when it is the one setup wrote: its fields, key
 formats, mode and the recorded application and program are checked. No key or
 bearer is printed, and server text is never repeated. A setup that was started
 from flags has no configuration file to name, so its next action is guidance to
-repeat the original command rather than a command. Setup records the webhook
+repeat the original command rather than a command. A step is `met` only if
+`commish setup`, rerun now with the same inputs, would also treat it as done.
+Setup resumes only the setup it recorded, so the configuration, `--mode` and
+`--app-url` (pass the one setup was run with) are compared with the recorded
+fingerprint, using setup's own function. When they differ, `configuration` is
+`unmet` with `setup_config_conflict`, the recorded setup steps are `unknown`
+with the same reason rather than `met`, and the action is guidance to restore
+the original configuration, never a command that would fail.
+`evidence.matchesRecordedSetup` reports the comparison. In the same way, a
+recorded key whose `credentials.env` is gone or altered gets guidance to
+restore the file (`setup_credential_missing`, `setup_credential_conflict`),
+because setup never regenerates it, and an altered `webhook.env` gets guidance
+to remove it (`setup_file_conflict`). Setup records the webhook
 endpoint last and keeps no note of what was asked for, so
 `resources_provisioned` is `met` only when the evidence says whether a webhook
 belongs to the setup (`evidence.webhook`): a complete configuration
