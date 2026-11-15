@@ -802,8 +802,12 @@ commish status --json
 | `setup_approved` | A workspace owner approved setup: `.commish/setup/<mode>/workspace.json` records the workspace. |
 | `resources_provisioned` | The application, program and credential are recorded and `credentials.env` exists, plus the webhook endpoint and `webhook.env` when a webhook is configured. |
 
-It reads local files only, makes no request and changes nothing. Key material
-is checked for presence and shape and never printed. A state file that an
+It reads local files only, makes no request and changes nothing. The
+credential file counts only when it is the one setup wrote: its fields, key
+formats, mode and the recorded application and program are checked, and no
+value is printed. A setup that was started from flags has no configuration
+file to name, so its next action is guidance to repeat the original command
+rather than a command. A state file that an
 interrupted setup left half-published is refused with
 `unsafe_file_permissions` rather than repaired; rerun the same `commish setup`
 command, which repairs it. Text is the default

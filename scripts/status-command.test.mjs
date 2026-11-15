@@ -350,3 +350,78 @@ test("a state file an interrupted setup left half-published is refused, not repa
   }
   assert.equal((await executeStatus([], { root, env: {}, fetcher: noRequest })).status, "complete");
 });
+
+test("a setup started from flags is told to repeat its own command, not one that would fail", async (t) => {
+  const root = directory(t);
+  // Interrupted after approval: progress is recorded, no configuration file exists.
+  write(root, ".commish/setup/test/intent.json", {
+    version: 1,
+    fingerprint: "f".repeat(64),
+    id: "97961974-684d-46b3-aebb-2ef22ee2cec0",
+    createdAt: "2026-11-14T12:04:40.049Z",
+  });
+  for (const recorded of [false, true]) {
+    if (recorded) write(root, ".commish/setup/test/workspace.json", { id: workspaceId });
+    const result = await executeStatus([], { root, env: {}, fetcher: noRequest });
+    assert.deepEqual(
+      [result.steps[0].status, result.steps[0].evidence.configuration],
+      ["met", "missing"],
+    );
+    assert.equal(result.nextStep, recorded ? "resources_provisioned" : "setup_approved");
+    assert.deepEqual(result.next, {
+      kind: "guidance",
+      guidance:
+        "Setup was started from flags, so there is no configuration file to rerun. Repeat the original commish setup command with the same flags, or restore its configuration file; setup resumes from the recorded progress.",
+      humanAction: "open_the_approval_url_and_confirm_the_pairing_code",
+    });
+    // No command anywhere names a configuration file that does not exist.
+    assert(!JSON.stringify(result).includes("--config"));
+  }
+  const output = [];
+  await runStatusCommand([], { root, env: {}, fetcher: noRequest, out: (v) => output.push(v) });
+  assert.match(
+    output[0],
+    /\nNext \(resources_provisioned\): Setup was started from flags, [^\n]+\nThen a person must open the approval url and confirm the pairing code\.\n/,
+  );
+  // With the file restored, the ordinary command is offered again.
+  write(root, "commish.setup.json", config, 0o644);
+  const restored = await executeStatus([], { root, env: {}, fetcher: noRequest });
+  assert.deepEqual(restored.next, provision());
+});
+
+test("a credential file counts only when it is the one setup wrote for these resources", async (t) => {
+  const root = directory(t);
+  provisioned(root);
+  const path = join(root, ".commish/setup/test/credentials.env"),
+    keys = `COMMISH_PUBLISHABLE_KEY=cm_test_pk_${"p".repeat(32)}\nCOMMISH_SECRET_KEY=cm_test_sk_${"k".repeat(43)}\n`,
+    ids = `COMMISH_APPLICATION_ID=${applicationId}\nCOMMISH_PROGRAM_ID=${programId}\n`;
+  const check = async (body) => {
+    rmSync(path);
+    write(root, ".commish/setup/test/credentials.env", body);
+    const result = await executeStatus([], { root, env: {}, fetcher: noRequest });
+    assert(!JSON.stringify(result).includes("private-fixture"));
+    return [
+      result.steps[2].status,
+      result.steps[2].evidence.credentialsFile,
+      result.nextStep === "resources_provisioned",
+    ];
+  };
+  for (const body of [
+    // Four assignments that are not the keys.
+    `COMMISH_MODE=test\n${"COMMISH_GARBAGE=private-fixture\n".repeat(4)}`,
+    // The right fields with values that are not keys.
+    `COMMISH_MODE=test\n${ids}COMMISH_PUBLISHABLE_KEY=private-fixture\nCOMMISH_SECRET_KEY=private-fixture\n`,
+    // Another application or program than the ones recorded.
+    `COMMISH_MODE=test\nCOMMISH_APPLICATION_ID=app_999999999999\nCOMMISH_PROGRAM_ID=${programId}\n${keys}`,
+    `COMMISH_MODE=test\nCOMMISH_APPLICATION_ID=${applicationId}\nCOMMISH_PROGRAM_ID=prg_999999999999\n${keys}`,
+    // LIVE keys or a LIVE mode line in the Test file.
+    `COMMISH_MODE=test\n${ids}${keys.replaceAll("cm_test_", "cm_live_")}`,
+    `COMMISH_MODE=live\n${ids}${keys}`,
+    // A missing field, an extra one, and a file without its final newline.
+    `COMMISH_MODE=test\n${ids}COMMISH_SECRET_KEY=cm_test_sk_${"k".repeat(43)}\n`,
+    `COMMISH_MODE=test\n${ids}${keys}COMMISH_EXTRA=private-fixture\n`,
+    `COMMISH_MODE=test\n${ids}${keys}`.slice(0, -1),
+  ])
+    assert.deepEqual(await check(body), ["unmet", "invalid", true], body.split("\n")[1]);
+  assert.deepEqual(await check(`COMMISH_MODE=test\n${ids}${keys}`), ["met", "present", false]);
+});
