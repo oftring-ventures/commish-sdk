@@ -71,8 +71,10 @@ founder, platform operator or a maintainer's release-acceptance process.
 | Run read-only management automation | Explicitly approved read scopes, up to 30 days. It survives sign-out but remains subject to expiry, revocation, account suspension and manager access. |
 | Connect Stripe or accept creator terms/Page publication | The relevant account holder completes provider consent or their own participation/publication choice. CLI approval does not make those choices for them. |
 
-Longer-lived management writes exist only in Test, through an onboarding grant. `--non-interactive` removes
-terminal prompts; it does not bypass browser authentication or consent.
+Longer-lived management writes exist only in Test, through an onboarding grant. No command prompts on the
+terminal: a missing input fails before any request with an error that names it.
+`--non-interactive` states that contract and every command accepts it; it does
+not bypass browser authentication or consent.
 `--no-open` lets an agent present the approval link instead of opening it.
 Session management grants also require the approving browser session to remain
 signed in. [Management authorization](#authorize-management-access) describes
@@ -618,7 +620,10 @@ and mode scoped; webhook metadata requires a workspace key.
 
 Successful commands emit one JSON object on stdout. Errors emit a sanitized
 JSON object on stderr with a stable code and, when available, HTTP status,
-request ID and `retryAfter` seconds. A write's `--body-file` follows the same
+request ID and `retryAfter` seconds. An error caused by an input that was not
+supplied lists it in `missing`, in the form it is supplied (for example
+`["--program <id>"]`, `["--body-file <path>", "--idempotency-key <identity>"]`
+or `["COMMISH_SECRET_KEY"]`); supplied values are never echoed. A write's `--body-file` follows the same
 rules as [`manage --body-file`](#explicit-management-writes): a refused file
 fails before any request with `code: "invalid_body_file"` and one of the same
 fixed `reason` values. Errors from HTTP 429, 502, 503 and 504
