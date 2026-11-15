@@ -773,7 +773,7 @@ commish status --json
 | `rehearsal` | An attributed conversion was observed, which proves a referral link existed and was used. | Diagnostics |
 | `attributed_test_conversion` | A Test purchase met every activation gate and produced an attributed conversion and a commission. | Diagnostics |
 | `webhook_delivery` | A related webhook was delivered; `not_applicable` without an enabled endpoint. | Diagnostics |
-| `integration_activated` | The Test integration was activated (`testActivatedAt`). | Diagnostics |
+| `integration_activated` | The Test integration was activated (`testActivatedAt`, reprinted as an ISO 8601 instant). | Diagnostics |
 
 Each step is `met`, `unmet`, `not_applicable` or `unknown`. `unknown` always
 carries a `reason`, and is never a guess:
@@ -791,8 +791,12 @@ file presence, the grant's state, scopes and expiry, and the diagnostics check
 states. `next` is one of:
 
 - `{ "kind": "command", "command": "..." }`, with `before` when something has to
-  happen first, `bodyFile` and `body` when the command reads a body file, and
-  `humanAction` when a person has to approve in the browser;
+  happen first, `bodyFile` and `body` when the command reads a body file,
+  `humanAction` when a person has to approve in the browser, and `followedBy` for the
+  action that follows it. A write is only suggested with a grant that can run
+  it: when the grant in hand lacks a scope, the command asks for one that has
+  it, `requiredScopes` names what was missing and `followedBy` is the write, to run
+  with the `authorizationFile` that login returns;
 - `{ "kind": "browser", "url": "...", "actor": "workspace_owner_or_admin", "action": "..." }`
   for the steps only a signed-in owner can take: connecting Stripe, choosing
   eligible products and activating the integration;
@@ -800,9 +804,11 @@ states. `next` is one of:
   as setting `client_reference_id`.
 
 The top-level `nextStep` and `next` repeat the first step, in order, that
-someone can act on. The activation body is a template: read the term version
-with the command in `before`; the server refuses the write if the program has
-moved on from the state setup leaves.
+someone can act on. While `rehearsal` is `unknown` that is the rehearsal
+command, whose `followedBy` is the Test purchase that makes the step `met`.
+The activation body is a template: read the term version with the command in
+`before`; the server refuses the write if the program has moved on from the
+state setup leaves.
 
 The first three steps read local files only. Management access is checked with
 one request, using the grant's own bearer: `--auth-file` or

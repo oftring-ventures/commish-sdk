@@ -22,7 +22,7 @@ const workspaceId = "wrk_123456789012",
   applicationId = "app_123456789012",
   programId = "prg_123456789012",
   api = "https://app.commish.sh/api/management/v1";
-const scopes = ["diagnostics.read", "programs.write", "destinations.write"];
+const scopes = ["diagnostics.read", "programs.write", "destinations.write", "terms.read"];
 const config = {
   version: 1,
   application: { name: "Guestbook" },
@@ -797,16 +797,17 @@ test("a provisioned install reports each remaining step with its evidence and ne
     `commish manage programs.activate --body-file commish-activate.json${auth}`,
   );
   assert.equal(steps.program_active.next.body.programId, programId);
-  assert.deepEqual(
-    [steps.rehearsal.reason, steps.rehearsal.next],
-    [
-      "no_read_operation_reports_the_test_partnership",
-      {
-        kind: "command",
-        command: `commish test rehearsal --program ${programId} --auth-file ${file.path} --json`,
-      },
-    ],
-  );
+  assert.equal(steps.rehearsal.reason, "no_read_operation_reports_the_test_partnership");
+  // The step cannot turn met by itself, so its action says what follows.
+  assert.deepEqual(steps.rehearsal.next, {
+    kind: "command",
+    command: `commish test rehearsal --program ${programId} --auth-file ${file.path} --json`,
+    followedBy: {
+      kind: "guidance",
+      guidance:
+        "Open the returned referralUrl and complete a Test purchase in your product. This step is met once that conversion is attributed; running the command again returns the same link.",
+    },
+  });
   assert.match(steps.attributed_test_conversion.next.guidance, /client_reference_id/);
   assert.equal(
     steps.integration_activated.next.url,
@@ -844,7 +845,19 @@ test("a finished install is complete, and the text output names the next action 
     [0, "complete", null, null, false],
   );
   assert.equal(byStep(result).rehearsal.status, "met");
-  assert.equal(byStep(result).integration_activated.evidence.testActivatedAt, done.testActivatedAt);
+  // The instant is reprinted, never the server's own text.
+  assert.equal(
+    byStep(result).integration_activated.evidence.testActivatedAt,
+    "2026-11-14T21:11:28.860Z",
+  );
+  const [, legacy] = await run(["--json"], {
+    testActivatedAt: "Sat Nov 14 2026 21:11:28 GMT+0000 (private-fixture)",
+  });
+  assert.equal(
+    byStep(JSON.parse(legacy)).integration_activated.evidence.testActivatedAt,
+    "2026-11-14T21:11:28.000Z",
+  );
+  assert(!legacy.includes("private-fixture"));
   const [, text] = await run([], done);
   assert.match(text, /^Commish status \(TEST\): complete\.\n {2}met {12}configuration\n/);
   assert.match(text, /Every step is met\./);
@@ -860,6 +873,138 @@ test("a finished install is complete, and the text output names the next action 
   assert.deepEqual(
     [JSON.parse(hooks).nextStep, JSON.parse(hooks).next.kind],
     ["webhook_delivery", "guidance"],
+  );
+});
+
+test("a write is only suggested with a grant that can run it, and a rehearsal says what follows", async (t) => {
+  const root = directory(t);
+  provisioned(root);
+  // A read-only session beside nothing else: enough to read, not to act.
+  const reader = grantFile(root, "a", {
+    kind: "session",
+    scopes: ["diagnostics.read"],
+    expiresIn: 3600,
+  });
+  const unmet = {
+    testActivatedAt: null,
+    checks: {
+      verified_origin: "unmet",
+      program_active: "unmet",
+      attributed_checkout: "unmet",
+      attributed_conversion_observed: "unmet",
+      commission_observed: "unmet",
+    },
+  };
+  const result = await executeStatus([], {
+    root,
+    env: {},
+    fetcher: server([[reader, "authorized"]], unmet).fetcher,
+  });
+  const steps = byStep(result),
+    login = `commish auth login --workspace ${workspaceId} --workspace-scope --onboarding --scopes resources.read,diagnostics.read,programs.read,programs.write,terms.read,terms.write,destinations.read,destinations.write,credentials.read --mode test --no-open --non-interactive --json`,
+    granted = " --auth-file <authorizationFile> --mode test --json";
+  assert.equal(steps.management_access.status, "met");
+  assert.deepEqual(steps.destination_verified.next, {
+    kind: "command",
+    command: login,
+    humanAction: "open_the_approval_url_and_confirm_the_pairing_code",
+    requiredScopes: ["destinations.write"],
+    followedBy: {
+      kind: "command",
+      before:
+        "Deploy public/.well-known/commish-verification.txt so that https://guestbook.example/.well-known/commish-verification.txt serves it.",
+      command: `commish manage destinations.verify --body-file commish-destination.json${granted}`,
+      bodyFile: "commish-destination.json",
+      body: { applicationId, origin: "https://guestbook.example" },
+    },
+  });
+  assert.deepEqual(
+    [
+      steps.program_active.next.command,
+      steps.program_active.next.requiredScopes,
+      steps.program_active.next.followedBy.command,
+      steps.program_active.next.followedBy.before,
+    ],
+    [
+      login,
+      ["terms.read", "programs.write"],
+      `commish manage programs.activate --body-file commish-activate.json${granted}`,
+      `Read the term version to activate: commish manage terms.list --program ${programId}${granted}`,
+    ],
+  );
+  assert.deepEqual(
+    [
+      steps.rehearsal.next.command,
+      steps.rehearsal.next.requiredScopes,
+      steps.rehearsal.next.followedBy.command,
+      steps.rehearsal.next.followedBy.followedBy.kind,
+    ],
+    [
+      login,
+      ["programs.write"],
+      `commish test rehearsal --program ${programId} --auth-file <authorizationFile> --json`,
+      "guidance",
+    ],
+  );
+  // No command anywhere names the grant that cannot run it.
+  for (const step of ["destination_verified", "program_active", "rehearsal"])
+    assert(!JSON.stringify(steps[step].next).includes(reader.path), step);
+  // Reads and browser actions are unaffected.
+  assert.equal(steps.integration_activated.next.kind, "browser");
+  // LIVE: the read-only session status asks for cannot activate either.
+  write(root, "commish.setup.json", { ...config, mode: "live" }, 0o644);
+  for (const [name, id] of [
+    ["workspace", workspaceId],
+    ["application", applicationId],
+    ["program", programId],
+    ["credential", "key_123456789012"],
+  ])
+    write(root, `.commish/setup/live/${name}.json`, { id });
+  write(
+    root,
+    ".commish/setup/live/credentials.env",
+    `COMMISH_MODE=live\nCOMMISH_APPLICATION_ID=${applicationId}\nCOMMISH_PROGRAM_ID=${programId}\n` +
+      `COMMISH_PUBLISHABLE_KEY=cm_live_pk_${"p".repeat(32)}\nCOMMISH_SECRET_KEY=cm_live_sk_${"k".repeat(43)}\n`,
+  );
+  const session = grantFile(root, "b", {
+    mode: "live",
+    kind: "session",
+    scopes: ["resources.read", "diagnostics.read", "programs.read", "terms.read"],
+    expiresIn: 3600,
+  });
+  const live = await executeStatus([], {
+    root,
+    env: {},
+    fetcher: server([[session, "authorized"]], {
+      mode: "live",
+      checks: { program_active: "unmet" },
+    }).fetcher,
+  });
+  assert.deepEqual(
+    [live.nextStep, live.next.command, live.next.requiredScopes, live.next.followedBy.command],
+    [
+      "program_active",
+      `commish auth login --workspace ${workspaceId} --workspace-scope --scopes terms.read,programs.write --mode live --no-open --non-interactive --json`,
+      ["programs.write"],
+      "commish manage programs.activate --body-file commish-activate.json --auth-file <authorizationFile> --mode live --json",
+    ],
+  );
+  // Text mode prints the whole chain.
+  rmSync(join(root, ".commish/setup/live"), { recursive: true });
+  write(root, "commish.setup.json", config, 0o644);
+  const output = [];
+  await runStatusCommand([], {
+    root,
+    env: {},
+    fetcher: server([[reader, "authorized"]], {
+      testActivatedAt: null,
+      checks: { attributed_conversion_observed: "unmet", attributed_checkout: "unmet" },
+    }).fetcher,
+    out: (value) => output.push(value),
+  });
+  assert.match(
+    output[0],
+    /\nNext \(rehearsal\): run commish auth login [^\n]+\nThen a person must open the approval url and confirm the pairing code\.\nAfter that: run commish test rehearsal --program prg_123456789012 --auth-file <authorizationFile> --json\nAfter that: Open the returned referralUrl and complete a Test purchase in your product\./,
   );
 });
 

@@ -359,16 +359,17 @@ export async function executeStatus(args, options = {}) {
           (typeof activatedAt !== "string" || !Number.isFinite(Date.parse(activatedAt))))
       )
         fail("invalid_response");
+      // Reprinted from the parsed instant, so only a timestamp can reach output.
+      if (activatedAt !== null) activatedAt = new Date(activatedAt).toISOString();
       checks = new Map(diagnostics.checks.map((check) => [check.code, check.status]));
     } catch (error) {
       if (!(error instanceof CliError)) throw error;
       reason = failureCode(error);
     }
   const origin = new URL(client?.baseUrl ?? managementUrl(v["management-url"], env)).origin,
-    tail = `${authFile === undefined ? "" : ` --auth-file ${authFile}`} --mode ${mode} --json`,
     dashboard = `${origin}/dashboard/workspace/${workspaceId}/programs/${programId}`,
     owner = { actor: "workspace_owner_or_admin" };
-  const next = {
+  const actions = (tail) => ({
     destination_verified: {
       kind: "command",
       before: `Deploy ${config?.destination.proofFile ?? "the destination proof file"} so that ${config?.destination.origin ?? "<origin>"}/.well-known/commish-verification.txt serves it.`,
@@ -405,6 +406,12 @@ export async function executeStatus(args, options = {}) {
     rehearsal: {
       kind: "command",
       command: `commish test rehearsal --program ${programId}${tail.replace(` --mode ${mode}`, "")}`,
+      // The step stays unknown until a purchase is attributed, so say what follows.
+      followedBy: {
+        kind: "guidance",
+        guidance:
+          "Open the returned referralUrl and complete a Test purchase in your product. This step is met once that conversion is attributed; running the command again returns the same link.",
+      },
     },
     webhook_delivery: {
       kind: "guidance",
@@ -417,7 +424,41 @@ export async function executeStatus(args, options = {}) {
       ...owner,
       action: "run_diagnostics_then_activate_integration",
     },
+  });
+  // A command in next must be one the grant in hand can run. Where its scopes
+  // lack what the command needs, next asks for a grant that has them and
+  // followedBy carries the command to run with the file that login returns.
+  const needs = {
+    destination_verified: ["destinations.write"],
+    program_active: ["terms.read", "programs.write"],
+    rehearsal: ["programs.write"],
   };
+  const held = actions(
+      `${authFile === undefined ? "" : ` --auth-file ${authFile}`} --mode ${mode} --json`,
+    ),
+    granted = actions(` --auth-file <authorizationFile> --mode ${mode} --json`);
+  const next = Object.fromEntries(
+    Object.keys(held).map((step) => {
+      const lacking = (needs[step] ?? []).filter((scope) => !access.scopes?.includes(scope));
+      return [
+        step,
+        lacking.length
+          ? {
+              kind: "command",
+              command:
+                `commish auth login --workspace ${workspaceId} --workspace-scope ` +
+                (mode === "test"
+                  ? `--onboarding --scopes ${setupOnboardingScopes.join(",")}`
+                  : `--scopes ${needs[step].join(",")}`) +
+                ` --mode ${mode} --no-open --non-interactive --json`,
+              ...approval,
+              requiredScopes: lacking,
+              followedBy: granted[step],
+            }
+          : held[step],
+      ];
+    }),
+  );
   const source = "diagnostics.get";
   for (const step of steps.slice(4)) {
     if (reason) add(step, "unknown", { source }, { reason });
@@ -501,7 +542,15 @@ function statusText(result) {
       "Reads commish.setup.json and .commish/ in the current directory, then the management grant and one diagnostics report. Changes nothing.\n" +
       "Exit 0 means every step is met, 2 that a step is unmet or unknown, 1 an error. Use --json for evidence."
     );
-  const next = result.next;
+  // One action as text; followedBy is what comes after it, in the same shapes.
+  const action = (next) =>
+    (next.kind === "browser"
+      ? `open ${next.url} in the browser (${next.action.replaceAll("_", " ")}).`
+      : next.kind === "command"
+        ? `${next.before ? `${next.before}\nThen run: ` : "run "}${next.command}` +
+          (next.body ? `\nBody file ${next.bodyFile}: ${JSON.stringify(next.body)}` : "") +
+          (next.humanAction ? `\nThen a person must ${next.humanAction.replaceAll("_", " ")}.` : "")
+        : next.guidance) + (next.followedBy ? `\nAfter that: ${action(next.followedBy)}` : "");
   return (
     `Commish status (${result.mode.toUpperCase()}): ${result.status}.\n` +
     result.steps
@@ -510,17 +559,8 @@ function statusText(result) {
           `  ${item.status.padEnd(14)} ${item.step}${item.reason ? ` (${item.reason})` : ""}\n`,
       )
       .join("") +
-    (next
-      ? `Next (${result.nextStep}): ` +
-        (next.kind === "browser"
-          ? `open ${next.url} in the browser (${next.action.replaceAll("_", " ")}).`
-          : next.kind === "command"
-            ? `${next.before ? `${next.before}\nThen run: ` : "run "}${next.command}` +
-              (next.body ? `\nBody file ${next.bodyFile}: ${JSON.stringify(next.body)}` : "") +
-              (next.humanAction
-                ? `\nThen a person must ${next.humanAction.replaceAll("_", " ")}.`
-                : "")
-            : next.guidance)
+    (result.next
+      ? `Next (${result.nextStep}): ${action(result.next)}`
       : result.status === "complete"
         ? "Every step is met."
         : "No next action is known; see --json for the reasons.") +
