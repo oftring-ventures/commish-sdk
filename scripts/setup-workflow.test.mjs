@@ -105,7 +105,10 @@ test("waits for provider completion with no automatic browser and revokes tempor
   assert.equal(result.integrationVerified, false);
   assert.equal(f.revoked(), 1);
   assert.equal(f.opened.length, 0);
-  assert.equal(f.notices[0].status, "browser_action_required");
+  assert.deepEqual(
+    f.notices.map((notice) => notice.status),
+    ["provisioned", "browser_action_required", "stripe_connected"],
+  );
   assert(!JSON.stringify(result).includes("readinessInput"));
   assert(!f.authorizations[0].input.operations.includes("webhook.write"));
   assert.deepEqual(f.authorizations[0].input.setupIntent, { version: 1, ...business });
@@ -116,9 +119,10 @@ test("a wait that ends before Stripe is connected repeats the connection link in
   const f = fixture(),
     result = await runSetup("/repo", config, { ...options, waitSeconds: 0 }, f.dependencies);
   assert.equal(result.status, "action_required");
-  assert.deepEqual(result.browserActions, [{ action: "connect_stripe", url: f.notices[0].url }]);
+  const handoff = f.notices.find((notice) => notice.status === "browser_action_required");
+  assert.deepEqual(result.browserActions, [{ action: "connect_stripe", url: handoff.url }]);
   assert.equal(
-    f.notices[0].url,
+    handoff.url,
     "https://app.commish.sh/cli/setup/workspace/wrk_123456789012/stripe?mode=test",
   );
 });
@@ -182,7 +186,77 @@ test("continues after publishing proof and transient network failure", async () 
   assert.equal(result.proof, null);
   assert.equal(result.status, "configured");
   assert.equal(attempts, 2);
-  assert.equal(f.notices[0].status, "publish_required");
+  // The failed check is reported as a wait, the successful one as a stage.
+  assert.deepEqual(f.notices, [
+    {
+      status: "provisioned",
+      mode: "test",
+      workspaceId: "wrk_123456789012",
+      applicationId: "app_123456789012",
+      programId: "prg_123456789012",
+      credentialsFile: undefined,
+      webhookFile: undefined,
+    },
+    { status: "publish_required", ...f.result.proof },
+    {
+      status: "browser_action_required",
+      action: "connect_stripe",
+      url: "https://app.commish.sh/cli/setup/workspace/wrk_123456789012/stripe?mode=test",
+      mode: "test",
+    },
+    { status: "waiting", code: "verification_unavailable" },
+    { status: "destination_verified", origin: "https://guestbook.example" },
+    { status: "stripe_connected", mode: "test" },
+  ]);
+});
+test("a wait for Stripe after the destination is verified is announced once, then its completion", async () => {
+  const f = fixture();
+  f.result.proof = { path: "public/proof.txt", url: "https://guestbook.example/proof.txt" };
+  f.result.credentialsFile = ".commish/setup/test/credentials.env";
+  f.result.webhookFile = null;
+  let reads = 0;
+  f.session.readReadiness = async () => ({
+    ...f.result.readiness,
+    stripeStatus: ++reads < 4 ? "not_connected" : "connected",
+  });
+  const result = await runSetup("/repo", config, options, f.dependencies);
+  assert.equal(result.status, "configured");
+  assert.deepEqual(
+    f.notices.map((notice) => notice.code ?? notice.status),
+    [
+      "provisioned",
+      "publish_required",
+      "browser_action_required",
+      "destination_verified",
+      "stripe_not_connected",
+      "stripe_connected",
+    ],
+  );
+  assert.deepEqual(f.notices[0], {
+    status: "provisioned",
+    mode: "test",
+    workspaceId: "wrk_123456789012",
+    applicationId: "app_123456789012",
+    programId: "prg_123456789012",
+    credentialsFile: ".commish/setup/test/credentials.env",
+    webhookFile: null,
+  });
+  // Stripe deferred and nothing to publish: provisioning is the last stage.
+  const deferred = fixture();
+  await runSetup("/repo", { ...config, stripe: "later" }, options, deferred.dependencies);
+  assert.deepEqual(
+    deferred.notices.map((notice) => notice.status),
+    ["provisioned"],
+  );
+  // A wait that ends first reports no stage that was not reached.
+  const waiting = fixture();
+  waiting.session.readReadiness = async () => waiting.result.readiness;
+  const unfinished = await runSetup("/repo", config, options, waiting.dependencies);
+  assert.equal(unfinished.status, "action_required");
+  assert.deepEqual(
+    waiting.notices.map((notice) => notice.code ?? notice.status),
+    ["provisioned", "browser_action_required", "stripe_not_connected"],
+  );
 });
 test("permission, expiry, abort and provisioning failures never leave owned authority live", async () => {
   const expired = fixture();
