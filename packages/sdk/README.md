@@ -149,9 +149,10 @@ plans by default and changes files only with `--write`:
   `@AGENTS.md` to it so Claude Code loads the section.
 
 Both texts are cut from the `commish init` playbook of the CLI that writes them.
-Rerun the command with `--write` after upgrading. `--json` returns
-one receipt listing each file as `create`, `update` or `unchanged`
-(`created` and `updated` once written). Exit 0 is a plan or a
+Rerun the command with `--write` after upgrading. `--remove` plans, and with
+`--write` performs, the removal of the section and the skill. `--json` returns
+one receipt listing each file as `create`, `update`, `delete`, `unchanged` or
+`absent` (`created`, `updated` and `deleted` once written). Exit 0 is a plan or a
 completed write; 1 is a sanitized error such as `agent_guidance_conflict`, with a
 `reason` per file, and no file changed.
 

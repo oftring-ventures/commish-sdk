@@ -62,6 +62,7 @@ test("the default run plans both files and writes nothing", (t) => {
   const before = tree(root);
   const plan = receipt(root);
   assert.equal(plan.status, "plan");
+  assert.equal(plan.action, "install");
   assert.equal(plan.sdkVersion, version);
   assert.deepEqual(
     [plan.mutations, plan.networkRequests, plan.integrationVerified],
@@ -118,7 +119,7 @@ test("--write creates the section and the skill from the playbook, and a rerun c
   ]);
 });
 
-test("an existing AGENTS.md keeps every byte outside the markers, through insertion and update", (t) => {
+test("an existing AGENTS.md keeps every byte outside the markers, through update and removal", (t) => {
   for (const existing of [
     "# Shop\n\nUse pnpm.\n",
     "# Shop\r\n\r\nUse pnpm.\r\n",
@@ -142,7 +143,38 @@ test("an existing AGENTS.md keeps every byte outside the markers, through insert
     assert.deepEqual(statuses(receipt(root)), ["AGENTS.md: update", `${skill}: unchanged`]);
     assert.equal(statuses(receipt(root, "--write"))[0], "AGENTS.md: updated");
     assert.equal(text(root, "AGENTS.md"), `${installed}${eol}## After${eol}`);
+    writeFileSync(join(root, "AGENTS.md"), installed);
+    const removed = receipt(root, "--remove", "--write");
+    assert.equal(removed.status, "files_removed");
+    assert.deepEqual(statuses(removed), ["AGENTS.md: updated", `${skill}: deleted`]);
+    assert.equal(text(root, "AGENTS.md"), existing.endsWith(eol) ? existing : existing + eol);
+    assert(!existsSync(join(root, ".claude")));
+    assert.deepEqual(statuses(receipt(root, "--remove", "--write")), [
+      "AGENTS.md: unchanged",
+      `${skill}: absent`,
+    ]);
   }
+});
+
+test("removal restores a repository that had neither file and leaves other skills alone", (t) => {
+  const root = repository(t);
+  const before = tree(root);
+  receipt(root, "--write");
+  assert.deepEqual(statuses(receipt(root, "--remove")), ["AGENTS.md: delete", `${skill}: delete`]);
+  assert(existsSync(join(root, skill)));
+  assert.deepEqual(statuses(receipt(root, "--remove", "--write")), [
+    "AGENTS.md: deleted",
+    `${skill}: deleted`,
+  ]);
+  assert.deepEqual(tree(root), before);
+  const shared = repository(t, { ".claude/skills/other/SKILL.md": "custom" });
+  receipt(shared, "--write");
+  receipt(shared, "--remove", "--write");
+  assert.deepEqual(readdirSync(join(shared, ".claude/skills")), ["other"]);
+  // A skill this command did not write is neither replaced nor removed.
+  const custom = repository(t, { [skill]: "my own skill\n" });
+  assert.equal(statuses(receipt(custom, "--remove", "--write"))[1], `${skill}: unchanged`);
+  assert.equal(text(custom, skill), "my own skill\n");
 });
 
 test("conflicts change no file and report a reason without echoing content", (t) => {
@@ -219,6 +251,9 @@ test("CLAUDE.md is reported and never edited", (t) => {
       state === "agents_md_not_referenced",
     );
     assert.equal(text(root, "CLAUDE.md"), body);
+    assert.deepEqual(receipt(root, "--remove").nextSteps, [
+      "rerun_the_same_arguments_with_--write",
+    ]);
   }
   const linked = repository(t);
   symlinkSync("AGENTS.md", join(linked, "CLAUDE.md"));
@@ -233,7 +268,6 @@ test("arguments are closed, help is local, and the CLI lists the command", (t) =
     ["private-fixture"],
     ["--write", "--write"],
     ["--help", "--write"],
-    ["--remove"],
   ]) {
     const refused = run(root, ...args, "--json");
     assert.deepEqual([refused.status, refused.stdout], [1, ""]);
@@ -242,7 +276,7 @@ test("arguments are closed, help is local, and the CLI lists the command", (t) =
   assert.match(run(root, "--bad").stderr, /^Usage: commish agent setup \[--write\]/);
   const help = run(root, "--help");
   assert.deepEqual([help.status, help.stderr], [0, ""]);
-  assert.match(help.stdout, /^Usage: commish agent setup \[--write\] \[--json\]\n/);
+  assert.match(help.stdout, /^Usage: commish agent setup \[--write\] \[--remove\] \[--json\]\n/);
   const described = receipt(root, "-h");
   assert.equal(described.status, "help");
   assert.deepEqual(described.files, ["AGENTS.md", skill]);

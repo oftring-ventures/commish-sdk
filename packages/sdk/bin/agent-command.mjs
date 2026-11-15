@@ -11,6 +11,7 @@ import {
   readlinkSync,
   realpathSync,
   renameSync,
+  rmdirSync,
   unlinkSync,
   writeFileSync,
 } from "node:fs";
@@ -22,7 +23,7 @@ import { inspectRepository } from "./setup-plan.mjs";
 
 export const agentsFile = "AGENTS.md";
 export const skillFile = ".claude/skills/commish/SKILL.md";
-// Only the text from the first marker to the second is ever replaced.
+// Only the text from the first marker to the second is ever replaced or removed.
 export const markers = { begin: "<!-- commish:begin -->", end: "<!-- commish:end -->" };
 // The skill is a whole file; this line marks it as written by this command.
 const skillMarker = "<!-- commish:skill -->";
@@ -52,7 +53,7 @@ export function agentGuidance(root) {
     markers.begin,
     "## Commish",
     "",
-    `<!-- Written by "commish agent setup" (Commish CLI ${version}). Every run replaces the text between the commish markers. -->`,
+    `<!-- Written by "commish agent setup" (Commish CLI ${version}). Every run replaces the text between the commish markers; "commish agent setup --remove --write" removes it. -->`,
     "",
     `Guidance for coding agents working on this application's Commish integration (creator referrals, attributed purchases and commissions). Before installing, changing or testing it, read \`${skillFile}\` (written for \`@commish/sdk@${version}\`) or run \`${cli} init\` for a playbook from a fresh scan of this repository.`,
     "",
@@ -111,31 +112,50 @@ function located(text) {
     fail("markers_malformed");
   return { before: text.slice(0, begin), after: text.slice(end + markers.end.length) };
 }
-function agentsPlan(previous, section) {
-  if (previous === null) return `${section}\n`;
+function agentsPlan(previous, section, remove) {
+  if (previous === null) return remove ? null : `${section}\n`;
   const eol = previous.includes("\r\n") ? "\r\n" : "\n";
   const found = located(previous);
-  const text = section.replaceAll("\n", eol);
-  if (found) return found.before + text + found.after;
-  const gap = previous === "" ? "" : previous.endsWith(eol) ? eol : eol + eol;
-  return previous + gap + text + eol;
+  if (!remove) {
+    const text = section.replaceAll("\n", eol);
+    if (found) return found.before + text + found.after;
+    const gap = previous === "" ? "" : previous.endsWith(eol) ? eol : eol + eol;
+    return previous + gap + text + eol;
+  }
+  if (!found) return previous;
+  // Take the line break after the section and the blank line an insertion added.
+  const after = found.after.startsWith(eol) ? found.after.slice(eol.length) : found.after;
+  const before = found.before.endsWith(eol + eol)
+    ? found.before.slice(0, -eol.length)
+    : found.before;
+  return (before + after).trim() === "" ? null : before + after;
 }
-function skillPlan(previous, skill) {
-  if (previous !== null && !previous.includes(skillMarker)) fail("not_written_by_commish");
-  return skill;
+function skillPlan(previous, skill, remove) {
+  if (previous === null) return remove ? null : skill;
+  if (!previous.includes(skillMarker)) return remove ? previous : fail("not_written_by_commish");
+  return remove ? null : skill;
 }
 
 // Planning reads the two files and CLAUDE.md, never following a symbolic link.
-export function planAgentSetup(root) {
+export function planAgentSetup(root, remove = false) {
   const content = agentGuidance(root);
   const files = [
-    [agentsFile, (previous) => agentsPlan(previous, content.section)],
-    [skillFile, (previous) => skillPlan(previous, content.skill)],
+    [agentsFile, (previous) => agentsPlan(previous, content.section, remove)],
+    [skillFile, (previous) => skillPlan(previous, content.skill, remove)],
   ].map(([path, next]) => {
     try {
       const previous = read(root, path),
         body = next(previous);
-      const status = body === previous ? "unchanged" : previous === null ? "create" : "update";
+      const status =
+        body === previous
+          ? previous === null
+            ? "absent"
+            : "unchanged"
+          : body === null
+            ? "delete"
+            : previous === null
+              ? "create"
+              : "update";
       return { path, status, previous, body };
     } catch (error) {
       return { path, status: "conflict", reason: error.message };
@@ -169,7 +189,21 @@ function directory(root, path, create) {
 }
 // A complete file is published by link or rename, and only while the target is
 // still what the plan read.
-function apply(root, { path, previous, body }) {
+function apply(root, { path, status, previous, body }) {
+  if (status === "delete") {
+    const target = directory(root, path, false);
+    if (read(root, path) !== previous) fail("agent_guidance_changed");
+    unlinkSync(target);
+    // Leave no empty skill directories behind; a directory in use stays.
+    if (path === skillFile)
+      for (let parent = dirname(path); parent !== "."; parent = dirname(parent))
+        try {
+          rmdirSync(join(root, parent));
+        } catch {
+          break;
+        }
+    return;
+  }
   const target = directory(root, path, true);
   let temporary = join(dirname(target), `.commish-agent-${basename(target)}.${randomUUID()}.tmp`),
     fd;
@@ -205,13 +239,13 @@ function apply(root, { path, previous, body }) {
   }
 }
 
-const usage = "Usage: commish agent setup [--write] [--json]";
+const usage = "Usage: commish agent setup [--write] [--remove] [--json]";
 export const agentSetupHelp = () => ({
   status: "help",
-  command: "agent setup [--write] [--json]",
-  flags: ["--write", "--json", "--help"],
+  command: "agent setup [--write] [--remove] [--json]",
+  flags: ["--write", "--remove", "--json", "--help"],
   purpose:
-    "Plans, and with --write installs, Commish guidance for coding agents in this repository: a marker-delimited section in AGENTS.md and a skill file, both generated from this CLI version's commish init playbook.",
+    "Plans, and with --write installs, Commish guidance for coding agents in this repository: a marker-delimited section in AGENTS.md and a skill file, both generated from this CLI version's commish init playbook. --remove takes them out again.",
   files: [agentsFile, skillFile],
   markers,
   mutations: "only_with_--write",
@@ -224,7 +258,7 @@ const reasons = {
   not_written_by_commish: "exists and was not written by this command; move it away",
   unsafe_file_path: "is a symbolic link or not a regular file; only regular files are written",
 };
-const done = { create: "created", update: "updated" };
+const done = { create: "created", update: "updated", delete: "deleted" };
 const codes = new Set(["unsafe_file_path", "agent_guidance_changed", "agent_guidance_unavailable"]);
 
 export function runAgentSetupCommand(
@@ -238,22 +272,23 @@ export function runAgentSetupCommand(
   };
   const help = args.some((arg) => ["--help", "-h"].includes(arg));
   if (
-    args.some((arg) => !["--write", "--json", "--help", "-h"].includes(arg)) ||
+    args.some((arg) => !["--write", "--remove", "--json", "--help", "-h"].includes(arg)) ||
     new Set(args).size !== args.length ||
-    (help && args.includes("--write"))
+    (help && args.some((arg) => ["--write", "--remove"].includes(arg)))
   )
     return error({ code: "invalid_arguments" }, usage);
   if (help) {
     out(
       json
         ? JSON.stringify(agentSetupHelp())
-        : `${usage}\nPlans Commish guidance for coding agents in this repository: a section in ${agentsFile} between the\n${markers.begin} and ${markers.end} markers, and a skill at ${skillFile}.\nBoth come from this CLI version's commish init playbook. --write applies the plan and changes nothing\noutside the markers. CLAUDE.md is reported, never edited. No network requests.`,
+        : `${usage}\nPlans Commish guidance for coding agents in this repository: a section in ${agentsFile} between the\n${markers.begin} and ${markers.end} markers, and a skill at ${skillFile}.\nBoth come from this CLI version's commish init playbook. --write applies the plan and changes nothing\noutside the markers; --remove plans their removal. CLAUDE.md is reported, never edited. No network requests.`,
     );
     return 0;
   }
-  const write = args.includes("--write");
+  const write = args.includes("--write"),
+    remove = args.includes("--remove");
   try {
-    const plan = planAgentSetup(realpathSync(root));
+    const plan = planAgentSetup(realpathSync(root), remove);
     const conflicts = plan.files.filter(({ status }) => status === "conflict");
     if (conflicts.length)
       return error(
@@ -272,9 +307,10 @@ export function runAgentSetupCommand(
     if (write)
       for (const file of plan.files) if (done[file.status]) apply(realpathSync(root), file);
     const pending = plan.files.some(({ status }) => done[status]);
-    const unreferenced = plan.claudeMd === "agents_md_not_referenced";
+    const unreferenced = !remove && plan.claudeMd === "agents_md_not_referenced";
     const result = {
-      status: write ? "files_installed" : "plan",
+      status: !write ? "plan" : remove ? "files_removed" : "files_installed",
+      action: remove ? "remove" : "install",
       sdkVersion: manifest.version,
       mutations: write && pending,
       networkRequests: false,
@@ -297,7 +333,7 @@ export function runAgentSetupCommand(
         : [
             !write
               ? `Commish agent guidance plan (${pending ? "use --write to apply" : "nothing to change"}). No files changed.`
-              : "Commish agent guidance installed.",
+              : `Commish agent guidance ${remove ? "removed" : "installed"}.`,
             ...result.files.map(({ path, status }) => `${status}: ${path}`),
             ...(unreferenced
               ? [
