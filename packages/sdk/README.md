@@ -136,6 +136,44 @@ commands for your package manager and framework, the business choices to collect
 and the milestones to report. It makes no network requests and writes no files;
 `--json` returns the commands alongside the Markdown.
 
+`commish agent setup` keeps that guidance where coding agents look for it. It
+plans by default and changes files only with `--write`. Run it in the application
+directory: a directory without `package.json` is refused as
+`application_root_not_found`, so a run in a home directory cannot install a skill
+for every project.
+
+- `AGENTS.md` gets a Commish section between `<!-- commish:begin -->` and
+  `<!-- commish:end -->`, each alone on its own line. The file is created when
+  absent. Only the text between the markers is ever replaced, so a rerun updates
+  the section in place and otherwise changes nothing. A file that names a marker
+  anywhere else, for example quoted in a sentence, is a conflict.
+- `.claude/skills/commish/SKILL.md` gets the playbook's rules, steps and
+  references for the installed version. A skill file this command did not write
+  is reported as a conflict and left alone.
+- `CLAUDE.md` is never edited. When it exists without mentioning `AGENTS.md`,
+  the receipt reports `claudeMd: "agents_md_not_referenced"`; add a line
+  `@AGENTS.md` to it so Claude Code loads the section.
+
+Both texts are cut from the `commish init` playbook of the CLI that writes them;
+when Creator Pages are installed the section also carries the copyable block of
+the [Pages agent guide](https://github.com/oftring-ventures/commish-sdk/blob/v0.7.1/packages/next/guides/agents.md).
+Rerun the command with `--write` after upgrading. `--remove` plans, and with
+`--write` performs, the removal of the section and the skill; it works in any
+directory. An `AGENTS.md` that ended with a line break comes back byte for byte;
+one that did not keeps the line break the insertion added, and one left with no
+bytes is deleted, so a file that was empty before the install is not restored.
+When `CLAUDE.md` mentions an `AGENTS.md` that removal deletes, the receipt adds
+the next step `remove_agents_md_reference_from_claude_md`. `--json` returns
+one receipt listing each file as `create`, `update`, `delete`, `unchanged` or
+`absent` (`created`, `updated` and `deleted` once written). The command never
+prompts, and `--non-interactive` is accepted. Exit 0 is a plan or a completed
+write; 1 is a sanitized error. `agent_guidance_conflict`, with a `reason` per
+file, and `application_root_not_found` change no file. Any other error carries
+`mutations` and, when a write failed part-way, `files` with what had already
+changed (`created`, `updated`, `deleted`) and what was `not_written` or
+`not_removed`; the skill is written before `AGENTS.md` and removed after it, and
+a rerun finishes the job.
+
 Since 0.2.1, `pnpm exec commish setup --plan --json` previews setup first.
 Planning reads local configuration and bounded package metadata, reports missing
 inputs by field, and identifies framework/package-manager hints. It makes no
@@ -801,7 +839,7 @@ commish status --json
 | --- | --- | --- |
 | `configuration` | `commish.setup.json` (or `--config`) is complete, or setup already started from flags. | Local file |
 | `setup_approved` | A workspace owner approved setup: `workspace.json` records the workspace. | `.commish/setup/<mode>/` |
-| `resources_provisioned` | The application, program and credential are recorded and `credentials.env` exists, plus the webhook endpoint and `webhook.env` when a webhook is configured. | `.commish/setup/<mode>/` |
+| `resources_provisioned` | The application, program and credential are recorded and `credentials.env` is the file setup wrote, plus the webhook endpoint and `webhook.env` when a webhook is configured or recorded. `unknown` when nothing says whether a webhook belongs to the setup. | `.commish/setup/<mode>/` |
 | `management_access` | A management grant for this workspace and mode is authorized and includes `diagnostics.read`. | The grant, with its own bearer |
 | `destination_verified` | The destination origin is verified (`verified_origin`). | Diagnostics |
 | `stripe_connected` | The workspace's Stripe account is connected in this mode (`stripe_connection`). | Diagnostics |
@@ -817,6 +855,7 @@ carries a `reason`, and is never a guess:
 
 | `reason` | Meaning |
 | --- | --- |
+| `webhook_request_not_recorded` | The recorded resources are complete, but there is neither a complete configuration nor a recorded endpoint to say whether a webhook is still owed. |
 | `program_not_provisioned` | Setup has not recorded a program here, so there is nothing to ask about. |
 | `management_access_required` | No usable grant; `management_access` names the command that asks for one. |
 | `no_read_operation_reports_the_test_partnership` | Nothing reports the rehearsal partnership until a conversion is attributed. `commish test rehearsal` is safe to repeat and returns the same referral link. |
@@ -866,7 +905,14 @@ credential file counts only when it is the one setup wrote: its fields, key
 formats, mode and the recorded application and program are checked. No key or
 bearer is printed, and server text is never repeated. A setup that was started
 from flags has no configuration file to name, so its next action is guidance to
-repeat the original command rather than a command. A state file that an interrupted setup left
+repeat the original command rather than a command. Setup records the webhook
+endpoint last and keeps no note of what was asked for, so
+`resources_provisioned` is `met` only when the evidence says whether a webhook
+belongs to the setup (`evidence.webhook`): a complete configuration
+(`configured` or `not_configured`) or a recorded endpoint (`recorded`). Without
+either it is `unknown` with `webhook_request_not_recorded`, never `met`:
+restore the configuration file, or repeat the original command, which resumes
+and is safe to repeat. A state file that an interrupted setup left
 half-published is refused with `unsafe_file_permissions` rather than repaired;
 rerun the same `commish setup` command, which repairs it. Text is the default
 output; `--json` prints one object with `status` (`complete` or `incomplete`),

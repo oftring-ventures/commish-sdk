@@ -238,7 +238,18 @@ export async function executeStatus(args, options = {}) {
     { source: `${journal.directory}/workspace.json`, workspaceId },
     workspaceId ? {} : { next: provision },
   );
-  const wantsWebhook = Boolean(config?.webhook) || journal.webhook !== null;
+  // Whether a webhook belongs to this setup. Setup records the endpoint last,
+  // after the credential, and keeps no note of what was asked for: without a
+  // complete configuration and without a recorded endpoint it cannot be told
+  // whether provisioning finished or stopped before the webhook.
+  const webhook = config?.webhook
+      ? "configured"
+      : journal.webhook !== null
+        ? "recorded"
+        : config
+          ? "not_configured"
+          : "unknown",
+    wantsWebhook = webhook === "configured" || webhook === "recorded";
   const files = {
     credentialsFile: privateFile(
       root,
@@ -258,18 +269,26 @@ export async function executeStatus(args, options = {}) {
     Boolean(applicationId && programId && journal.credential) &&
     files.credentialsFile === "present" &&
     (!wantsWebhook || (journal.webhook !== null && files.webhookFile === "present"));
+  // Met rests on the recorded resources plus a known answer about the webhook.
+  const settled = provisioned && webhook !== "unknown";
   add(
     "resources_provisioned",
-    provisioned ? "met" : "unmet",
+    settled ? "met" : provisioned ? "unknown" : "unmet",
     {
       source: journal.directory,
       applicationId,
       programId,
       credentialId: journal.credential?.id ?? null,
+      webhook,
       ...(wantsWebhook ? { webhookId: journal.webhook?.id ?? null } : {}),
       ...files,
     },
-    provisioned ? {} : { next: provision },
+    settled
+      ? {}
+      : {
+          ...(provisioned ? { reason: "webhook_request_not_recorded" } : {}),
+          next: provision,
+        },
   );
 
   // Management access: an explicit file or token, else the newest stored grant.

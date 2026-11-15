@@ -1,0 +1,12 @@
+{
+  "source": "packages/next/guides/agents.md",
+  "pages": [
+    "- Read the installed @commish/next/guides/pages.md and guides/agents.md. Confirm matching installed SDK/Next versions >=0.3.0; earlier versions do not include Pages.",
+    "- Inspect first; run commish-next pages init --dry-run --json before --apply. Preserve the package manager, lockfile, current routing, authentication and user edits.",
+    "- Keep Commish secret keys server-only and out of logs/commits. Use application-scoped TEST credentials until LIVE release is explicitly authorized.",
+    "- Default to /c/[creator]. Root aliases may run only after merchant routing via fallback or an explicit CMS handoff; verify before promoting them.",
+    "- Wire real consent; keep page measurement distinct from commission attribution. Never report browser purchases as trusted conversions.",
+    "- Installed is not verified: test typed visit, capture, checkout, trusted conversion/refund, duplicates, consent withdrawal, routing conflicts and new creators without redeployment.",
+    "- Upgrade paired packages intentionally. On removal, disable Pages/aliases/tests and remove only owned integration code; preserve historical records and other referrals."
+  ]
+}
