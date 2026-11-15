@@ -98,11 +98,10 @@ function storedGrants(root, mode, workspaceId) {
   }
   return entries
     .filter((entry) => entry.isDirectory() && /^[0-9a-f]{24}$/.test(entry.name))
-    .slice(0, 64)
     .flatMap((entry) => {
       const path = `.commish/management/${entry.name}/authorization.json`;
       try {
-        const { proposal } = readManagementAuthorization(root, path);
+        const { proposal } = readManagementAuthorization(root, path, { recover: false });
         return proposal.mode === mode &&
           proposal.workspaceId === workspaceId &&
           proposal.scopes.includes("diagnostics.read")
@@ -226,8 +225,8 @@ export async function executeStatus(args, options = {}) {
       ? storedGrants(root, mode, workspaceId)
       : [];
   let client = null,
-    access = { source: "none", status: "missing" },
     authFile;
+  const tried = [];
   for (const path of candidates) {
     const source = path ?? "COMMISH_MANAGEMENT_TOKEN";
     let candidate;
@@ -240,6 +239,7 @@ export async function executeStatus(args, options = {}) {
         url: v["management-url"],
         fetcher: options.fetcher,
         signal: options.signal,
+        recover: false,
       });
     } catch (error) {
       // A file or token the caller named must be usable; a stored one is skipped.
@@ -248,33 +248,42 @@ export async function executeStatus(args, options = {}) {
     }
     try {
       const grant = await candidate.status();
-      access = {
+      // A named grant for another workspace cannot answer for this install.
+      const foreign = workspaceId !== null && grant.workspaceId !== workspaceId;
+      tried.push({
         source,
         status: grant.status,
         kind: grant.kind,
         workspaceId: grant.workspaceId,
         scopes: grant.scopes,
         expiresAt: grant.expiresAt,
-      };
-      if (grant.status === "authorized") {
+        ...(foreign ? { code: "workspace_mismatch" } : {}),
+      });
+      if (grant.status === "authorized" && !foreign) {
         client = candidate;
         authFile = path;
         break;
       }
     } catch (error) {
       if (!(error instanceof CliError)) throw error;
-      access = { source, status: "unavailable", code: failureCode(error) };
+      tried.push({ source, status: "unavailable", code: failureCode(error) });
       // An outage is the same for every candidate; a refused grant is not.
       if (error.message === "service_unavailable" || error.detail?.retryable) break;
     }
   }
+  // Without an authorized grant, a request that is still pending is the one to
+  // report, so it is resumed instead of replaced; otherwise the newest tried.
+  const access = client
+    ? tried.at(-1)
+    : (tried.find((state) => state.status === "pending" && !state.code) ??
+      tried[0] ?? { source: "none", status: "missing" });
   const usable = client !== null && access.scopes.includes("diagnostics.read");
   const login = !workspaceId
     ? provision
     : {
         kind: "command",
         command:
-          access.status === "pending" && access.source.startsWith(".commish/")
+          access.status === "pending" && !access.code && access.source.startsWith(".commish/")
             ? `commish auth login --auth-file ${access.source} --mode ${mode} --no-open --non-interactive --json`
             : `commish auth login --workspace ${workspaceId} --workspace-scope ` +
               (mode === "test"

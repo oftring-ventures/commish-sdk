@@ -773,8 +773,11 @@ one request, using the grant's own bearer: `--auth-file` or
 `diagnostics.read` (the onboarding grant from setup qualifies). The evidence
 names the file and the grant's state, scopes and expiry. When no grant is
 usable, the next command asks for one: an onboarding grant in Test, a
-read-only session in LIVE; a stored request that is still pending is resumed.
-An unreachable service is reported as `unavailable` with its code.
+read-only session in LIVE; a stored request that is still pending is resumed,
+even when an older grant sits beside it. A grant named with `--auth-file` or
+the token that belongs to another workspace than the one setup recorded does
+not count: it is reported with `workspace_mismatch`. An unreachable service is
+reported as `unavailable` with its code.
 
 The command changes nothing. Key material and bearers are checked for presence
 and shape and never printed. A state file that an interrupted setup left

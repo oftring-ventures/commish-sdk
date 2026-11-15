@@ -83,7 +83,7 @@ const hook = {
   eventTypes: ["conversion.created"],
 };
 function grantFile(root, letter, patch = {}) {
-  const token = `cm_mgmt_${patch.mode ?? "test"}_${letter.repeat(43)}`,
+  const token = `cm_mgmt_${patch.mode ?? "test"}_${letter.repeat(43).slice(0, 43)}`,
     hash = tokenHash(token),
     path = `.commish/management/${hash.slice(0, 24)}/authorization.json`;
   const proposal = {
@@ -437,6 +437,145 @@ test("the newest authorized grant for this workspace and mode is used; others ar
     [byStep(limited).management_access.status, limited.nextStep],
     ["unmet", "management_access"],
   );
+});
+
+test("a pending request is resumed even beside an older grant, in either order", async (t) => {
+  const root = directory(t);
+  provisioned(root);
+  const older = grantFile(root, "a"),
+    newer = grantFile(root, "b");
+  utimesSync(join(root, older.path), new Date(1_700_000_000_000), new Date(1_700_000_000_000));
+  utimesSync(join(root, newer.path), new Date(), new Date());
+  const resume = (file) => ({
+    kind: "command",
+    command: `commish auth login --auth-file ${file.path} --mode test --no-open --non-interactive --json`,
+    humanAction: "open_the_approval_url_and_confirm_the_pairing_code",
+  });
+  // The grant expired, a new login is waiting for approval: the next pass resumes it.
+  for (const [states, pending] of [
+    [
+      [
+        [newer, "pending"],
+        [older, "expired"],
+      ],
+      newer,
+    ],
+    [
+      [
+        [newer, "revoked"],
+        [older, "pending"],
+      ],
+      older,
+    ],
+  ]) {
+    const management = server(states);
+    const result = await executeStatus([], { root, env: {}, fetcher: management.fetcher });
+    assert.deepEqual(management.requests, ["GET /grants", "GET /grants"]);
+    assert.deepEqual(
+      [
+        byStep(result).management_access.status,
+        byStep(result).management_access.evidence.source,
+        byStep(result).management_access.evidence.status,
+      ],
+      ["unmet", pending.path, "pending"],
+    );
+    assert.deepEqual([result.nextStep, result.next], ["management_access", resume(pending)]);
+  }
+  // With nothing pending, the newest grant tried is the one described.
+  const spent = await executeStatus([], {
+    root,
+    env: {},
+    fetcher: server([
+      [newer, "revoked"],
+      [older, "expired"],
+    ]).fetcher,
+  });
+  assert.deepEqual(
+    [
+      byStep(spent).management_access.evidence.source,
+      byStep(spent).management_access.evidence.status,
+    ],
+    [newer.path, "revoked"],
+  );
+  assert.match(spent.next.command, /^commish auth login --workspace wrk_123456789012 /);
+  // An authorized grant still wins over a pending one beside it.
+  const usable = await executeStatus([], {
+    root,
+    env: {},
+    fetcher: server([
+      [newer, "pending"],
+      [older, "authorized"],
+    ]).fetcher,
+  });
+  assert.deepEqual(
+    [usable.status, byStep(usable).management_access.evidence.source],
+    ["complete", older.path],
+  );
+});
+
+test("many stored grants do not hide the right one, and a half-published grant is not repaired", async (t) => {
+  const root = directory(t);
+  provisioned(root);
+  const letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+  for (let index = 0; index < 70; index++)
+    grantFile(
+      root,
+      `${letters[index % letters.length]}${letters[Math.floor(index / letters.length)]}_`,
+      {
+        workspaceId: "wrk_999999999999",
+      },
+    );
+  const current = grantFile(root, "a");
+  assert.equal(readdirSync(join(root, ".commish/management")).length, 71);
+  const management = server([[current, "authorized"]]);
+  const result = await executeStatus([], { root, env: {}, fetcher: management.fetcher });
+  assert.deepEqual(management.requests, ["GET /grants"]);
+  assert.equal(byStep(result).management_access.evidence.source, current.path);
+  // A stored grant left half-published is skipped; a named one is an error. Neither is repaired.
+  const leftover = `${dirname(current.path)}/.commish-setup-authorization.json.97961974-684d-46b3-aebb-2ef22ee2cec0.tmp`;
+  linkSync(join(root, current.path), join(root, leftover));
+  const before = readdirSync(root, { recursive: true }).sort();
+  const skipped = await executeStatus([], { root, env: {}, fetcher: noRequest });
+  assert.deepEqual(byStep(skipped).management_access.evidence, {
+    source: "none",
+    status: "missing",
+  });
+  await assert.rejects(
+    executeStatus(["--auth-file", current.path], { root, env: {}, fetcher: noRequest }),
+    { message: "invalid_authorization_file" },
+  );
+  assert.deepEqual(readdirSync(root, { recursive: true }).sort(), before);
+});
+
+test("a named grant for another workspace does not count for this install", async (t) => {
+  const root = directory(t);
+  provisioned(root);
+  const other = grantFile(root, "a", { workspaceId: "wrk_999999999999" });
+  for (const [args, env, source] of [
+    [["--auth-file", other.path], {}, other.path],
+    [[], { COMMISH_MANAGEMENT_TOKEN: other.token }, "COMMISH_MANAGEMENT_TOKEN"],
+  ]) {
+    const result = await executeStatus(args, {
+      root,
+      env,
+      fetcher: server([[other, "authorized"]]).fetcher,
+    });
+    assert.deepEqual(byStep(result).management_access.evidence, {
+      source,
+      status: "authorized",
+      kind: "onboarding",
+      workspaceId: "wrk_999999999999",
+      scopes,
+      expiresAt: "2099-01-01T01:00:00Z",
+      code: "workspace_mismatch",
+    });
+    assert.deepEqual(
+      [byStep(result).management_access.status, result.nextStep],
+      ["unmet", "management_access"],
+    );
+    // The next command asks for a grant on the workspace setup recorded.
+    assert.match(result.next.command, /^commish auth login --workspace wrk_123456789012 /);
+  }
 });
 
 test("a named file or token is used as given; an outage is reported, a broken file is an error", async (t) => {
