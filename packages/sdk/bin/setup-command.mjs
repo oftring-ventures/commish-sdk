@@ -55,6 +55,20 @@ const guidance = (code) =>
     service_unavailable:
       "Retry the same command; saved resources and credential material will be reused.",
   })[code] ?? "Review the setup configuration and rerun the same command.";
+// Every status the progress stream carries, in the order a run reaches them.
+// waiting repeats while a check fails; each other stage is reported once.
+export const setupProgressEvents = [
+  "authorization_required",
+  "browser_unavailable",
+  "onboarding_unavailable",
+  "authorized",
+  "provisioned",
+  "publish_required",
+  "browser_action_required",
+  "waiting",
+  "destination_verified",
+  "stripe_connected",
+];
 function progressText(event) {
   if (event.status === "authorization_required")
     return (
@@ -67,8 +81,12 @@ function progressText(event) {
     return "Setup could not request onboarding access; continuing without it.";
   if (event.status === "authorized")
     return `Authorized ${event.mode.toUpperCase()} workspace ${event.workspaceId}.`;
+  if (event.status === "provisioned")
+    return `Provisioned ${event.mode.toUpperCase()} application ${event.applicationId} and program ${event.programId}. Credentials file: ${event.credentialsFile}`;
   if (event.status === "publish_required")
     return `Publish ${event.path} at ${event.url}. Waiting for verification.`;
+  if (event.status === "destination_verified") return `Verified ${event.origin}.`;
+  if (event.status === "stripe_connected") return `Stripe ${event.mode.toUpperCase()} connected.`;
   if (event.status === "browser_action_required")
     return `Connect Stripe ${event.mode.toUpperCase()} at ${event.url}.`;
   if (event.status === "browser_unavailable")
@@ -110,7 +128,7 @@ function resultText(result) {
     return (
       "commish setup [options]\n\n" +
       setupFlags.join("\n") +
-      "\n\nReads commish.setup.json by default. Program, terms, webhook and participant consent are explicit business inputs.\nTEST is the default. --plan inspects local configuration and repository metadata without network requests or writes.\n--no-open prints browser handoffs; --wait sets a 0–600 second provisioning wait.\nTEST approval also grants onboarding access (up to one day, Test only) for commish manage and commish doctor; --no-onboarding declines it.\nWith --json, progress goes to stderr and one final receipt goes to stdout."
+      "\n\nReads commish.setup.json by default. Program, terms, webhook and participant consent are explicit business inputs.\nTEST is the default. --plan inspects local configuration and repository metadata without network requests or writes.\n--no-open prints browser handoffs; --wait sets a 0–600 second provisioning wait.\nTEST approval also grants onboarding access (up to one day, Test only) for commish manage and commish doctor; --no-onboarding declines it.\nWith --json, progress goes to stderr and one final receipt goes to stdout.\nProgress reports each stage once (authorized, provisioned, publish_required, browser_action_required, destination_verified, stripe_connected); waiting repeats while a check fails."
     );
   if (["input_required", "invalid_config"].includes(result.status))
     return `Setup ${result.status.replaceAll("_", " ")}: ${result.fields.join(", ")}.\nProvide these in commish.setup.json or explicit flags; see commish setup --help.`;
@@ -154,7 +172,12 @@ export async function runSetupCommand(
   try {
     const parsed = parseSetupArguments(root, args);
     if (parsed.kind === "help") {
-      finish({ status: "help", flags: parsed.flags, integrationVerified: false });
+      finish({
+        status: "help",
+        flags: parsed.flags,
+        progressEvents: setupProgressEvents,
+        integrationVerified: false,
+      });
       return 0;
     }
     if (parsed.options?.plan) {

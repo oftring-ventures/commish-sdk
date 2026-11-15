@@ -280,7 +280,15 @@ that reads output only after the command exits can still pass it on. Once the
 owner has connected Stripe, `commish doctor` reports `stripe_connection`; a new
 approval is not needed for that step alone.
 
-Progress and handoff events go to stderr; `--json` produces one final receipt on
+Progress and handoff events go to stderr, one JSON object per line with
+`--json`. Each stage is reported once as it is reached: `authorization_required`,
+`authorized`, `provisioned` (resources exist and the credential files are
+written), `publish_required`, `browser_action_required`, `destination_verified`
+and `stripe_connected`. `waiting` carries the `code` of what is still
+outstanding: it repeats while the destination check fails, and
+`stripe_not_connected` is reported once while the CLI polls for Stripe. A stage
+that was not reached before the wait ended is not reported; the final receipt
+says what remains. `--json` produces one final receipt on
 stdout. Exit 0 means practical configuration completed, 2 means input or browser
 action remains, 1 means a sanitized error, and 130 means interruption. A
 `configured` receipt can still list activation, Stripe, LIVE eligibility or TEST
