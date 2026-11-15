@@ -1,4 +1,4 @@
-import { argumentsFor, errorReceipt, fail } from "./cli-http.mjs";
+import { argumentsFor, errorReceipt, fail, missingInput } from "./cli-http.mjs";
 import { managementClient } from "./management-client.mjs";
 export const doctorHelp = () => ({
   version: 1,
@@ -28,7 +28,9 @@ export async function executeDoctor(args, options = {}) {
     ["help", "json", "non-interactive"],
   );
   if (v.help) return doctorHelp();
-  if (p.length || !/^prg_[A-Za-z0-9_-]{12,}$/.test(v.program ?? "")) fail("invalid_arguments");
+  if (p.length) fail("invalid_arguments");
+  if (v.program === undefined) missingInput(["--program <id>"]);
+  if (!/^prg_[A-Za-z0-9_-]{12,}$/.test(v.program)) fail("invalid_arguments");
   const client = managementClient({
     ...options,
     authFile: v["auth-file"],

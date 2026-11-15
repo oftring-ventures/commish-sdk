@@ -19,6 +19,24 @@ function read(root, path) {
     throw error;
   }
 }
+// The credential file setup writes, field by field. Returns its values only
+// when it is that file for this mode and, where given, these resources.
+function credentialValues(body, { mode, applicationId, programId }) {
+  const values =
+    /^COMMISH_MODE=(test|live)\nCOMMISH_APPLICATION_ID=(app_[A-Za-z0-9_-]{12,})\nCOMMISH_PROGRAM_ID=(prg_[A-Za-z0-9_-]{12,})\nCOMMISH_PUBLISHABLE_KEY=(cm_(?:test|live)_pk_[A-Za-z0-9_-]{32})\nCOMMISH_SECRET_KEY=(cm_(?:test|live)_sk_[A-Za-z0-9_-]{43})\n$/.exec(
+      body ?? "",
+    );
+  return values &&
+    values[1] === mode &&
+    (applicationId == null || values[2] === applicationId) &&
+    (programId == null || values[3] === programId) &&
+    values[4].startsWith(`cm_${mode}_pk_`) &&
+    values[5].startsWith(`cm_${mode}_sk_`)
+    ? values
+    : null;
+}
+// The same check as a yes or no, for a caller that must not hold key material.
+export const setupCredentialMatches = (body, expected) => credentialValues(body, expected) !== null;
 // Persist newly generated credentials before the first request. An uncertain
 // response or interrupted run must retry the same key material and intent.
 export async function provisionSetupCredential(
@@ -43,19 +61,8 @@ export async function provisionSetupCredential(
     }
     body = read(root, path);
   }
-  const values =
-    /^COMMISH_MODE=(test|live)\nCOMMISH_APPLICATION_ID=(app_[A-Za-z0-9_-]{12,})\nCOMMISH_PROGRAM_ID=(prg_[A-Za-z0-9_-]{12,})\nCOMMISH_PUBLISHABLE_KEY=(cm_(?:test|live)_pk_[A-Za-z0-9_-]{32})\nCOMMISH_SECRET_KEY=(cm_(?:test|live)_sk_[A-Za-z0-9_-]{43})\n$/.exec(
-      body ?? "",
-    );
-  if (
-    !values ||
-    values[1] !== mode ||
-    values[2] !== applicationId ||
-    values[3] !== programId ||
-    !values[4].startsWith(`cm_${mode}_pk_`) ||
-    !values[5].startsWith(`cm_${mode}_sk_`)
-  )
-    fail("setup_credential_conflict");
+  const values = credentialValues(body, { mode, applicationId, programId });
+  if (!values) fail("setup_credential_conflict");
   const receipt = await session.createCredential({
     applicationId,
     label: "Commish CLI",
