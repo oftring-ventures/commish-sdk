@@ -202,6 +202,9 @@ if (Object.hasOwn(managementRunners, args[0])) {
   process.exitCode = await managementRunners[args[0]](args.slice(1));
 } else if (args[0] === "api" || resourceGroups.has(args[0])) {
   process.exitCode = await runApiCommand(args);
+} else if (args[0] === "agent" && args[1] === "setup") {
+  const { runAgentSetupCommand } = await import("./agent-command.mjs");
+  process.exitCode = runAgentSetupCommand(args.slice(2));
 } else if (
   args[0] === "agent" &&
   args.slice(1).every((arg) => ["--json", "--help"].includes(arg))
@@ -440,6 +443,7 @@ if (Object.hasOwn(managementRunners, args[0])) {
         "doctor [options]",
         "test [command]",
         "agent --json",
+        "agent setup [--write] [--json]",
         ...apiHelp().commands.slice(3),
       ],
       requiredEnvironment: verifyEnvironment,
@@ -456,7 +460,8 @@ if (Object.hasOwn(managementRunners, args[0])) {
         ? JSON.stringify(help)
         : "Commish developer CLI\n\n" +
             guideText() +
-            "\n\ncommish init [--json] — setup playbook for coding agents, from a local scan of this repository (also the default).\ncommish --version — installed package version.\ncommish setup --help — configuration and noninteractive flags.\ncommish verify [--json] — check configured credentials and program access.\ncommish api list — discover integration operations.\ncommish auth login --help — authorize scoped management access.\ncommish manage list — discover management operations.\ncommish keys --help — create or rotate credentials privately.\ncommish doctor --help — inspect readiness and observed integration evidence.\ncommish test --help — TEST fixtures and local webhook checks.\ncommish agent --json — versioned agent workflow guide.",
+            "\n\ncommish init [--json] — setup playbook for coding agents, from a local scan of this repository (also the default).\ncommish --version — installed package version.\ncommish setup --help — configuration and noninteractive flags.\ncommish verify [--json] — check configured credentials and program access.\ncommish api list — discover integration operations.\ncommish auth login --help — authorize scoped management access.\ncommish manage list — discover management operations.\ncommish keys --help — create or rotate credentials privately.\ncommish doctor --help — inspect readiness and observed integration evidence.\ncommish test --help — TEST fixtures and local webhook checks.\ncommish agent --json — versioned agent workflow guide." +
+            "\ncommish agent setup [--write] — plan or write this guidance into AGENTS.md and a skill file.",
     );
   }
 }

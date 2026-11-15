@@ -11,6 +11,8 @@ const managers = {
 };
 const docs = "https://commish.sh/docs.md";
 const schema = "https://app.commish.sh/api/cli/setup/capabilities";
+export const commishCli = (repository) =>
+  `${(managers[repository.packageManager] ?? managers.npm).exec} commish`;
 // Pinned to this release's tag, so the guide matches the installed CLI.
 export const sdkGuide = `https://github.com/oftring-ventures/commish-sdk/blob/v${manifest.version}/packages/sdk/README.md`;
 
@@ -21,7 +23,7 @@ export function initGuide(root) {
   const repository = inspectRepository(root);
   const manager = managers[repository.packageManager] ?? managers.npm;
   const next = repository.adapter === "next_peer_check_required";
-  const cli = `${manager.exec} commish`;
+  const cli = commishCli(repository);
   const packages = [`@commish/sdk@${manifest.version}`];
   if (next) packages.push(`@commish/next@${manifest.version}`);
   const commands = {
@@ -66,7 +68,7 @@ ${repository.warnings.includes("package_manifest_missing") ? "\n- No package.jso
 ## Rules
 
 - Ask the person for every business choice together: eligible Stripe products, commission, recurrence, per-sale cap, disclosure text, webhook, Stripe connection and participant consent. Never invent them or the mode.
-- Provision only through this CLI. The person completes authentication and consent in the browser. Stop and report blockers; do not automate the dashboard instead.
+- Provision only through the Commish CLI. The person completes authentication and consent in the browser. Stop and report blockers; do not automate the dashboard instead.
 - Keep credentials in the private files setup writes, and out of chat, logs, Git and browser code. Resolve any policy against local credential storage before provisioning.
 - Start in TEST. LIVE needs the person's explicit choice and current eligibility. Program activation and participant acceptance stay explicit.
 
@@ -89,6 +91,7 @@ Report package installation, configuration verification and the attributed TEST 
 - Guide: ${docs}
 - SDK guide for this version: ${sdkGuide}
 - Workflow contract: \`${cli} agent --json\`; every command: \`${cli} --help\`
+- Keep this guidance in the repository: \`${cli} agent setup\` plans, and with \`--write\` adds, a Commish section in AGENTS.md and a skill for this version.
 `;
 }
 

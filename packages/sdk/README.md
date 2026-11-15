@@ -134,6 +134,27 @@ commands for your package manager and framework, the business choices to collect
 and the milestones to report. It makes no network requests and writes no files;
 `--json` returns the commands alongside the Markdown.
 
+`commish agent setup` keeps that guidance where coding agents look for it. It
+plans by default and changes files only with `--write`:
+
+- `AGENTS.md` gets a Commish section between `<!-- commish:begin -->` and
+  `<!-- commish:end -->`. The file is created when absent. Only the text between
+  the markers is ever replaced, so a rerun updates the section in place and
+  otherwise changes nothing.
+- `.claude/skills/commish/SKILL.md` gets the playbook's rules, steps and
+  references for the installed version. A skill file this command did not write
+  is reported as a conflict and left alone.
+- `CLAUDE.md` is never edited. When it exists without mentioning `AGENTS.md`,
+  the receipt reports `claudeMd: "agents_md_not_referenced"`; add a line
+  `@AGENTS.md` to it so Claude Code loads the section.
+
+Both texts are cut from the `commish init` playbook of the CLI that writes them.
+Rerun the command with `--write` after upgrading. `--json` returns
+one receipt listing each file as `create`, `update` or `unchanged`
+(`created` and `updated` once written). Exit 0 is a plan or a
+completed write; 1 is a sanitized error such as `agent_guidance_conflict`, with a
+`reason` per file, and no file changed.
+
 Since 0.2.1, `pnpm exec commish setup --plan --json` previews setup first.
 Planning reads local configuration and bounded package metadata, reports missing
 inputs by field, and identifies framework/package-manager hints. It makes no
