@@ -16,6 +16,7 @@ import { dirname, join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { markers } from "../packages/sdk/bin/agent-command.mjs";
+import guidance from "../packages/sdk/bin/agent-guidance.json" with { type: "json" };
 
 const executable = fileURLToPath(new URL("../packages/sdk/bin/init.mjs", import.meta.url));
 const source = (name) => readFileSync(new URL(`../${name}`, import.meta.url), "utf8");
@@ -404,6 +405,25 @@ test("CLAUDE.md is reported and never edited", (t) => {
   const linked = repository(t);
   symlinkSync("AGENTS.md", join(linked, "CLAUDE.md"));
   assert.equal(receipt(linked).claudeMd, "references_agents_md");
+});
+
+test("the Pages block is the Next guide's copyable section, added only where Pages is installed", (t) => {
+  const block = source(guidance.source)
+    .split("## Copyable AGENTS.md section")[1]
+    .match(/```md\n([\s\S]*?)\n```/)[1]
+    .split("\n");
+  // Regenerate packages/sdk/bin/agent-guidance.json from the guide when this fails.
+  assert.deepEqual(["## Commish Pages", "", ...guidance.pages], block);
+  const plain = repository(t, { "package.json": '{"dependencies":{"@commish/next":"1"}}' });
+  assert.equal(receipt(plain, "--write").pagesGuidance, false);
+  assert(!text(plain, "AGENTS.md").includes("Commish Pages"));
+  const pages = repository(t, { "src/app/commish-pages.ts": "export {};\n" });
+  assert.equal(receipt(pages, "--write").pagesGuidance, true);
+  assert(
+    text(pages, "AGENTS.md").endsWith(
+      `\n\n### Commish Pages\n\n${guidance.pages.join("\n")}\n${markers.end}\n`,
+    ),
+  );
 });
 
 test("arguments are closed, help is local, and the CLI lists the command", (t) => {
