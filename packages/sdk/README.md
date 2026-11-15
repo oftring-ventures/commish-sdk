@@ -684,6 +684,25 @@ servers may be selected with `--management-url` or `COMMISH_MANAGEMENT_URL`;
 they receive the credential, so use only an endpoint you trust. The CLI pins a
 stored authorization to its original endpoint and refuses redirects.
 
+`manage products.list` lists the products of the Stripe account connected to
+the workspace in the credential's mode, each with its active prices, so the ids
+for a program's `eligibleStripeProductIds` need not be asked for. It needs
+`resources.read`, which setup's onboarding access already holds, and fails with
+`stripe_connection_required` until Stripe is connected in that mode:
+
+```sh
+commish manage products.list --limit 20 --all --max-pages 10 \
+  --auth-file .commish/management/REQUEST/authorization.json --json
+```
+
+A page holds at most 20 products (10 by default) and the server allows ten
+`products.list` calls a minute per credential. `--all` on its own therefore
+cannot finish a catalog of more than 200 products: the eleventh page fails with
+`rate_limited` and, as for any failed later page, the pages already read are
+not returned. Keep `--max-pages` at 10 or fewer, counting other `products.list`
+calls in the same minute. When `complete` is `false`, wait a minute and continue
+with `--cursor <nextCursor>`.
+
 ### Explicit management writes
 
 Request only the write scopes needed for the task with a fresh interactive
