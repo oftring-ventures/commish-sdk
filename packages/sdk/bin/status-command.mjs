@@ -2,7 +2,7 @@ import { argumentsFor, errorReceipt, fail } from "./cli-http.mjs";
 import { managementMode } from "./management-client.mjs";
 import { parseSetupConfig } from "./setup-config.mjs";
 import { readSetupFile } from "./setup-files.mjs";
-import { readSetupProgress } from "./setup-progress.mjs";
+import { readSetupProgress, setupAppOrigin, setupFingerprint } from "./setup-progress.mjs";
 import { setupCredentialMatches } from "./setup-secrets.mjs";
 
 const defaultConfig = "commish.setup.json";
@@ -12,7 +12,14 @@ export const statusHelp = () => ({
   version: 1,
   status: "help",
   command: "status [--mode test|live] [--config <path>] [--json]",
-  flags: ["--mode test|live", "--config <path>", "--json", "--non-interactive", "--help"],
+  flags: [
+    "--mode test|live",
+    "--config <path>",
+    "--app-url <url>",
+    "--json",
+    "--non-interactive",
+    "--help",
+  ],
   purpose:
     "Reports each setup step recorded for the install in the current directory with its status, the evidence that status rests on and the exact next command.",
   steps,
@@ -25,6 +32,10 @@ export const statusHelp = () => ({
     ],
     requests: [],
   },
+  // A step is met only if commish setup, rerun now with these inputs, would also
+  // treat it as done.
+  sameSetup:
+    "The configuration, --mode and --app-url are compared with the fingerprint setup recorded; a difference is setup_config_conflict and nothing recorded counts for this configuration.",
   mutations: false,
   // The install setup would address: its configuration decides before the shell.
   mode: "--mode, else the configuration file's mode (test when it names none), else COMMISH_MODE, else test",
@@ -34,7 +45,7 @@ export const statusHelp = () => ({
 });
 
 const record = (value) => value !== null && typeof value === "object" && !Array.isArray(value);
-function readConfiguration(root, path) {
+function readConfiguration(root, path, modeFlag) {
   let text, input;
   try {
     text = readSetupFile(root, path, { profile: "configuration" });
@@ -48,7 +59,8 @@ function readConfiguration(root, path) {
     return { state: "invalid_config", fields: ["config"] };
   }
   if (!record(input)) return { state: "invalid_config", fields: ["config"] };
-  // Setup reads the mode from this file and defaults it to test.
+  // As setup does: --mode replaces the file's mode, which defaults to test.
+  if (modeFlag !== undefined) input.mode = modeFlag;
   const mode = input.mode === undefined ? "test" : input.mode,
     parsed = parseSetupConfig(input);
   return {
@@ -74,16 +86,21 @@ export async function executeStatus(args, options = {}) {
   const { root = process.cwd(), env = process.env } = options;
   const { values: v, positionals: p } = argumentsFor(
     args,
-    ["mode", "config"],
+    ["mode", "config", "app-url"],
     ["help", "json", "non-interactive"],
   );
   if (v.help) return statusHelp();
   if (p.length) fail("invalid_arguments");
-  const configuration = readConfiguration(root, v.config ?? defaultConfig),
-    config = configuration.state === "ready" ? configuration.config : null,
+  try {
+    setupAppOrigin(v["app-url"]);
+  } catch {
+    fail("invalid_arguments");
+  }
+  const configuration = readConfiguration(root, v.config ?? defaultConfig, v.mode),
     mode = managementMode(v.mode ?? configuration.mode, env),
-    // The path given to --config is not repeated; commands name where it goes.
-    configFlag = `--config ${v.config === undefined ? defaultConfig : "<config>"}`;
+    // Values given to --config and --app-url are not repeated; commands name where they go.
+    configFlag = `--config ${v.config === undefined ? defaultConfig : "<config>"}`,
+    appFlag = v["app-url"] === undefined ? "" : " --app-url <app-url>";
   let journal;
   try {
     journal = readSetupProgress(root, mode);
@@ -92,22 +109,38 @@ export async function executeStatus(args, options = {}) {
     if (error?.message === "invalid_setup_progress") fail("invalid_setup_progress");
     throw error;
   }
+  // Setup resumes only the setup it recorded: the same configuration, mode and
+  // deployment. A different one fails there with setup_config_conflict, so
+  // nothing recorded here counts for it.
+  const conflict =
+      configuration.state === "ready" &&
+      journal.intent !== null &&
+      setupFingerprint(configuration.config, v["app-url"]).fingerprint !==
+        journal.intent.fingerprint,
+    config = configuration.state === "ready" && !conflict ? configuration.config : null,
+    conflicted = conflict ? { reason: "setup_config_conflict" } : {};
   const workspaceId = journal.workspace?.id ?? null,
     applicationId = journal.application?.id ?? null,
     programId = journal.program?.id ?? null;
-  // A setup started from flags left no file to name, and only its caller knows
-  // the flags: naming commish.setup.json would fail with setup_file_missing.
+  // The action that continues setup. Two cases have no command that can
+  // succeed: a conflicting configuration, and a setup started from flags, which
+  // left no file to name and whose flags only its caller knows.
   const provision = {
-    ...(configuration.state === "missing" && journal.intent
+    ...(conflict
       ? {
           kind: "guidance",
-          guidance:
-            "Setup was started from flags, so there is no configuration file to rerun. Repeat the original commish setup command with the same flags, or restore its configuration file; setup resumes from the recorded progress.",
+          guidance: `The configuration, mode or app URL differs from the setup recorded in ${journal.directory}, so rerunning setup fails with setup_config_conflict. Restore the original configuration, or repeat the original commish setup command if it was started with other flags; inspect ${journal.directory} before starting a separate setup.`,
         }
-      : {
-          kind: "command",
-          command: `commish setup ${configFlag} --mode ${mode} --no-open --non-interactive --json`,
-        }),
+      : configuration.state === "missing" && journal.intent
+        ? {
+            kind: "guidance",
+            guidance:
+              "Setup was started from flags, so there is no configuration file to rerun. Repeat the original commish setup command with the same flags, or restore its configuration file; setup resumes from the recorded progress.",
+          }
+        : {
+            kind: "command",
+            command: `commish setup ${configFlag} --mode ${mode}${appFlag} --no-open --non-interactive --json`,
+          }),
     humanAction: "open_the_approval_url_and_confirm_the_pairing_code",
   };
   const report = [];
@@ -116,7 +149,8 @@ export async function executeStatus(args, options = {}) {
 
   // A setup that started had a complete configuration, even if it came from flags.
   const configured =
-    configuration.state === "ready" || (configuration.state === "missing" && journal.intent);
+    (configuration.state === "ready" && !conflict) ||
+    (configuration.state === "missing" && journal.intent);
   add(
     "configuration",
     configured ? "met" : "unmet",
@@ -125,21 +159,26 @@ export async function executeStatus(args, options = {}) {
       configuration: configuration.state,
       ...(configuration.fields ? { fields: configuration.fields } : {}),
       ...(journal.intent ? { setupStartedAt: journal.intent.createdAt } : {}),
+      ...(configuration.state === "ready" && journal.intent
+        ? { matchesRecordedSetup: !conflict }
+        : {}),
     },
     configured
       ? {}
-      : {
-          next: {
-            kind: "command",
-            command: `commish setup ${v.config === undefined ? "" : `${configFlag} `}--plan --json`,
+      : conflict
+        ? { ...conflicted, next: provision }
+        : {
+            next: {
+              kind: "command",
+              command: `commish setup ${v.config === undefined ? "" : `${configFlag} `}--plan --json`,
+            },
           },
-        },
   );
   add(
     "setup_approved",
-    workspaceId ? "met" : "unmet",
+    !workspaceId ? "unmet" : conflict ? "unknown" : "met",
     { source: `${journal.directory}/workspace.json`, workspaceId },
-    workspaceId ? {} : { next: provision },
+    workspaceId && !conflict ? {} : { ...conflicted, next: provision },
   );
   // Whether a webhook belongs to this setup. Setup records the endpoint last,
   // after the credential, and keeps no note of what was asked for: without a
@@ -172,8 +211,20 @@ export async function executeStatus(args, options = {}) {
     Boolean(applicationId && programId && journal.credential) &&
     files.credentialsFile === "present" &&
     (!wantsWebhook || (journal.webhook !== null && files.webhookFile === "present"));
-  // Met rests on the recorded resources plus a known answer about the webhook.
-  const settled = provisioned && webhook !== "unknown";
+  // Met rests on the recorded resources plus a known answer about the webhook,
+  // for the setup this configuration identifies.
+  const settled = provisioned && webhook !== "unknown" && !conflict;
+  // Setup never regenerates or replaces a credential file: with the key
+  // recorded and the file gone, or a file that is not the one it wrote, a
+  // rerun fails, so the action is to restore the file.
+  const credentialFailure =
+    files.credentialsFile === "invalid"
+      ? "setup_credential_conflict"
+      : files.credentialsFile === "absent" && journal.credential
+        ? "setup_credential_missing"
+        : null;
+  // The same holds for a signing-secret file that is not one setup wrote.
+  const webhookFailure = files.webhookFile === "invalid" ? "setup_file_conflict" : null;
   add(
     "resources_provisioned",
     settled ? "met" : provisioned ? "unknown" : "unmet",
@@ -188,10 +239,28 @@ export async function executeStatus(args, options = {}) {
     },
     settled
       ? {}
-      : {
-          ...(provisioned ? { reason: "webhook_request_not_recorded" } : {}),
-          next: provision,
-        },
+      : conflict
+        ? { ...conflicted, next: provision }
+        : credentialFailure
+          ? {
+              reason: credentialFailure,
+              next: {
+                kind: "guidance",
+                guidance: `Setup will not regenerate or replace ${journal.directory}/credentials.env and fails with ${credentialFailure}. Restore the file as setup wrote it, or revoke the recorded key (commish manage credentials.revoke) before starting a separate setup.`,
+              },
+            }
+          : webhookFailure
+            ? {
+                reason: webhookFailure,
+                next: {
+                  kind: "guidance",
+                  guidance: `Setup will not replace ${journal.directory}/webhook.env and fails with ${webhookFailure}. Remove the altered file, then rerun the same commish setup command, which saves the signing secret again.`,
+                },
+              }
+            : {
+                ...(provisioned ? { reason: "webhook_request_not_recorded" } : {}),
+                next: provision,
+              },
   );
   // The first step, in order, that someone can act on.
   const open = report.find(
