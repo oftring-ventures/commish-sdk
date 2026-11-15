@@ -856,6 +856,16 @@ the token that belongs to another workspace than the one setup recorded does
 not count: it is reported with `workspace_mismatch`. An unreachable service is
 reported as `unavailable` with its code.
 
+A printed command runs as written, in the environment status ran in and
+against the deployment status addressed. It carries `--mode` always and, where
+status was given or resolved them, `--config`, `--app-url`, `--management-url`
+(from the flag, from `--app-url`, or from the stored grant's own endpoint) and
+`--auth-file`. When `COMMISH_MANAGEMENT_TOKEN` is set, a suggested `auth login`
+carries `"environment": { "unset": ["COMMISH_MANAGEMENT_TOKEN"] }`, because
+`auth login` refuses to start beside a token. A path that is not plain
+(letters, digits, `.`, `_`, `-`, `/`) is shown as `<config>` or `<auth-file>`
+instead of being quoted. No token or key is ever part of a command.
+
 The command changes nothing. The credential file counts only when it is the
 one setup wrote: its fields, key formats, mode and the recorded application and
 program are checked. No key or bearer is printed. A setup that was started
