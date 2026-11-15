@@ -1,6 +1,6 @@
 import catalog from "./api-catalog.json" with { type: "json" };
+import { bodyFileHelp, readBodyFile } from "./body-file.mjs";
 import { apiUrl, argumentsFor, errorReceipt, fail, requestJson } from "./cli-http.mjs";
-import { readSetupFile } from "./setup-files.mjs";
 
 export const resourceCommands = {
   "programs retrieve": ["getProgram", "programId"],
@@ -68,6 +68,7 @@ export function apiHelp() {
     credential: "integration_secret_key",
     pagination: { automatic: false, allMaximumPages: 100, partialReceipt: true },
     mutationPolicy: "explicit_body_file_and_idempotency_key_no_automatic_retries",
+    bodyFile: bodyFileHelp(),
     unsupported: [
       "browser_attribution_capture_use_browser_sdk",
       "management_use_management_authorization",
@@ -158,12 +159,7 @@ export async function executeApi(
   if (op.method !== "GET") {
     if (!v["body-file"] || !v["idempotency-key"]) fail("mutation_input_required");
     if (!/^[\x21-\x7e]{1,255}$/.test(v["idempotency-key"])) fail("invalid_arguments");
-    try {
-      body = JSON.parse(readSetupFile(root, v["body-file"], { profile: "configuration" }));
-    } catch {
-      fail("invalid_body_file");
-    }
-    if (!body || typeof body !== "object" || Array.isArray(body)) fail("invalid_body_file");
+    body = readBodyFile(root, v["body-file"]);
   } else if (v["body-file"] || v["idempotency-key"]) fail("invalid_arguments");
   const mode = v.mode ?? env.COMMISH_MODE ?? "test";
   if (!["test", "live"].includes(mode)) fail("invalid_arguments");
