@@ -11,6 +11,17 @@ function directory(progress, mode) {
     fail("invalid_setup_step");
   return progress.directory;
 }
+// The versioned API of the Commish deployment setup ran against.
+function apiUrl(appUrl) {
+  let url;
+  try {
+    url = new URL("/api/v1", appUrl).href;
+  } catch {
+    fail("invalid_setup_step");
+  }
+  if (!/^https?:\/\/[A-Za-z0-9.-]+(?::[0-9]{1,5})?\/api\/v1$/.test(url)) fail("invalid_setup_step");
+  return url;
+}
 function read(root, path) {
   try {
     return readSetupFile(root, path, { privateFile: true });
@@ -21,11 +32,22 @@ function read(root, path) {
 }
 // The credential file setup writes, field by field. Returns its values only
 // when it is that file for this mode and, where given, these resources.
+// The last three lines repeat the public values under the names the Next.js
+// adapter reads, and name the API it calls, so the file satisfies
+// `commish-next`'s required environment as it is. A file written before they
+// were added has the first five lines only and is still that file.
+const credentialLayout = new RegExp(
+  "^COMMISH_MODE=(test|live)\\n" +
+    "COMMISH_APPLICATION_ID=(app_[A-Za-z0-9_-]{12,})\\n" +
+    "COMMISH_PROGRAM_ID=(prg_[A-Za-z0-9_-]{12,})\\n" +
+    "COMMISH_PUBLISHABLE_KEY=(cm_(?:test|live)_pk_[A-Za-z0-9_-]{32})\\n" +
+    "COMMISH_SECRET_KEY=(cm_(?:test|live)_sk_[A-Za-z0-9_-]{43})\\n" +
+    "(?:NEXT_PUBLIC_COMMISH_APPLICATION_ID=\\2\\n" +
+    "NEXT_PUBLIC_COMMISH_PUBLISHABLE_KEY=\\4\\n" +
+    "COMMISH_API_URL=(https?://[A-Za-z0-9.-]+(?::[0-9]{1,5})?/api/v1)\\n)?$",
+);
 function credentialValues(body, { mode, applicationId, programId }) {
-  const values =
-    /^COMMISH_MODE=(test|live)\nCOMMISH_APPLICATION_ID=(app_[A-Za-z0-9_-]{12,})\nCOMMISH_PROGRAM_ID=(prg_[A-Za-z0-9_-]{12,})\nCOMMISH_PUBLISHABLE_KEY=(cm_(?:test|live)_pk_[A-Za-z0-9_-]{32})\nCOMMISH_SECRET_KEY=(cm_(?:test|live)_sk_[A-Za-z0-9_-]{43})\n$/.exec(
-      body ?? "",
-    );
+  const values = credentialLayout.exec(body ?? "");
   return values &&
     values[1] === mode &&
     (applicationId == null || values[2] === applicationId) &&
@@ -43,17 +65,21 @@ export async function provisionSetupCredential(
   root,
   progress,
   session,
-  { mode, applicationId, programId },
+  { mode, applicationId, programId, appUrl = "https://app.commish.sh" },
 ) {
   const path = `${directory(progress, mode)}/credentials.env`;
   if (!id(applicationId, "app") || !id(programId, "prg")) fail("invalid_setup_step");
   let body = read(root, path);
   if (body === null) {
     if (progress.read("credential")) fail("setup_credential_missing");
+    const publishable = `cm_${mode}_pk_${randomBytes(24).toString("base64url")}`;
     const proposed =
       `COMMISH_MODE=${mode}\nCOMMISH_APPLICATION_ID=${applicationId}\nCOMMISH_PROGRAM_ID=${programId}\n` +
-      `COMMISH_PUBLISHABLE_KEY=cm_${mode}_pk_${randomBytes(24).toString("base64url")}\n` +
-      `COMMISH_SECRET_KEY=cm_${mode}_sk_${randomBytes(32).toString("base64url")}\n`;
+      `COMMISH_PUBLISHABLE_KEY=${publishable}\n` +
+      `COMMISH_SECRET_KEY=cm_${mode}_sk_${randomBytes(32).toString("base64url")}\n` +
+      `NEXT_PUBLIC_COMMISH_APPLICATION_ID=${applicationId}\n` +
+      `NEXT_PUBLIC_COMMISH_PUBLISHABLE_KEY=${publishable}\n` +
+      `COMMISH_API_URL=${apiUrl(appUrl)}\n`;
     try {
       writeSetupFile(root, path, proposed, { privateFile: true });
     } catch (error) {

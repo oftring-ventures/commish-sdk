@@ -154,9 +154,13 @@ For a new integration, use the framework-independent
 [`commish setup` workflow](../sdk/README.md#set-up-from-your-repository) from
 `@commish/sdk`. It supports workspace creation/selection, program and terms
 configuration, destination verification, webhooks and resumable progress. Then
-run the Next installer above and complete layout and Checkout wiring. Map its
-public `COMMISH_PUBLISHABLE_KEY` and `COMMISH_APPLICATION_ID` values to the
-corresponding `NEXT_PUBLIC_*` variables; keep `COMMISH_SECRET_KEY` server-only.
+run the Next installer above and complete layout and Checkout wiring. Setup's
+`credentials.env` already carries `NEXT_PUBLIC_COMMISH_PUBLISHABLE_KEY`,
+`NEXT_PUBLIC_COMMISH_APPLICATION_ID` and `COMMISH_API_URL` beside the
+unprefixed names, so supply the file to the environment as it is. A file from
+`@commish/sdk` 0.8.0 or earlier lacks those three lines: copy its
+`COMMISH_PUBLISHABLE_KEY` and `COMMISH_APPLICATION_ID` to the `NEXT_PUBLIC_*`
+names. Keep `COMMISH_SECRET_KEY` server-only.
 
 Credential setup and configuration verification live in that CLI: run
 `pnpm exec commish setup` to provision and `pnpm exec commish verify --json` with

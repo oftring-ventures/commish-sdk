@@ -10,7 +10,7 @@ export async function provisionSetup(
   progress,
   session,
   authorization,
-  { signal } = {},
+  { signal, appUrl } = {},
 ) {
   const active = () => {
     if (signal?.aborted) throw new Error("setup_interrupted");
@@ -85,6 +85,8 @@ export async function provisionSetup(
     mode: config.mode,
     applicationId: application.id,
     programId: program.id,
+    // The deployment setup ran against; the credential file names its API.
+    ...(appUrl ? { appUrl } : {}),
   });
   active();
   let webhook = null;
