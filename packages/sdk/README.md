@@ -745,6 +745,21 @@ servers may be selected with `--management-url` or `COMMISH_MANAGEMENT_URL`;
 they receive the credential, so use only an endpoint you trust. The CLI pins a
 stored authorization to its original endpoint and refuses redirects.
 
+`manage destinations.set_primary` makes a verified website of an application
+its primary referral destination, the one a creator's link opens. It needs
+`destinations.write`, which setup's onboarding access already holds. Take the
+website's `org_` id from `manage destinations.list`:
+
+```sh
+printf '{"applicationId":"app_123456789012","originId":"org_123456789012"}' > primary.json
+commish manage destinations.set_primary --body-file primary.json \
+  --auth-file .commish/management/REQUEST/authorization.json --mode test --json
+```
+
+Test and Live referral links share the primary destination, so once the
+application has a Live program the server asks for a Live credential and
+answers `workspace_live_access_required` to a Test one.
+
 `manage products.list` lists the products of the Stripe account connected to
 the workspace in the credential's mode, each with its active prices, so the ids
 for a program's `eligibleStripeProductIds` need not be asked for. It needs

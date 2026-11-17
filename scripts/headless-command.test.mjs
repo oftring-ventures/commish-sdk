@@ -464,6 +464,37 @@ test("a refused body file says why with fixed reasons, before any request and wi
   assert.deepEqual(requests, [body]);
   assert.equal(result.status, "ok");
 });
+test("manage sends destinations.set_primary from the catalog under destinations.write", async (t) => {
+  const root = directory(t);
+  const body = { applicationId: proposal.applicationId, originId: "org_123456789012" };
+  writeFileSync(join(root, "primary.json"), JSON.stringify(body));
+  // Listed and described offline, like every other operation.
+  const schema = await executeManagement(["schema", "destinations.set_primary"], {
+    env,
+    fetcher: noRequest,
+  });
+  assert.deepEqual(schema.data.input.required, ["applicationId", "originId"]);
+  const requests = [];
+  const result = await executeManagement(
+    ["destinations.set_primary", "--body-file", "primary.json"],
+    {
+      root,
+      env,
+      fetcher: async (url, init) => {
+        if (url.endsWith("/grants"))
+          return respond(grantFor({ ...proposal, scopes: ["destinations.write"] }));
+        assert.equal(init.method, "POST");
+        assert.equal(new URL(url).pathname, "/api/management/v1/destinations.set_primary");
+        requests.push(JSON.parse(init.body));
+        return envelope("destinations.set_primary", {
+          origin: { id: body.originId, primary: true },
+        });
+      },
+    },
+  );
+  assert.deepEqual(requests, [body]);
+  assert.equal(result.status, "ok");
+});
 test("credentials retain exact private material across a lost response; changed business choices never issue another key", async (t) => {
   const root = directory(t),
     requests = [],
