@@ -16,7 +16,24 @@ import management from "../packages/sdk/bin/management-catalog.json" with { type
 
 test("management discovery retains its separate authority and fixed operations", () => {
   assert.equal(management.protocol, "commish-management-v1");
-  assert.equal(Object.keys(management.operations).length, 26);
+  assert.equal(Object.keys(management.operations).length, 27);
+  // The snapshot covers the workspace realm, every operation of it the server lists.
+  assert.deepEqual(management.operations["destinations.set_primary"], {
+    method: "POST",
+    path: "/api/management/v1/destinations.set_primary",
+    scope: "destinations.write",
+    input: {
+      $schema: "https://json-schema.org/draft/2020-12/schema",
+      type: "object",
+      properties: {
+        applicationId: { type: "string", pattern: "^app_[A-Za-z0-9_-]{12,}$" },
+        originId: { type: "string", pattern: "^org_[A-Za-z0-9_-]{12,}$" },
+      },
+      required: ["applicationId", "originId"],
+      additionalProperties: false,
+    },
+    response: "application/json",
+  });
   // Stripe products are listed under a scope setup's onboarding grant already holds.
   assert.deepEqual(
     {
