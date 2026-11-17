@@ -822,7 +822,11 @@ fixed `reason` and `guidance`; the path and the file's contents are never echoed
 
 `keys create` and `keys rotate` generate and save integration key material
 privately before the first request. They return a credential-file path, never
-the secret. Keep the same operation identity on retries:
+the secret. An application key's file has the same layout as setup's
+`credentials.env` without the program line: it repeats the public values as
+`NEXT_PUBLIC_COMMISH_APPLICATION_ID` and `NEXT_PUBLIC_COMMISH_PUBLISHABLE_KEY`
+and names the deployment's API in `COMMISH_API_URL`, so a rotated key needs no
+hand copying. Keep the same operation identity on retries:
 
 ```sh
 commish keys create --application app_123456789012 --label 'Merchant server' \

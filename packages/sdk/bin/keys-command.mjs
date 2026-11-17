@@ -140,16 +140,31 @@ export async function executeKeys(args, options = {}) {
   )
     fail("credential_intent_conflict");
   const credentialFile = `${directory}/credentials.env`;
-  writeSetupFile(
-    root,
-    credentialFile,
+  const earlier =
     `COMMISH_MODE=${client.mode}\n` +
-      (applicationId
-        ? `COMMISH_APPLICATION_ID=${applicationId}\nCOMMISH_PUBLISHABLE_KEY=${saved.publishable}\n`
-        : "") +
-      `COMMISH_SECRET_KEY=${saved.secret}\n`,
-    { privateFile: true },
-  );
+    (applicationId
+      ? `COMMISH_APPLICATION_ID=${applicationId}\nCOMMISH_PUBLISHABLE_KEY=${saved.publishable}\n`
+      : "") +
+    `COMMISH_SECRET_KEY=${saved.secret}\n`;
+  // An application key's file repeats the public values under the names the
+  // Next.js adapter reads and names the API it calls, as setup's file does.
+  const body = applicationId
+    ? earlier +
+      `NEXT_PUBLIC_COMMISH_APPLICATION_ID=${applicationId}\n` +
+      `NEXT_PUBLIC_COMMISH_PUBLISHABLE_KEY=${saved.publishable}\n` +
+      `COMMISH_API_URL=${new URL("/api/v1", client.baseUrl).href}\n`
+    : earlier;
+  try {
+    writeSetupFile(root, credentialFile, body, { privateFile: true });
+  } catch (error) {
+    // A retry of an operation begun before those lines were added finds the
+    // shorter file; it is still this operation's file and stays as written.
+    if (
+      error.message !== "setup_file_conflict" ||
+      readSetupFile(root, credentialFile, { privateFile: true }) !== earlier
+    )
+      throw error;
+  }
   const receipt = await client.call(intent.operation, {
     ...(v.key ? { keyId: v.key } : { applicationId }),
     label: intent.label,

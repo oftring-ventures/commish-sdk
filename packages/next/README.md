@@ -157,7 +157,9 @@ configuration, destination verification, webhooks and resumable progress. Then
 run the Next installer above and complete layout and Checkout wiring. Setup's
 `credentials.env` already carries `NEXT_PUBLIC_COMMISH_PUBLISHABLE_KEY`,
 `NEXT_PUBLIC_COMMISH_APPLICATION_ID` and `COMMISH_API_URL` beside the
-unprefixed names, so supply the file to the environment as it is. A file from
+unprefixed names, so supply the file to the environment as it is. The file
+`commish keys create` or `commish keys rotate` writes for an application key
+carries them too. A file from
 `@commish/sdk` 0.8.0 or earlier lacks those three lines: copy its
 `COMMISH_PUBLISHABLE_KEY` and `COMMISH_APPLICATION_ID` to the `NEXT_PUBLIC_*`
 names. Keep `COMMISH_SECRET_KEY` server-only.

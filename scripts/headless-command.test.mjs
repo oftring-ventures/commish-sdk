@@ -35,6 +35,15 @@ const proposal = {
   scopes: ["credentials.read", "credentials.write"],
   expiresIn: 600,
 };
+// The credential file of an application key: the plain names, then the public
+// values again under the Next.js adapter's names and the API it calls.
+const keyFileLayout = new RegExp(
+  `^COMMISH_MODE=test\\nCOMMISH_APPLICATION_ID=(${proposal.applicationId})\\n` +
+    "COMMISH_PUBLISHABLE_KEY=(cm_test_pk_[A-Za-z0-9_-]{32})\\n" +
+    "COMMISH_SECRET_KEY=cm_test_sk_[A-Za-z0-9_-]{43}\\n" +
+    "NEXT_PUBLIC_COMMISH_APPLICATION_ID=\\1\\nNEXT_PUBLIC_COMMISH_PUBLISHABLE_KEY=\\2\\n" +
+    "COMMISH_API_URL=https://app\\.commish\\.sh/api/v1\\n$",
+);
 const grantFor = (input, status = "authorized") => ({
   protocol: "commish-management-v1",
   requestId: input.challengeHash,
@@ -537,9 +546,48 @@ test("credentials retain exact private material across a lost response; changed 
   assert.deepEqual(requests[0], requests[1]);
   assert.equal(statSync(join(root, result.credentialFile)).mode & 0o777, 0o600);
   assert(!JSON.stringify(result).includes("cm_test_sk_"));
+  // An application key's file also carries the names the Next.js adapter reads.
+  assert.match(readFileSync(join(root, result.credentialFile), "utf8"), keyFileLayout);
   const changed = args.map((value) => (value === "CI key" ? "Different intent" : value));
   await assert.rejects(executeKeys(changed, { root, env, fetcher }), /credential_intent_conflict/);
   assert.equal(requests.length, 2);
+});
+test("a key retry keeps the shorter credential file an earlier CLI wrote, and no other content", async (t) => {
+  const root = directory(t);
+  const args = [
+    "create",
+    "--application",
+    proposal.applicationId,
+    "--label",
+    "CI key",
+    "--idempotency-key",
+    "fixture-credential-2",
+  ];
+  const fetcher = async (url, init) => {
+    if (url.endsWith("/grants")) return respond(grantFor(proposal));
+    const input = JSON.parse(init.body);
+    return envelope("credentials.create", {
+      apiKey: {
+        id: "key_123456789012",
+        mode: "test",
+        applicationId: input.applicationId,
+        publishableKey: input.publishableKey,
+        revokedAt: null,
+      },
+      replayed: true,
+    });
+  };
+  const { credentialFile } = await executeKeys(args, { root, env, fetcher });
+  const path = join(root, credentialFile),
+    full = readFileSync(path, "utf8"),
+    earlier = full.split("\n").slice(0, 4).join("\n") + "\n";
+  assert.match(full, keyFileLayout);
+  assert.match(earlier, /^COMMISH_MODE=test\n(?:[A-Z_]+=[^\n]+\n){2}COMMISH_SECRET_KEY=[^\n]+\n$/);
+  writeFileSync(path, earlier, { mode: 0o600 });
+  assert.equal((await executeKeys(args, { root, env, fetcher })).credentialFile, credentialFile);
+  assert.equal(readFileSync(path, "utf8"), earlier);
+  writeFileSync(path, earlier + "EXTRA=1\n", { mode: 0o600 });
+  await assert.rejects(executeKeys(args, { root, env, fetcher }), /setup_file_conflict/);
 });
 test("rotation preflights the explicit application context before changing authority", async () => {
   const fetcher = async (url) =>
