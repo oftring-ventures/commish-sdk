@@ -3,6 +3,27 @@
 Notable changes to `@commish/sdk`, `@commish/next`, and `commish`, which release
 together with one version. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## 0.8.1 - 2026-11-17
+
+### Added
+
+- The management catalog includes `destinations.set_primary`, which makes a
+  verified destination the application's primary referral destination.
+
+### Changed
+
+- `commish setup` writes `credentials.env` with the names the Next.js adapter
+  reads (`NEXT_PUBLIC_COMMISH_APPLICATION_ID`,
+  `NEXT_PUBLIC_COMMISH_PUBLISHABLE_KEY` and `COMMISH_API_URL`) beside the
+  existing ones. A file written by 0.8.0 or earlier is still accepted and is not
+  rewritten. A CLI at 0.8.0 or earlier answers `setup_credential_conflict` for a
+  file written by 0.8.1, so do not go back to an earlier CLI in the same
+  checkout.
+- `commish keys create` and `commish keys rotate` write the same names for an
+  application key. Workspace keys are unchanged.
+- The SDK, Next adapter and `commish` launcher release together at 0.8.1.
+  The launcher pins `@commish/sdk@0.8.1`; Next accepts `@commish/sdk@~0.8.1`.
+
 ## 0.8.0 - 2026-11-15
 
 ### Added
