@@ -70,6 +70,14 @@ and a manifest with source, archive/member hashes and consumer scopes. It refuse
 existing outputs. A failed write may leave partial files without a valid receipt;
 use a fresh directory after investigating. No npm or hosted acceptance is implied.
 
+Run the command from a shell without an AI coding agent's environment variables,
+for example under `env -i` with only `HOME`, `PATH`, `TMPDIR` and `EXPECTED_SHA` set.
+The installed-consumer build uses the lowest supported Next.js version, and Next's
+command line stops `next build` once with a security notice when it detects an agent
+and that version has a published advisory. The verifier then reports
+`Public source verification failed (unknown)` because the build command failed, not
+because the candidate differs. Candidate CI has no such variables and is unaffected.
+
 The read-only `Public source` workflow prepares the same candidate on Linux x64
 and retains it for 30 days as `public-candidate-<source SHA>-<run ID>-<attempt>`.
 Its additional `ci-receipt.json` binds the manifest and archives to the reported
