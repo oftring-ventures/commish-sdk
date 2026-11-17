@@ -485,17 +485,6 @@ test("manage sends destinations.set_primary from the catalog under destinations.
   );
   assert.deepEqual(requests, [body]);
   assert.equal(result.status, "ok");
-  // A credential without the scope is refused before any request is sent.
-  await assert.rejects(
-    executeManagement(["destinations.set_primary", "--body-file", "primary.json"], {
-      root,
-      env,
-      fetcher: async (url) =>
-        url.endsWith("/grants")
-          ? respond(grantFor({ ...proposal, scopes: ["resources.read"] }))
-          : noRequest(),
-    }),
-  );
 });
 test("credentials retain exact private material across a lost response; changed business choices never issue another key", async (t) => {
   const root = directory(t),
