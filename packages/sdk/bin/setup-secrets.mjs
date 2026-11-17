@@ -11,6 +11,9 @@ function directory(progress, mode) {
     fail("invalid_setup_step");
   return progress.directory;
 }
+// The API address as the credential file carries it. The host is a name or a
+// bracketed IPv6 address, which is what the loopback `http://[::1]` needs.
+const apiUrlPattern = "https?://(?:\\[[0-9A-Fa-f:.]+\\]|[A-Za-z0-9._-]+)(?::[0-9]{1,5})?/api/v1";
 // The versioned API of the Commish deployment setup ran against.
 function apiUrl(appUrl) {
   let url;
@@ -19,7 +22,7 @@ function apiUrl(appUrl) {
   } catch {
     fail("invalid_setup_step");
   }
-  if (!/^https?:\/\/[A-Za-z0-9.-]+(?::[0-9]{1,5})?\/api\/v1$/.test(url)) fail("invalid_setup_step");
+  if (!new RegExp(`^${apiUrlPattern}$`).test(url)) fail("invalid_setup_step");
   return url;
 }
 function read(root, path) {
@@ -44,7 +47,7 @@ const credentialLayout = new RegExp(
     "COMMISH_SECRET_KEY=(cm_(?:test|live)_sk_[A-Za-z0-9_-]{43})\\n" +
     "(?:NEXT_PUBLIC_COMMISH_APPLICATION_ID=\\2\\n" +
     "NEXT_PUBLIC_COMMISH_PUBLISHABLE_KEY=\\4\\n" +
-    "COMMISH_API_URL=(https?://[A-Za-z0-9.-]+(?::[0-9]{1,5})?/api/v1)\\n)?$",
+    `COMMISH_API_URL=(${apiUrlPattern})\\n)?$`,
 );
 function credentialValues(body, { mode, applicationId, programId }) {
   const values = credentialLayout.exec(body ?? "");

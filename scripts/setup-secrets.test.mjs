@@ -164,6 +164,23 @@ test("the production API is named when no deployment is given, and an unusable o
     );
   assert.equal(other.calls.length, 0);
 });
+test("a loopback deployment named by its IPv6 address is written and read back", async (t) => {
+  // The CLI accepts `http://[::1]:PORT` as a deployment, so setup must too.
+  for (const [appUrl, api] of [
+    ["http://[::1]:3000", "http://[::1]:3000/api/v1"],
+    ["https://app_staging.example.test", "https://app_staging.example.test/api/v1"],
+  ]) {
+    const f = fixture(t);
+    const details = { ...f.details, appUrl };
+    const result = await provisionSetupCredential(f.root, f.progress, f.session, details);
+    const body = readFileSync(join(f.root, result.path), "utf8");
+    assert.equal(body.endsWith(`\nCOMMISH_API_URL=${api}\n`), true);
+    assert.equal(setupCredentialMatches(body, f.details), true);
+    // A rerun reads the file back as its own and issues nothing new.
+    await provisionSetupCredential(f.root, f.progress, f.session, details);
+    assert.equal(readFileSync(join(f.root, result.path), "utf8"), body);
+  }
+});
 test("a file written before the Next.js names were added is still setup's own file", async (t) => {
   const f = fixture(t);
   const old =
