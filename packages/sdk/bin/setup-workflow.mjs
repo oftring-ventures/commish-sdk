@@ -93,7 +93,7 @@ export async function runSetup(
       journal,
       session,
       authorized.receipt,
-      { signal },
+      { signal, appUrl: options.appUrl },
     );
     if (signal?.aborted) throw new Error("setup_interrupted");
     const result = { ...provisioned, onboarding };

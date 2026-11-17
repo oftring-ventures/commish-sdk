@@ -312,7 +312,13 @@ verified. Program activation remains an explicit action in Commish.
 Setup stores resumable progress and private mode-specific files under the ignored
 `.commish/setup/test` or `.commish/setup/live` directory. `credentials.env` contains
 `COMMISH_MODE`, `COMMISH_APPLICATION_ID`, `COMMISH_PROGRAM_ID`,
-`COMMISH_PUBLISHABLE_KEY` and `COMMISH_SECRET_KEY`; an optional `webhook.env`
+`COMMISH_PUBLISHABLE_KEY` and `COMMISH_SECRET_KEY`. It then repeats the two
+public values as `NEXT_PUBLIC_COMMISH_APPLICATION_ID` and
+`NEXT_PUBLIC_COMMISH_PUBLISHABLE_KEY` and names the deployment's API in
+`COMMISH_API_URL`, so the file holds everything `commish-next` lists as
+required and nothing has to be copied between names. A file written by an
+earlier version has the first five lines only; setup still reuses it and does
+not rewrite it. An optional `webhook.env`
 contains the endpoint signing material. Private files have owner-only permissions.
 The CLI prints paths, never secret values. Supply them to your existing secret
 manager/environment runner; they are not automatically loaded or deployed.
