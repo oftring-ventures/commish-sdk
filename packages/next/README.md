@@ -171,6 +171,77 @@ above and the Pages commands; its former `setup` and `verify` subcommands exit w
 `command_moved` and name the replacement. `commish-next --version` prints the
 installed version.
 
+## Referral links on your own domain
+
+By default a creator shares `https://commish.sh/p/live/<program>/<handle>`. Install
+one route and creators are shown `https://your-site.com/c/<handle>` instead. The
+route asks Commish where to send the buyer and forwards them to your verified
+destination with the same short-lived `commish_ref` the commish.sh link uses, so
+the capture route and provider above keep working unchanged.
+
+```sh
+pnpm exec commish-next links init --json           # plan only
+pnpm exec commish-next links init --apply --json   # writes app/c/[creator]/route.ts
+# deploy, then ask Commish to check the route on your verified website
+pnpm exec commish-next links verify --json
+```
+
+```ts
+// app/c/[creator]/route.ts
+import { createReferralLinkRoute } from "@commish/next/links";
+
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+export const GET = createReferralLinkRoute(() => ({
+  secretKey: process.env.COMMISH_SECRET_KEY!,
+  apiUrl: process.env.COMMISH_API_URL,
+}));
+```
+
+- One route serves every current and future creator; no deployment per creator.
+- Use `--prefix /creators` for a different one-segment prefix. The installer never
+  overwrites an existing file. A Commish Pages page at the same prefix already
+  forwards creators who have no page, so nothing is installed beside it.
+- Creators are shown the link on your website only after `links verify` passes.
+  Commish rechecks the route daily and falls back to commish.sh links if it stops
+  answering. commish.sh links keep working throughout.
+- A temporary funding or promotion pause shows a static notice on your domain
+  instead of the store, exactly as the commish.sh link does. An unknown handle is
+  a 404; pass `notFound` to render your own.
+- When one website carries several programs, the link credits the creator's
+  earliest partnership there. Later partnerships keep their commish.sh links.
+- The key deployed with the route and the key `links verify` runs with must
+  belong to the same application and the same TEST or LIVE mode. One address
+  serves one mode: verifying it with the LIVE key takes it over from TEST.
+- `links init` refuses, like `pages init`, when a route group, the Pages Router
+  or a dynamic or catch-all route could answer the same address. A run that
+  writes nothing reports `no_changes`.
+- Pass `onError` to hear about visits that failed for a reason other than an
+  unknown handle (a rejected key, a timeout); the visitor still gets the notice.
+
+**With Commish Pages on the same prefix.** A published creator Page owns its
+address. If one of your programs has Pages enabled and a creator's permitted
+page uses `/c/maya`, that address shows the Page and credits that program's
+partnership, and a bare link under the same name credits it too. Otherwise the
+link credits the creator's earliest eligible partnership on your website. The
+creator's dashboard only ever shows an address to the partnership it credits.
+Installing Pages at a prefix where you already installed the link route:
+delete `app/c/[creator]/route.ts` first, then run `pages init`; the Pages page
+forwards creators who have no page, so nothing is lost.
+
+**Other frameworks.** The same handler works with any `Request`/`Response`
+server:
+
+```ts
+import { Commish, createReferralLinkHandler } from "@commish/sdk";
+
+const commish = new Commish({ secretKey: process.env.COMMISH_SECRET_KEY! });
+const link = createReferralLinkHandler({ handoff: commish.links.handoff });
+
+// GET /c/:creator in your router
+export const creatorLink = (request: Request, creator: string) => link(request, creator);
+```
+
 ## Creator Pages
 
 Pages is optional and requires SDK/Next 0.3.0 or later. Installing it does not

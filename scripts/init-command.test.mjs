@@ -53,6 +53,11 @@ test("a bare run prints the repository's playbook without reading secrets or wri
   ])
     assert(bare.stdout.includes(`\`${command}\``), command);
   assert(bare.stdout.includes(`blob/v${version}/packages/sdk/README.md`));
+  // The links install is part of the Next playbook, under its own key, with its verify step.
+  const guide = JSON.parse(run(root, ["init", "--json"]).stdout);
+  assert.equal(guide.commands.links, "pnpm exec commish-next links init --json");
+  assert(guide.markdown.includes(`\`${guide.commands.links}\``));
+  assert(guide.markdown.includes("`pnpm exec commish-next links verify --json`"));
   assert.deepEqual(readdirSync(root, { recursive: true }), before);
 });
 
@@ -90,6 +95,8 @@ test("commands follow the detected package manager and framework", (t) => {
         ),
     );
     assert.equal(Object.hasOwn(guide.commands, "wire"), next);
+    // The links install is part of the Next playbook only; see the bare-run test for its commands.
+    assert.equal(Object.hasOwn(guide.commands, "links"), next);
     assert(guide.markdown.includes("captureReferral"));
     assert(!guide.markdown.includes("@commish/next@"));
   }
@@ -99,6 +106,7 @@ test("commands follow the detected package manager and framework", (t) => {
   ]);
   const guide = JSON.parse(run(ambiguous, ["init", "--json"]).stdout);
   assert(!Object.hasOwn(guide.commands, "wire"));
+  assert(!Object.hasOwn(guide.commands, "links"));
   assert(guide.markdown.includes("Next.js without a single app directory"));
   assert(guide.markdown.includes("ambiguous_app_directory"));
 });
