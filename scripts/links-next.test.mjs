@@ -61,3 +61,23 @@ test("unknown creators get the merchant's own not-found response", async (t) => 
   assert.equal(response.status, 404);
   assert.equal(await response.text(), "merchant 404");
 });
+
+test("the root route answers an outage as not found and the rewrite targets it", async (t) => {
+  const { referralLinkFallbackRewrite } = await import("../packages/next/dist/links.js");
+  assert.deepEqual(referralLinkFallbackRewrite(), {
+    source: "/:creator([a-z0-9][a-z0-9_-]{2,39})",
+    destination: "/api/commish/link/:creator",
+  });
+  assert.throws(
+    () => referralLinkFallbackRewrite("https://evil.example"),
+    /Invalid link handler path/,
+  );
+  const fetcher = mock.method(globalThis, "fetch", async () => {
+    throw new Error("offline");
+  });
+  t.after(() => fetcher.mock.restore());
+  const root = createReferralLinkRoute({ secretKey }, { root: true });
+  assert.equal((await visit(root, "pricing")).status, 404);
+  const prefix = createReferralLinkRoute({ secretKey });
+  assert.equal((await visit(prefix, "tim")).status, 503);
+});

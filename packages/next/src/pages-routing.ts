@@ -1,4 +1,10 @@
-import { assertCreatorPage, Commish, CommishError, type CreatorPage } from "@commish/sdk";
+import {
+  assertCreatorPage,
+  Commish,
+  CommishError,
+  type CreatorPage,
+  createReferralLinkHandler,
+} from "@commish/sdk";
 
 export type CreatorPageOptions = {
   secretKey: string;
@@ -78,6 +84,18 @@ function forget(key: string, ttl: number) {
   hits.delete(key);
   remember(misses, key, Date.now() + ttl);
 }
+// One budget for every uncached lookup a root path can cause: the page alias
+// and the bare link behind it.
+function admitLookup() {
+  const now = Date.now();
+  if (now - windowStart >= LOOKUP_WINDOW_MS) {
+    windowStart = now;
+    windowLookups = 0;
+  }
+  if (windowLookups >= MAX_LOOKUPS_PER_WINDOW) return false;
+  windowLookups += 1;
+  return true;
+}
 async function lookupAlias(
   options: CreatorPageOptions,
   handle: string,
@@ -101,14 +119,9 @@ async function lookupAlias(
   }
   const inFlight = pending.get(key);
   if (inFlight) return inFlight;
-  if (now - windowStart >= LOOKUP_WINDOW_MS) {
-    windowStart = now;
-    windowLookups = 0;
-  }
   // An exhausted budget protects Commish from crawler noise; a recently verified
   // alias keeps redirecting until its next revalidation fits in the budget.
-  if (windowLookups >= MAX_LOOKUPS_PER_WINDOW) return hit && hit.staleUntil > now ? hit.page : null;
-  windowLookups += 1;
+  if (!admitLookup()) return hit && hit.staleUntil > now ? hit.page : null;
   const lookup = resolveCreatorPage(options, handle)
     .then((page) => {
       if (!page.rootAliasEnabled) {
@@ -154,17 +167,35 @@ export function createCreatorAliasHandler(
   source: PageOptionsSource,
   handlerOptions: CreatorAliasHandlerOptions = {},
 ) {
+  // A root path that is not a page alias may still be a creator's bare link
+  // (or Commish checking one). Unknown paths and outages stay a 404.
+  let current: CreatorPageOptions | undefined;
+  const link = createReferralLinkHandler({
+    root: true,
+    admit: admitLookup,
+    notFound: (request) =>
+      handlerOptions.notFound
+        ? handlerOptions.notFound(request)
+        : new Response(null, { status: 404, headers: { "cache-control": "private, no-store" } }),
+    handoff: async (input) => {
+      if (!current) throw new Error("Commish Pages is not configured");
+      return new Commish({ secretKey: current.secretKey, baseUrl: current.apiUrl }).links.handoff(
+        input,
+      );
+    },
+  });
   // biome-ignore lint/correctness/noComponentHookFactories: a route handler, not a component; the merchant's route module calls this factory once
   return async function GET(request: Request, context: { params: Promise<{ creator: string }> }) {
     const headers = { "cache-control": "private, no-store" };
     if (!["GET", "HEAD"].includes(request.method))
       return new Response(null, { status: 405, headers });
     let page: CreatorPage | null = null;
+    let handle = "";
     try {
-      const handle = (await context.params).creator;
+      handle = (await context.params).creator;
       if (/^[a-z0-9][a-z0-9_-]{2,39}$/.test(handle)) {
-        const options = typeof source === "function" ? await source() : source;
-        page = await lookupAlias(options, handle);
+        current = typeof source === "function" ? await source() : source;
+        page = await lookupAlias(current, handle);
       }
     } catch {
       page = null;
@@ -178,7 +209,6 @@ export function createCreatorAliasHandler(
           "x-commish-page-id": page.pageId,
         },
       });
-    if (handlerOptions.notFound) return handlerOptions.notFound(request);
-    return new Response(null, { status: 404, headers });
+    return link(request, current ? handle : "");
   };
 }

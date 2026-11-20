@@ -3,8 +3,10 @@ import {
   Commish,
   CommishError,
   type CreatorPage,
+  LINK_CHECK_HEADER,
   type LinkHandoff,
 } from "@commish/sdk";
+import { headers } from "next/headers.js";
 import { notFound, redirect, unstable_rethrow } from "next/navigation.js";
 import { CreatorPageView } from "./pages-client.js";
 import {
@@ -33,10 +35,21 @@ async function linkFallback(source: PageOptionsSource, params: Promise<{ creator
   let link: LinkHandoff;
   try {
     const options = typeof source === "function" ? await source() : source;
+    // Forward a root path check from Commish; outside a request there is none.
+    let check: string | undefined;
+    try {
+      check = (await headers()).get(LINK_CHECK_HEADER) ?? undefined;
+    } catch (error) {
+      unstable_rethrow(error);
+    }
     ({ data: link } = await new Commish({
       secretKey: options.secretKey,
       baseUrl: options.apiUrl,
-    }).links.handoff({ handle: (await params).creator, signal: AbortSignal.timeout(4000) }));
+    }).links.handoff({
+      handle: (await params).creator,
+      ...(check ? { check } : {}),
+      signal: AbortSignal.timeout(4000),
+    }));
   } catch (error) {
     unstable_rethrow(error);
     if (error instanceof CommishError && error.status === 404) notFound();

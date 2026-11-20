@@ -91,14 +91,14 @@ test("unmatched paths and outages stay merchant 404s", async () => {
         (await handler(new Request(`${page.origin}/wp-admin`), params("wp-admin"))).status,
         404,
       );
-    assert.equal(calls, 1, "a miss is remembered instead of re-queried");
+    assert.equal(calls, 2, "a miss costs one page lookup and one link lookup, then is remembered");
     calls = 0;
     await Promise.all(
       Array.from({ length: 5 }, () =>
         handler(new Request(`${page.origin}/crawler`), params("crawler")),
       ),
     );
-    assert.equal(calls, 1, "concurrent lookups of one path are coalesced");
+    assert.equal(calls, 2, "concurrent lookups of one path are coalesced, page and link alike");
     calls = 0;
     for (let i = 0; i < 100; i += 1)
       await handler(new Request(`${page.origin}/probe-${i}`), params(`probe-${i}`));
@@ -226,5 +226,47 @@ test("verified aliases are cached and survive crawler bursts and outages", async
   } finally {
     globalThis.fetch = original;
     mock.timers.reset();
+  }
+});
+
+test("a root path that is not a page alias is served as a bare link through the same budget", async () => {
+  const original = globalThis.fetch;
+  const calls = [];
+  // A fresh lookup window, whatever the earlier tests spent.
+  mock.timers.enable({ apis: ["Date"], now: Date.now() + 3_600_000 });
+  try {
+    const handler = createCreatorAliasHandler(options);
+    globalThis.fetch = async (url, init) => {
+      calls.push(`${init.method} ${new URL(url).pathname.split("/").slice(-2).join("/")}`);
+      return String(url).includes("/links/")
+        ? Response.json({
+            data: {
+              protocol: "commish-links-v1",
+              status: "ready",
+              location: `${page.origin}/?commish_ref=token.signature`,
+            },
+          })
+        : Response.json({ error: { code: "page_not_found" } }, { status: 404 });
+    };
+    const response = await handler(new Request(`${page.origin}/barelink`), params("barelink"));
+    assert.equal(response.status, 307);
+    assert.equal(response.headers.get("location"), `${page.origin}/?commish_ref=token.signature`);
+    assert.deepEqual(calls, ["GET prg_123456789012/barelink", "POST barelink/handoff"]);
+    const check = "cmprobe-0123456789abcdef01234567";
+    globalThis.fetch = async (url, init) => {
+      calls.push(init.headers?.["x-commish-link-check"] ?? "no-check");
+      return String(url).includes("/links/")
+        ? Response.json({ data: { protocol: "commish-links-v1", status: "probe" } })
+        : Response.json({ error: { code: "page_not_found" } }, { status: 404 });
+    };
+    const probe = await handler(
+      new Request(`${page.origin}/barelink`, { headers: { "x-commish-link-check": check } }),
+      params("barelink"),
+    );
+    assert.equal(probe.status, 204);
+    assert.equal(calls.at(-1), check);
+  } finally {
+    mock.timers.reset();
+    globalThis.fetch = original;
   }
 });
