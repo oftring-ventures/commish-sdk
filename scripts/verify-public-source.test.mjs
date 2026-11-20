@@ -170,9 +170,15 @@ test("the committed pair is admitted and archive targets follow the exports", ()
     [...packages[1].targets].sort(),
     [
       "./bin/init.mjs",
-      ...["browser", "index", "pages", "pages-handlers", "pages-routing", "provider"].flatMap(
-        (stem) => [`./dist/${stem}.d.ts`, `./dist/${stem}.js`],
-      ),
+      ...[
+        "browser",
+        "index",
+        "links",
+        "pages",
+        "pages-handlers",
+        "pages-routing",
+        "provider",
+      ].flatMap((stem) => [`./dist/${stem}.d.ts`, `./dist/${stem}.js`]),
     ].sort(),
   );
 });
