@@ -44,9 +44,13 @@ test("links init plans by default and applies only a missing route", (t) => {
   assert.match(source, /createReferralLinkRoute\(\(\) => \(\{/);
   assert.match(source, /from "@commish\/next\/links"/);
   assert.match(source, /process\.env\.COMMISH_SECRET_KEY!/);
-  assert.deepEqual(f.run("links", "init", "--apply", "--json").out.files, [
-    { path: "app/c/[creator]/route.ts", status: "unchanged" },
-  ]);
+  const again = f.run("links", "init", "--apply", "--json");
+  assert.deepEqual(again.out.files, [{ path: "app/c/[creator]/route.ts", status: "unchanged" }]);
+  assert.equal(
+    again.out.status,
+    "no_changes",
+    "a run that wrote nothing does not claim an install",
+  );
   assert.equal(applied.out.integrationVerified, false);
 });
 
@@ -76,7 +80,7 @@ test("links init never overwrites a merchant route and steps aside for Commish P
   assert.equal(custom.run("links", "init", "--json").out.files[0].status, "conflict");
   const refused = custom.run("links", "init", "--apply", "--json");
   assert.equal(refused.status, 1);
-  assert.equal(refused.error.code, "existing_files_require_manual_integration");
+  assert.equal(refused.error.code, "existing_page_namespace_requires_manual_integration");
   assert.equal(
     readFileSync(join(custom.root, "app/c/[creator]/route.ts"), "utf8"),
     "export const GET = () => new Response();\n",
@@ -97,6 +101,7 @@ test("links init never overwrites a merchant route and steps aside for Commish P
 
   const sibling = fixture(t);
   mkdirSync(join(sibling.root, "app/c/[slug]"), { recursive: true });
+  writeFileSync(join(sibling.root, "app/c/[slug]/page.tsx"), "export default function Page() {}\n");
   assert.equal(sibling.run("links", "init", "--json").out.files[0].status, "conflict");
 
   const linked = fixture(t);
@@ -209,6 +214,7 @@ test("links init --root adds the root route and a fallback config only where it 
 
   const cms = fixture(t);
   mkdirSync(join(cms.root, "app/[...slug]"), { recursive: true });
+  writeFileSync(join(cms.root, "app/[...slug]/page.tsx"), "export default function Page() {}\n");
   assert.equal(
     cms.run("links", "init", "--root", "--json").out.rootRewrite,
     "manual_cms_fallback_required",
@@ -258,4 +264,75 @@ test("links verify --root reports the fallback separately", async (t) => {
   assert.deepEqual(failed.root, { verified: false });
   assert.match(failed.next[0], /turned on/);
   assert.equal((await runLinks(["verify"])).root, undefined);
+});
+
+test("links init applies the same ownership rules as pages init", (t) => {
+  // A page in a route group answers the same URL: Next would refuse to build both.
+  const grouped = fixture(t);
+  mkdirSync(join(grouped.root, "app/(shop)/c/[slug]"), { recursive: true });
+  writeFileSync(
+    join(grouped.root, "app/(shop)/c/[slug]/page.tsx"),
+    "export default function Page() {}\n",
+  );
+  const group = grouped.run("links", "init", "--apply", "--json");
+  assert.equal(group.status, 1);
+  assert.equal(group.error.code, "existing_page_namespace_requires_manual_integration");
+  assert.throws(() => readFileSync(join(grouped.root, "app/c/[creator]/route.ts")));
+  assert.equal(
+    grouped.run("links", "init", "--json").out.manualIntegration,
+    "existing_page_namespace_requires_manual_integration",
+  );
+
+  // A Commish Pages page inside a route group still serves the links.
+  const groupedPages = fixture(t);
+  mkdirSync(join(groupedPages.root, "app/(marketing)/c/[creator]"), { recursive: true });
+  writeFileSync(
+    join(groupedPages.root, "app/(marketing)/c/[creator]/page.tsx"),
+    'import { createCreatorPage } from "@commish/next/pages";\n',
+  );
+  assert.deepEqual(groupedPages.run("links", "init", "--apply", "--json").out.files, [
+    { path: "app/(marketing)/c/[creator]/page.tsx", status: "served_by_pages" },
+  ]);
+
+  // The Pages Router shares the namespace.
+  const legacy = fixture(t);
+  mkdirSync(join(legacy.root, "pages/c"), { recursive: true });
+  writeFileSync(join(legacy.root, "pages/c/[slug].js"), "export default function Page() {}\n");
+  assert.equal(
+    legacy.run("links", "init", "--apply", "--json").error.code,
+    "existing_page_namespace_requires_manual_integration",
+  );
+
+  // A root catch-all owns every path; only it can hand /c/* over.
+  for (const [dir, file] of [
+    ["app/[...slug]", "page.tsx"],
+    ["app/[[...slug]]", "page.tsx"],
+    ["app/(site)/[section]/[item]", "page.tsx"],
+  ]) {
+    const cms = fixture(t);
+    mkdirSync(join(cms.root, dir), { recursive: true });
+    writeFileSync(join(cms.root, dir, file), "export default function Page() {}\n");
+    const refused = cms.run("links", "init", "--apply", "--json");
+    assert.equal(refused.error.code, "dynamic_route_ownership_requires_manual_integration", dir);
+    assert.throws(() => readFileSync(join(cms.root, "app/c/[creator]/route.ts")));
+  }
+  const legacyCatchAll = fixture(t);
+  mkdirSync(join(legacyCatchAll.root, "pages"), { recursive: true });
+  writeFileSync(
+    join(legacyCatchAll.root, "pages/[...slug].js"),
+    "export default function Page() {}\n",
+  );
+  assert.equal(
+    legacyCatchAll.run("links", "init", "--apply", "--json").error.code,
+    "dynamic_route_ownership_requires_manual_integration",
+  );
+
+  // An unrelated dynamic route elsewhere is not a reason to refuse.
+  const unrelated = fixture(t);
+  mkdirSync(join(unrelated.root, "app/blog/[slug]"), { recursive: true });
+  writeFileSync(
+    join(unrelated.root, "app/blog/[slug]/page.tsx"),
+    "export default function Page() {}\n",
+  );
+  assert.equal(unrelated.run("links", "init", "--apply", "--json").out.status, "files_installed");
 });

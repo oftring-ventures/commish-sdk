@@ -70,13 +70,30 @@ function options(args) {
   };
 }
 
+// Every file under a directory; a symlink anywhere means the tree is not ours to reason about.
+function filesAt(root) {
+  const result = [];
+  for (const item of readdirSync(root, { withFileTypes: true })) {
+    const path = `${root}/${item.name}`;
+    if (item.isSymbolicLink()) throw new Error("symlink_requires_manual_integration");
+    if (item.isDirectory()) result.push(...filesAt(path));
+    else result.push(path);
+  }
+  return result;
+}
+
+// The same ownership rules as `commish-next pages init`: route groups do not
+// change a URL, the Pages Router shares the namespace, and a dynamic or
+// catch-all route that could answer the address means only its owner can hand
+// the address over. File non-overwrite alone does not establish that.
 function plan(prefix) {
   // Next ignores src/app when a root app directory exists.
   const app = stat("app") ? "app" : stat("src/app") ? "src/app" : null;
   if (!app) throw new Error("next_app_router_required");
   safe(`${app}/`);
   const typed = Boolean(stat("tsconfig.json") || stat(`${app}/layout.tsx`));
-  const directory = `${app}${prefix}/[creator]`;
+  const segment = prefix.slice(1);
+  const directory = `${app}/${segment}/[creator]`;
   const path = `${directory}/route.${typed ? "ts" : "js"}`;
   const content = `import { createReferralLinkRoute } from "@commish/next/links";
 
@@ -89,41 +106,74 @@ export const GET = createReferralLinkRoute(() => ({
 }));
 `;
   safe(path);
-  const extensions = ["js", "jsx", "ts", "tsx"];
-  // A Commish Pages page at this address already forwards creators who have no
-  // page, so nothing is installed beside it.
-  const page = extensions.map((extension) => `${directory}/page.${extension}`).find(stat);
-  if (page)
-    return {
-      app,
-      path,
-      content,
-      status: readFileSync(page, "utf8").includes("@commish/next/pages")
-        ? "served_by_pages"
-        : "conflict",
-      existing: page,
-    };
-  const other = extensions
-    .map((extension) => `${directory}/route.${extension}`)
-    .find((candidate) => candidate !== path && stat(candidate));
-  if (other) return { app, path, content, status: "conflict", existing: other };
+  const inventory = filesAt(app);
+  const legacy = ["pages", "src/pages"]
+    .filter((dir) => {
+      const item = stat(dir);
+      if (item?.isSymbolicLink()) throw new Error("symlink_requires_manual_integration");
+      if (item?.isDirectory()) safe(dir);
+      return item?.isDirectory();
+    })
+    .flatMap((dir) =>
+      filesAt(dir).map((file) => file.slice(dir.length + 1).replace(/(\/index)?\.[^./]+$/, "")),
+    );
+  const normalized = (file) =>
+    file
+      .slice(app.length + 1)
+      .split("/")
+      .filter((part) => !/^\(.+\)$/.test(part))
+      .join("/");
+  const routeParts = (file) => normalized(file).split("/").slice(0, -1);
+  const overlaps = (left, right) => {
+    for (let i = 0; i < Math.max(left.length, right.length); i++) {
+      const a = left[i],
+        b = right[i];
+      if (a?.includes("...")) return a.startsWith("[[") || b !== undefined;
+      if (b?.includes("...")) return b.startsWith("[[") || a !== undefined;
+      if (!a || !b) return false;
+      if (a !== b && !a.startsWith("[") && !b.startsWith("[")) return false;
+    }
+    return true;
+  };
+  const isRoute = (file) => /\/(page|route)\.[jt]sx?$/.test(file);
+  const base = { app, path, content };
+  // A Commish Pages page at this address, inside a route group or not, already
+  // forwards creators who have no page, so nothing is installed beside it.
+  const pagesPage = inventory.find(
+    (file) =>
+      /\/page\.[jt]sx?$/.test(file) &&
+      routeParts(file).join("/") === `${segment}/[creator]` &&
+      readFileSync(file, "utf8").includes("@commish/next/pages"),
+  );
+  if (pagesPage) return { ...base, status: "served_by_pages", existing: pagesPage };
   const entry = stat(path);
-  if (entry)
+  if (entry?.isFile() && readFileSync(path, "utf8") === content)
+    return { ...base, status: "unchanged", existing: path };
+  // Anything else already under the prefix, in either router, owns it.
+  const occupied =
+    inventory.find((file) => file !== path && normalized(file).startsWith(`${segment}/`)) ??
+    (entry ? path : undefined) ??
+    legacy.find((route) => route === segment || route.startsWith(`${segment}/`));
+  if (occupied)
     return {
-      app,
-      path,
-      content,
-      status: entry.isFile() && readFileSync(path, "utf8") === content ? "unchanged" : "conflict",
-      existing: path,
+      ...base,
+      status: "conflict",
+      existing: occupied,
+      manualIntegration: "existing_page_namespace_requires_manual_integration",
     };
-  // Another dynamic segment beside [creator] would make the address ambiguous.
-  const parent = `${app}${prefix}`;
-  const siblings = stat(parent)?.isDirectory()
-    ? readdirSync(parent).filter((name) => name.startsWith("[") && name !== "[creator]")
-    : [];
-  if (siblings.length)
-    return { app, path, content, status: "conflict", existing: `${parent}/${siblings[0]}` };
-  return { app, path, content, status: "create" };
+  // A dynamic or catch-all route that could also answer /<prefix>/<handle>.
+  const target = [segment, "[creator]"];
+  const ambiguous =
+    inventory.find((file) => isRoute(file) && overlaps(routeParts(file), target)) ??
+    legacy.find((route) => overlaps(route.split("/"), target));
+  if (ambiguous)
+    return {
+      ...base,
+      status: "conflict",
+      existing: ambiguous,
+      manualIntegration: "dynamic_route_ownership_requires_manual_integration",
+    };
+  return { ...base, status: "create" };
 }
 
 // Root links (brand.com/<name>): a dedicated route that receives a fallback
@@ -163,7 +213,19 @@ export const GET = createReferralLinkRoute(
   };
   const configs = ["js", "mjs", "cjs", "ts", "mts"].map((ext) => `next.config.${ext}`).filter(stat);
   // A root dynamic or catch-all route answers every path first; only its owner can hand one over.
-  const rootDynamic = readdirSync(app).some((name) => name.startsWith("["));
+  const topLevel = (file) =>
+    file
+      .slice(app.length + 1)
+      .split("/")
+      .filter((part) => !/^\(.+\)$/.test(part));
+  const rootDynamic =
+    filesAt(app).some((file) => {
+      const parts = topLevel(file);
+      return parts[0]?.startsWith("[") && /^(page|route)\.[jt]sx?$/.test(parts.at(-1));
+    }) ||
+    ["pages", "src/pages"].some(
+      (dir) => stat(dir)?.isDirectory() && readdirSync(dir).some((name) => name.startsWith("[")),
+    );
   if (rootDynamic)
     return {
       files: [route],
@@ -248,6 +310,7 @@ export async function runLinks(args) {
     : null;
   if (selected.apply) {
     const writes = [route, ...(root?.files ?? [])];
+    if (route.status === "conflict") throw new Error(route.manualIntegration);
     if (writes.some((file) => file.status === "conflict"))
       throw new Error("existing_files_require_manual_integration");
     for (const file of writes)
@@ -257,7 +320,13 @@ export async function runLinks(args) {
       }
   }
   return {
-    status: selected.apply ? "files_installed" : "plan",
+    // "files_installed" only when this run wrote something.
+    status: !selected.apply
+      ? "plan"
+      : [route, ...(root?.files ?? [])].some((file) => file.status === "create")
+        ? "files_installed"
+        : "no_changes",
+    ...(route.manualIntegration ? { manualIntegration: route.manualIntegration } : {}),
     app: route.app,
     prefix: selected.prefix,
     files: [

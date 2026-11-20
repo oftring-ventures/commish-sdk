@@ -13,6 +13,17 @@ visitor consent are separate choices. No maintainer release process is required.
 6. Run read-only doctor, package/build checks and a real TEST conversion/refund journey. Report installed, API-resolved, alias-verified and end-to-end-verified separately. Verify future creators work with no new merchant deploy.
 7. Upgrade matching package versions deliberately. Removal preserves ordinary referral integration, merchant files and historical financial records. Follow the Pages guide.
 
+## Referral links on the merchant's domain
+
+Independent of Pages: `commish-next links init --dry-run --json`, then `--apply`,
+installs one route so creators are shown `brand.com/c/<name>` instead of a
+commish.sh link, and `commish-next links verify --json` asks Commish to check it
+after deployment. Use the same application and TEST or LIVE key for the
+deployment and the check. The installer follows the same route-ownership rules
+as Pages and never overwrites a file. Where Pages is installed at that prefix
+its page already forwards creators without a page; do not add the link route
+beside it. See the package README, "Referral links on your own domain".
+
 ## Copyable AGENTS.md section
 
 Review with the repository owner before copying; the installer never edits agent instructions.

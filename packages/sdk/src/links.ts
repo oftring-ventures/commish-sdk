@@ -149,8 +149,15 @@ export type ReferralLinkHandlerOptions = {
   }) => Promise<{ data: LinkHandoff }>;
   /** Render your own not-found response for handles Commish does not know (default: an empty 404). */
   notFound?: (request: Request) => Response | Promise<Response>;
-  /** Upper bound for the Commish request in milliseconds (default 4000). */
+  /** Upper bound for the Commish request in milliseconds (default 4000). Must be a positive number. */
   timeoutMs?: number;
+  /**
+   * Called when a visit could not be answered for a reason other than an
+   * unknown handle: a rejected key, an invalid answer, a timeout. The visitor
+   * still gets the static notice (or, in root mode, the not-found response);
+   * use this to log or alert.
+   */
+  onError?: (error: unknown, context: { handle: string }) => void;
   /**
    * Set for a handler that receives every unknown one-segment path of the site
    * (root links, brand.com/<name>). Such a path is usually not a creator, so a
@@ -198,6 +205,9 @@ function fresh(map: Map<string, number>, key: string) {
  *   response instead, because most root paths are not creators.
  */
 export function createReferralLinkHandler(options: ReferralLinkHandlerOptions) {
+  const timeoutMs = options.timeoutMs ?? 4000;
+  if (!Number.isFinite(timeoutMs) || timeoutMs <= 0)
+    throw new TypeError("timeoutMs must be a positive number");
   const misses = new Map<string, number>();
   const known = new Map<string, number>();
   // First lookups of a handle not yet seen to resolve, so a burst on one unknown path asks once.
@@ -219,7 +229,7 @@ export function createReferralLinkHandler(options: ReferralLinkHandlerOptions) {
   return async function referralLink(request: Request, handle: string): Promise<Response> {
     const headers = { "cache-control": "private, no-store", "x-robots-tag": "noindex" };
     if (!["GET", "HEAD"].includes(request.method))
-      return new Response(null, { status: 405, headers });
+      return new Response(null, { status: 405, headers: { ...headers, allow: "GET, HEAD" } });
     const missing = () =>
       options.notFound ? options.notFound(request) : new Response(null, { status: 404, headers });
     const failed = () => (options.root ? missing() : notice(unavailableCopy, "60"));
@@ -257,7 +267,7 @@ export function createReferralLinkHandler(options: ReferralLinkHandlerOptions) {
       const { data } = await options.handoff({
         handle,
         ...(check === null ? {} : { check }),
-        signal: AbortSignal.timeout(options.timeoutMs ?? 4000),
+        signal: AbortSignal.timeout(timeoutMs),
       });
       assertLinkHandoff(data);
       if (data.status === "probe") {
@@ -278,6 +288,11 @@ export function createReferralLinkHandler(options: ReferralLinkHandlerOptions) {
         return missing();
       }
       done("failed");
+      try {
+        options.onError?.(error, { handle });
+      } catch {
+        /* A failing hook must not change what the visitor gets. */
+      }
       return failed();
     }
   };
