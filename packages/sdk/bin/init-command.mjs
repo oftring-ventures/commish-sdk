@@ -30,7 +30,12 @@ export function initGuide(root) {
     install: `${manager.add} ${packages.join(" ")}`,
     plan: `${cli} setup --plan --json`,
     provision: `${cli} setup --config commish.setup.json --mode test --no-open --non-interactive --json`,
-    ...(next ? { wire: `${manager.exec} commish-next --json` } : {}),
+    ...(next
+      ? {
+          wire: `${manager.exec} commish-next --json`,
+          links: `${manager.exec} commish-next links init --json`,
+        }
+      : {}),
     verify: `${cli} verify --json`,
     status: `${cli} status --json`,
   };
@@ -55,7 +60,7 @@ function render(repository, commands, next, cli) {
       ? "Next.js without a single app directory. Use @commish/sdk and wire it yourself."
       : "Not detected. Use @commish/sdk and wire it yourself.";
   const wire = next
-    ? `Run \`${commands.wire}\`, then the same command with \`--write\`, and follow its next steps for the layout and Checkout handler.`
+    ? `Run \`${commands.wire}\`, then the same command with \`--write\`, and follow its next steps for the layout and Checkout handler. To give creators links on this website instead of commish.sh, run \`${commands.links}\`, then the same command with \`--apply\`; after the deployment is live run \`${commands.links.replace(" init ", " verify ")}\`. Creators keep their commish.sh links until that check passes.`
     : `Follow the SDK guide (${sdkGuide}): capture the referral with \`captureReferral\` from \`@commish/sdk/browser\` through a same-origin capture route, and add the captured attribution to Stripe Checkout metadata as \`commish_attribution\`.`;
   return `# Set up Commish in this repository
 
