@@ -160,6 +160,49 @@ test("rendering distinguishes unavailable from not found", async (t) => {
   );
 });
 
+test("a creator without a page is forwarded as a bare referral link", async (t) => {
+  const original = globalThis.fetch;
+  t.after(() => (globalThis.fetch = original));
+  const Page = createCreatorPage({
+    secretKey: "cm_test_sk_fixture_123456789012",
+    programId: page.programId,
+    origin: page.origin,
+  });
+  const visit = () => Page({ params: Promise.resolve({ creator: "maya" }) });
+  let link;
+  const calls = [];
+  globalThis.fetch = async (url, init) => {
+    calls.push(`${init.method} ${new URL(url).pathname}`);
+    return String(url).includes("/links/")
+      ? link()
+      : Response.json({ error: { code: "page_not_found" } }, { status: 404 });
+  };
+  const data = (value) => () => Response.json({ data: { protocol: "commish-links-v1", ...value } });
+
+  link = data({ status: "ready", location: "https://brand.example/?commish_ref=token.signature" });
+  await assert.rejects(visit, (error) => {
+    assert.match(error.digest, /^NEXT_REDIRECT;/);
+    assert.ok(error.digest.includes("https://brand.example/?commish_ref=token.signature"));
+    return true;
+  });
+  assert.deepEqual(calls, [
+    `GET /api/v1/pages/${page.programId}/maya`,
+    "POST /api/v1/links/maya/handoff",
+  ]);
+
+  link = data({ status: "paused", reason: "funding_paused" });
+  assert.match(renderToStaticMarkup(await visit()), /This referral link is paused/);
+  assert.match(renderToStaticMarkup(await visit()), /name="robots" content="noindex, nofollow"/);
+  link = data({ status: "paused", reason: "promotion" });
+  assert.match(renderToStaticMarkup(await visit()), /Promotion is temporarily unavailable/);
+  link = data({ status: "probe" });
+  assert.match(renderToStaticMarkup(await visit()), /data-commish-link-probe/);
+  link = () => new Response(null, { status: 503 });
+  assert.match(renderToStaticMarkup(await visit()), /temporarily unavailable/);
+  link = () => Response.json({ error: { code: "link_not_found" } }, { status: 404 });
+  await assert.rejects(visit, /NEXT_HTTP_ERROR_FALLBACK;404/);
+});
+
 for (const buyerPromotion of [
   null,
   {

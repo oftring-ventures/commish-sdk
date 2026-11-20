@@ -164,9 +164,15 @@ function verifyNextConsumer(provider, sdk, next, context, execute = execFileSync
       continue;
     }
     assert(
-      ["./browser", ".", "./react", "./pages", "./pages/handlers", "./pages/routing"].includes(
-        entry,
-      ),
+      [
+        "./browser",
+        ".",
+        "./react",
+        "./pages",
+        "./pages/handlers",
+        "./pages/routing",
+        "./links",
+      ].includes(entry),
       "unsupported Next export tuple",
     );
     if (["./browser", "./react"].includes(entry))
