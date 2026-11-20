@@ -8,12 +8,18 @@ const args = process.argv.slice(2);
 const json = args.includes("--json");
 const usage = {
   status: "help",
-  commands: ["init [--write] [--json]", "pages <init|doctor|verify-alias> [options]", "--version"],
+  commands: [
+    "init [--write] [--json]",
+    "links <init|verify> [options]",
+    "pages <init|doctor|verify-alias> [options]",
+    "--version",
+  ],
   moved: { setup: "commish setup", verify: "commish verify --json" },
   integrationVerified: false,
 };
 const usageText = [
   "Usage: commish-next [init] [--write] [--json]",
+  "       commish-next links <init|verify> [--apply|--dry-run] [--prefix /c] [--origin https://brand.com] [--json]",
   "       commish-next pages <init|doctor|verify-alias> [--apply|--dry-run] [--root-aliases] [--prefix /c] [--creator handle] [--json]",
   "       commish-next --version",
   "Credential setup and verification live in @commish/sdk: commish setup, commish verify --json.",
@@ -62,7 +68,21 @@ if (["setup", "verify"].includes(args[0])) {
   );
   process.exit(1);
 }
-if (args[0] === "pages") {
+if (args[0] === "links") {
+  try {
+    const { runLinks } = await import("./links.mjs");
+    const result = await runLinks(args.slice(1));
+    console.log(json ? JSON.stringify(result) : JSON.stringify(result, null, 2));
+  } catch (error) {
+    // Stable snake_case codes only; receipts never carry raw messages.
+    if (process.env.COMMISH_DEBUG === "1") console.error(error);
+    const code = /^[a-z][a-z0-9_]{2,80}$/.test(error?.message ?? "")
+      ? error.message
+      : "links_unavailable";
+    console.error(JSON.stringify({ status: "error", code, integrationVerified: false }));
+    process.exitCode = 1;
+  }
+} else if (args[0] === "pages") {
   try {
     const { runPages } = await import("./pages.mjs");
     const result = await runPages(args.slice(1));
