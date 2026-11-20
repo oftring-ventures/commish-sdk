@@ -161,3 +161,36 @@ test("an outage or an invalid answer shows a notice instead of sending the buyer
   }
   assert.equal(new CommishError("x", 404, "link_not_found").name, "CommishError");
 });
+
+test("the handler reports failures to onError, names allowed methods and rejects a bad timeout", async () => {
+  const seen = [];
+  const rejected = client(() =>
+    Response.json({ error: { code: "invalid_api_key" } }, { status: 401 }),
+  );
+  const handler = createReferralLinkHandler({
+    handoff: rejected.sdk.links.handoff,
+    onError: (error, context) => {
+      seen.push([error.status, context.handle]);
+      throw new Error("a failing hook changes nothing");
+    },
+  });
+  assert.equal((await handler(get(), "maya")).status, 503);
+  assert.deepEqual(seen, [[401, "maya"]]);
+  const missing = client(() =>
+    Response.json({ error: { code: "link_not_found" } }, { status: 404 }),
+  );
+  const quiet = [];
+  await createReferralLinkHandler({
+    handoff: missing.sdk.links.handoff,
+    onError: () => quiet.push(1),
+  })(get("/c/nobody"), "nobody");
+  assert.equal(quiet.length, 0, "an unknown handle is not an error");
+  const refused = await handler(get("/c/maya", "POST"), "maya");
+  assert.equal(refused.status, 405);
+  assert.equal(refused.headers.get("allow"), "GET, HEAD");
+  for (const timeoutMs of [0, -1, Number.NaN, Number.POSITIVE_INFINITY])
+    assert.throws(
+      () => createReferralLinkHandler({ handoff: rejected.sdk.links.handoff, timeoutMs }),
+      /timeoutMs must be a positive number/,
+    );
+});
