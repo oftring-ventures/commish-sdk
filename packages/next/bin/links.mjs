@@ -33,6 +33,7 @@ function options(args) {
         json: { type: "boolean" },
         prefix: { type: "string" },
         origin: { type: "string" },
+        root: { type: "boolean" },
       },
     });
   } catch {
@@ -60,7 +61,13 @@ function options(args) {
   }
   if (command === "verify" && (parsed.values.apply || parsed.values["dry-run"]))
     throw new Error("invalid_links_command");
-  return { command, apply: Boolean(parsed.values.apply), prefix, origin };
+  return {
+    command,
+    apply: Boolean(parsed.values.apply),
+    prefix,
+    origin,
+    root: Boolean(parsed.values.root),
+  };
 }
 
 function plan(prefix) {
@@ -119,6 +126,73 @@ export const GET = createReferralLinkRoute(() => ({
   return { app, path, content, status: "create" };
 }
 
+// Root links (brand.com/<name>): a dedicated route that receives a fallback
+// rewrite, so the site's own pages always win. Only a project without a Next
+// config gets one written; an existing config is merged by hand.
+function rootPlan(app, typed, servedByPages) {
+  if (servedByPages)
+    return {
+      files: [],
+      rewrite: "served_by_pages",
+      next: "Root links are served by the Commish Pages alias handler here. Run `commish-next pages init --root-aliases --dry-run` and follow it.",
+    };
+  const path = `${app}/api/commish/link/[creator]/route.${typed ? "ts" : "js"}`;
+  const content = `import { createReferralLinkRoute } from "@commish/next/links";
+
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+// Receives the fallback rewrite of root links: /<name>. Anything that is not a creator is a 404.
+export const GET = createReferralLinkRoute(
+  () => ({
+    secretKey: process.env.COMMISH_SECRET_KEY${typed ? "!" : ""},
+    apiUrl: process.env.COMMISH_API_URL,
+  }),
+  { root: true },
+);
+`;
+  safe(path);
+  const entry = stat(path);
+  const route = {
+    path,
+    content,
+    status: !entry
+      ? "create"
+      : entry.isFile() && readFileSync(path, "utf8") === content
+        ? "unchanged"
+        : "conflict",
+  };
+  const configs = ["js", "mjs", "cjs", "ts", "mts"].map((ext) => `next.config.${ext}`).filter(stat);
+  // A root dynamic or catch-all route answers every path first; only its owner can hand one over.
+  const rootDynamic = readdirSync(app).some((name) => name.startsWith("["));
+  if (rootDynamic)
+    return {
+      files: [route],
+      rewrite: "manual_cms_fallback_required",
+      next: `A dynamic route at the top of ${app}/ answers every path. Have it call the root link route for paths it does not own, then run \`commish-next links verify --root\`.`,
+    };
+  if (configs.length)
+    return {
+      files: [route],
+      rewrite: "manual_config_merge_required",
+      next: `Add \`referralLinkFallbackRewrite()\` from "@commish/next/links" to the \`fallback\` list of \`rewrites()\` in ${configs[0]}, keeping every existing rule. Never use beforeFiles or middleware for this.`,
+    };
+  const config = `import { referralLinkFallbackRewrite } from "@commish/next/links";
+
+export default {
+  async rewrites() {
+    // Fallback only: every page, asset and route of your own is matched first.
+    return { beforeFiles: [], afterFiles: [], fallback: [referralLinkFallbackRewrite()] };
+  },
+};
+`;
+  safe("next.config.mjs");
+  return {
+    files: [route, { path: "next.config.mjs", content: config, status: "create" }],
+    rewrite: "fallback_rewrite_supported",
+    next: "Deploy, turn on short links for this product in the Commish dashboard, then run `commish-next links verify --root`.",
+  };
+}
+
 export async function runLinks(args) {
   const selected = options(args);
   if (selected.command === "verify") {
@@ -134,6 +208,7 @@ export async function runLinks(args) {
       }).links.verifyRoute({
         prefix: selected.prefix,
         origin: selected.origin,
+        root: selected.root,
         signal: AbortSignal.timeout(30_000),
       }));
     } catch (error) {
@@ -146,9 +221,17 @@ export async function runLinks(args) {
     return {
       status: data.verified ? "verified" : "unverified",
       route: data.route,
+      ...(selected.root ? { root: { verified: data.root?.verified === true } } : {}),
       integrationVerified: false,
       next: data.verified
         ? [
+            ...(selected.root
+              ? [
+                  data.root?.verified
+                    ? "Unknown paths at the top of your site reach the link route. Each creator's link switches to the short form once Commish has checked their name."
+                    : "Root links are not reaching the link route. Confirm short links are turned on for this product in the Commish dashboard and that the fallback rewrite is deployed.",
+                ]
+              : []),
             "Creators are now shown links on this website. Their commish.sh links keep working.",
             "Open one creator link in a browser and confirm the referral is captured before relying on it.",
           ]
@@ -159,12 +242,19 @@ export async function runLinks(args) {
     };
   }
   const route = plan(selected.prefix);
+  const typed = route.path.endsWith(".ts");
+  const root = selected.root
+    ? rootPlan(route.app, typed, route.status === "served_by_pages")
+    : null;
   if (selected.apply) {
-    if (route.status === "conflict") throw new Error("existing_files_require_manual_integration");
-    if (route.status === "create") {
-      mkdirSync(dirname(route.path), { recursive: true });
-      writeFileSync(route.path, route.content, { flag: "wx" });
-    }
+    const writes = [route, ...(root?.files ?? [])];
+    if (writes.some((file) => file.status === "conflict"))
+      throw new Error("existing_files_require_manual_integration");
+    for (const file of writes)
+      if (file.status === "create") {
+        mkdirSync(dirname(file.path), { recursive: true });
+        writeFileSync(file.path, file.content, { flag: "wx" });
+      }
   }
   return {
     status: selected.apply ? "files_installed" : "plan",
@@ -176,9 +266,12 @@ export async function runLinks(args) {
         status: route.status,
         ...(route.status === "conflict" ? { existing: route.existing } : {}),
       },
+      ...(root?.files ?? []).map(({ path, status }) => ({ path, status })),
     ],
+    ...(root ? { rootRewrite: root.rewrite } : {}),
     requiredEnvironment: ["COMMISH_API_URL", "COMMISH_SECRET_KEY"],
     next: [
+      ...(root ? [root.next] : []),
       "Deploy, then run `commish-next links verify` with the same prefix so Commish checks the route on your verified website.",
       "Until that check passes, creators keep their commish.sh links. Nothing changes for existing links.",
       "Keep the existing referral capture on the destination page; the link route only forwards the buyer there.",

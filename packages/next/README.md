@@ -213,6 +213,45 @@ export const GET = createReferralLinkRoute(() => ({
 - Other frameworks: `createReferralLinkHandler` from `@commish/sdk` is the same
   handler for any `Request`/`Response` server.
 
+### Root links (`your-site.com/<name>`)
+
+Root links drop the prefix. They share your site's own namespace, so they are
+opt-in twice: you turn on short links for the product in the Commish dashboard,
+and you add one fallback rewrite so that only paths none of your own routes
+match reach Commish.
+
+```sh
+pnpm exec commish-next links init --root --apply --json
+# deploy, turn on short links in the dashboard, then
+pnpm exec commish-next links verify --root --json
+```
+
+```js
+// next.config.mjs: fallback only, after every page, asset and route of yours
+import { referralLinkFallbackRewrite } from "@commish/next/links";
+
+export default {
+  async rewrites() {
+    return { beforeFiles: [], afterFiles: [], fallback: [referralLinkFallbackRewrite()] };
+  },
+};
+```
+
+- `--root` writes `app/api/commish/link/[creator]/route.ts`, the route the
+  rewrite targets, and a `next.config.mjs` only when the project has no Next
+  config. An existing config is merged by hand; a top-level dynamic or
+  catch-all route has to hand unknown paths over itself.
+- Your own pages always win. Commish checks each creator's name against your
+  site and keeps that creator on the prefix link when a page of yours answers
+  the path; the dashboard lists those names.
+- The root route answers everything that is not a creator, and any Commish
+  outage, with a 404 (your `notFound` if you pass one), never a 5xx. Unknown
+  paths are remembered briefly and lookups are rationed per server instance.
+- Commish sends its per-name check with an `x-commish-link-check` header. The
+  handlers forward it unchanged; a custom handler must do the same.
+- With Commish Pages installed, the Pages alias handler serves root links for
+  creators without a page too, so no second route or rewrite is needed.
+
 ## Creator Pages
 
 Pages is optional and requires SDK/Next 0.3.0 or later. Installing it does not

@@ -171,3 +171,91 @@ test("links verify reports the checked route and never claims an integration", a
   );
   await assert.rejects(() => runLinks(["verify"]), /origin_unverified/);
 });
+
+test("links init --root adds the root route and a fallback config only where it is safe", (t) => {
+  const fresh = fixture(t);
+  const planned = fresh.run("links", "init", "--root", "--json");
+  assert.equal(planned.out.rootRewrite, "fallback_rewrite_supported");
+  assert.deepEqual(
+    planned.out.files.map(({ path, status }) => `${status} ${path}`),
+    [
+      "create app/c/[creator]/route.ts",
+      "create app/api/commish/link/[creator]/route.ts",
+      "create next.config.mjs",
+    ],
+  );
+  fresh.run("links", "init", "--root", "--apply", "--json");
+  assert.match(
+    readFileSync(join(fresh.root, "app/api/commish/link/[creator]/route.ts"), "utf8"),
+    /\{ root: true \}/,
+  );
+  const config = readFileSync(join(fresh.root, "next.config.mjs"), "utf8");
+  assert.match(config, /fallback: \[referralLinkFallbackRewrite\(\)\]/);
+  assert.match(config, /beforeFiles: \[\]/);
+
+  const configured = fixture(t);
+  writeFileSync(
+    join(configured.root, "next.config.ts"),
+    "export default { reactStrictMode: true };\n",
+  );
+  const merge = configured.run("links", "init", "--root", "--apply", "--json");
+  assert.equal(merge.out.rootRewrite, "manual_config_merge_required");
+  assert.match(merge.out.next[0], /fallback/);
+  assert.equal(
+    readFileSync(join(configured.root, "next.config.ts"), "utf8"),
+    "export default { reactStrictMode: true };\n",
+  );
+  assert.ok(readFileSync(join(configured.root, "app/api/commish/link/[creator]/route.ts"), "utf8"));
+
+  const cms = fixture(t);
+  mkdirSync(join(cms.root, "app/[...slug]"), { recursive: true });
+  assert.equal(
+    cms.run("links", "init", "--root", "--json").out.rootRewrite,
+    "manual_cms_fallback_required",
+  );
+
+  const pages = fixture(t);
+  mkdirSync(join(pages.root, "app/c/[creator]"), { recursive: true });
+  writeFileSync(
+    join(pages.root, "app/c/[creator]/page.tsx"),
+    'import { createCreatorPage } from "@commish/next/pages";\n',
+  );
+  const served = pages.run("links", "init", "--root", "--apply", "--json");
+  assert.equal(served.out.rootRewrite, "served_by_pages");
+  assert.equal(served.out.files.length, 1);
+  assert.throws(() => readFileSync(join(pages.root, "next.config.mjs")));
+});
+
+test("links verify --root reports the fallback separately", async (t) => {
+  let rootVerified = true;
+  const bodies = [];
+  const fetcher = mock.method(globalThis, "fetch", async (_url, init) => {
+    bodies.push(JSON.parse(init.body));
+    return Response.json({
+      data: {
+        verified: true,
+        route: {
+          origin: "https://brand.example",
+          prefix: "/c",
+          template: "https://brand.example/c/{creator}",
+        },
+        root: { verified: rootVerified },
+      },
+    });
+  });
+  const previous = process.env.COMMISH_SECRET_KEY;
+  t.after(() => {
+    fetcher.mock.restore();
+    if (previous === undefined) delete process.env.COMMISH_SECRET_KEY;
+    else process.env.COMMISH_SECRET_KEY = previous;
+  });
+  process.env.COMMISH_SECRET_KEY = secretKey;
+  const passed = await runLinks(["verify", "--root"]);
+  assert.deepEqual(passed.root, { verified: true });
+  assert.deepEqual(bodies[0], { prefix: "/c", root: true });
+  rootVerified = false;
+  const failed = await runLinks(["verify", "--root"]);
+  assert.deepEqual(failed.root, { verified: false });
+  assert.match(failed.next[0], /turned on/);
+  assert.equal((await runLinks(["verify"])).root, undefined);
+});
