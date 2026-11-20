@@ -133,8 +133,14 @@ export type ReferralLinkHandlerOptions = {
   handoff: (input: { handle: string; signal?: AbortSignal }) => Promise<{ data: LinkHandoff }>;
   /** Render your own not-found response for handles Commish does not know (default: an empty 404). */
   notFound?: (request: Request) => Response | Promise<Response>;
-  /** Upper bound for the Commish request in milliseconds (default 4000). */
+  /** Upper bound for the Commish request in milliseconds (default 4000). Must be a positive number. */
   timeoutMs?: number;
+  /**
+   * Called when a visit could not be answered for a reason other than an
+   * unknown handle: a rejected key, an invalid answer, a timeout. The visitor
+   * still gets the static notice; use this to log or alert.
+   */
+  onError?: (error: unknown, context: { handle: string }) => void;
 };
 
 /**
@@ -148,17 +154,20 @@ export type ReferralLinkHandlerOptions = {
  *   the creator's referral
  */
 export function createReferralLinkHandler(options: ReferralLinkHandlerOptions) {
+  const timeoutMs = options.timeoutMs ?? 4000;
+  if (!Number.isFinite(timeoutMs) || timeoutMs <= 0)
+    throw new TypeError("timeoutMs must be a positive number");
   return async function referralLink(request: Request, handle: string): Promise<Response> {
     const headers = { "cache-control": "private, no-store", "x-robots-tag": "noindex" };
     if (!["GET", "HEAD"].includes(request.method))
-      return new Response(null, { status: 405, headers });
+      return new Response(null, { status: 405, headers: { ...headers, allow: "GET, HEAD" } });
     const missing = () =>
       options.notFound ? options.notFound(request) : new Response(null, { status: 404, headers });
     if (typeof handle !== "string" || !HANDLE.test(handle)) return missing();
     try {
       const { data } = await options.handoff({
         handle,
-        signal: AbortSignal.timeout(options.timeoutMs ?? 4000),
+        signal: AbortSignal.timeout(timeoutMs),
       });
       assertLinkHandoff(data);
       if (data.status === "probe") return new Response(null, { status: 204, headers });
@@ -169,6 +178,11 @@ export function createReferralLinkHandler(options: ReferralLinkHandlerOptions) {
       });
     } catch (error) {
       if (object(error) && error.name === "CommishError" && error.status === 404) return missing();
+      try {
+        options.onError?.(error, { handle });
+      } catch {
+        /* A failing hook must not change what the visitor gets. */
+      }
       return notice(unavailableCopy, "60");
     }
   };

@@ -192,6 +192,7 @@ test("a creator without a page is forwarded as a bare referral link", async (t) 
 
   link = data({ status: "paused", reason: "funding_paused" });
   assert.match(renderToStaticMarkup(await visit()), /This referral link is paused/);
+  assert.match(renderToStaticMarkup(await visit()), /name="robots" content="noindex, nofollow"/);
   link = data({ status: "paused", reason: "promotion" });
   assert.match(renderToStaticMarkup(await visit()), /Promotion is temporarily unavailable/);
   link = data({ status: "probe" });
