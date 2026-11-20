@@ -161,3 +161,102 @@ test("an outage or an invalid answer shows a notice instead of sending the buyer
   }
   assert.equal(new CommishError("x", 404, "link_not_found").name, "CommishError");
 });
+
+const check = "cmprobe-0123456789abcdef01234567";
+test("a root path check is forwarded unchanged and never cached or treated as a handoff", async () => {
+  const seen = [];
+  const { sdk } = client((_url, init) => {
+    seen.push(init.headers["x-commish-link-check"]);
+    return Response.json({ data: { protocol: "commish-links-v1", status: "probe" } });
+  });
+  const handler = createReferralLinkHandler({ handoff: sdk.links.handoff });
+  const probe = () =>
+    handler(
+      new Request("https://brand.example/tim", { headers: { "x-commish-link-check": check } }),
+      "tim",
+    );
+  assert.equal((await probe()).status, 204);
+  assert.equal((await probe()).status, 204);
+  assert.deepEqual(seen, [check, check]);
+  const malformed = await handler(
+    new Request("https://brand.example/tim", { headers: { "x-commish-link-check": "anything" } }),
+    "tim",
+  );
+  assert.equal(malformed.status, 404);
+  assert.equal(seen.length, 2);
+  await assert.rejects(
+    () => sdk.links.handoff({ handle: "tim", check: "anything" }),
+    /Invalid link check/,
+  );
+});
+
+test("unknown handles are remembered, coalesced and rationed; known creators never are", async () => {
+  let calls = 0;
+  const { sdk } = client((url) => {
+    calls += 1;
+    return String(url).includes("/links/maya/")
+      ? Response.json({ data: ready })
+      : Response.json({ error: { code: "link_not_found" } }, { status: 404 });
+  });
+  const handler = createReferralLinkHandler({ handoff: sdk.links.handoff, root: true });
+  for (let i = 0; i < 5; i += 1)
+    assert.equal((await handler(get("/wp-admin"), "wp-admin")).status, 404);
+  assert.equal(calls, 1, "a miss is remembered");
+  calls = 0;
+  await Promise.all(Array.from({ length: 5 }, () => handler(get("/crawler"), "crawler")));
+  assert.equal(calls, 1, "a burst on one unknown path asks once");
+  calls = 0;
+  for (let i = 0; i < 100; i += 1) await handler(get(`/probe-${i}`), `probe-${i}`);
+  assert.ok(calls <= 60, "lookups of never-seen handles are bounded per window");
+  calls = 0;
+  for (let i = 0; i < 5; i += 1) assert.equal((await handler(get("/maya"), "maya")).status, 404);
+  assert.equal(calls, 0, "a new handle waits for the next window once the budget is spent");
+});
+
+test("a creator seen to resolve is always asked, and each visitor gets their own handoff", async () => {
+  let calls = 0;
+  const { sdk } = client(() => {
+    calls += 1;
+    return Response.json({ data: { ...ready, location: `${ready.location}${calls}` } });
+  });
+  const handler = createReferralLinkHandler({ handoff: sdk.links.handoff });
+  const locations = new Set();
+  for (let i = 0; i < 70; i += 1)
+    locations.add((await handler(get(), "maya")).headers.get("location"));
+  assert.equal(calls, 70);
+  assert.equal(locations.size, 70);
+});
+
+test("root mode answers an outage as not found; the prefix route shows the notice", async () => {
+  const offline = () => {
+    throw new Error("offline");
+  };
+  const root = createReferralLinkHandler({
+    handoff: client(offline).sdk.links.handoff,
+    root: true,
+    notFound: () => new Response("merchant 404", { status: 404 }),
+  });
+  assert.equal(await (await root(get("/tim"), "tim")).text(), "merchant 404");
+  const prefix = createReferralLinkHandler({ handoff: client(offline).sdk.links.handoff });
+  assert.equal((await prefix(get("/c/tim"), "tim")).status, 503);
+});
+
+test("route check can include the root fallback", async () => {
+  const receipt = {
+    verified: true,
+    route: {
+      origin: "https://brand.example",
+      prefix: "/c",
+      template: "https://brand.example/c/{creator}",
+    },
+    root: { verified: false },
+  };
+  const { sdk, calls } = client(() => Response.json({ data: receipt }));
+  assert.deepEqual((await sdk.links.verifyRoute({ root: true })).data, receipt);
+  assert.deepEqual(JSON.parse(calls[0].init.body), { prefix: "/c", root: true });
+  const broken = client(() => Response.json({ data: { ...receipt, root: { verified: "yes" } } }));
+  await assert.rejects(
+    () => broken.sdk.links.verifyRoute({ root: true }),
+    /invalid Commish link route/,
+  );
+});

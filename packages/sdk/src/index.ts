@@ -44,7 +44,12 @@ import type {
 } from "./types.js";
 
 export type * from "./links.js";
-export { assertLinkHandoff, assertLinkRouteCheck, createReferralLinkHandler } from "./links.js";
+export {
+  assertLinkHandoff,
+  assertLinkRouteCheck,
+  createReferralLinkHandler,
+  LINK_CHECK_HEADER,
+} from "./links.js";
 export type * from "./pages.js";
 export { assertCreatorPage } from "./pages.js";
 export type * from "./types.js";
@@ -52,8 +57,10 @@ export type * from "./types.js";
 import {
   assertLinkHandoff,
   assertLinkRouteCheck,
+  LINK_CHECK_HEADER,
   type LinkHandoff,
   type LinkRouteCheck,
+  linkCheck,
   linkHandle,
   linkPrefix,
 } from "./links.js";
@@ -158,20 +165,26 @@ export class Commish {
   /** Referral links on the business's own domain. Application-scoped secret key only. */
   readonly links = {
     /** Where to send a buyer who opened `https://brand.com/<prefix>/<handle>`. */
-    handoff: async (input: { handle: string; signal?: AbortSignal }) => {
+    handoff: async (input: { handle: string; check?: string; signal?: AbortSignal }) => {
       const result = await this.request<{ data: LinkHandoff }>(
         `/links/${linkHandle(input.handle)}/handoff`,
         {
           method: "POST",
           cache: "no-store",
           signal: input.signal,
+          // A root path check from Commish: forwarded unchanged, never a handoff.
+          ...(input.check === undefined
+            ? {}
+            : { headers: { [LINK_CHECK_HEADER]: linkCheck(input.check) } }),
         },
       );
       assertLinkHandoff(result.data);
       return result;
     },
     /** Ask Commish to check the installed route; creators are shown business-domain links only while it is verified. */
-    verifyRoute: async (input: { prefix?: string; origin?: string; signal?: AbortSignal } = {}) => {
+    verifyRoute: async (
+      input: { prefix?: string; origin?: string; root?: boolean; signal?: AbortSignal } = {},
+    ) => {
       const result = await this.request<{ data: LinkRouteCheck }>("/link-route/verify", {
         method: "POST",
         cache: "no-store",
@@ -179,6 +192,7 @@ export class Commish {
         body: JSON.stringify({
           prefix: linkPrefix(input.prefix ?? "/c"),
           ...(input.origin === undefined ? {} : { origin: input.origin }),
+          ...(input.root ? { root: true } : {}),
         }),
       });
       assertLinkRouteCheck(result.data);

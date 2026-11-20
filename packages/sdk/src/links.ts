@@ -13,7 +13,18 @@ export type LinkRouteCheck = {
   verified: boolean;
   /** The route creators are shown now; null while none is verified. */
   route: { origin: string; prefix: string; template: string } | null;
+  /** Present when the root fallback (brand.com/<name>) was checked too. */
+  root?: { verified: boolean };
 };
+/** The header Commish sends with a root path check; forward its value unchanged. */
+export const LINK_CHECK_HEADER = "x-commish-link-check";
+const CHECK = /^cmprobe-[0-9a-f]{24}$/;
+
+export function linkCheck(value: string): string {
+  if (typeof value !== "string" || !CHECK.test(value))
+    throw new TypeError("Invalid link check value");
+  return value;
+}
 
 const HANDLE = /^[a-z0-9][a-z0-9_-]{2,39}$/;
 const PREFIX = /^\/[a-z][a-z0-9-]{0,29}$/;
@@ -72,7 +83,8 @@ export function assertLinkRouteCheck(value: unknown): asserts value is LinkRoute
         typeof route.prefix === "string" &&
         PREFIX.test(route.prefix) &&
         typeof route.template === "string")
-    )
+    ) ||
+    !(value.root === undefined || (object(value.root) && typeof value.root.verified === "boolean"))
   )
     throw new TypeError("Unsupported or invalid Commish link route response");
 }
@@ -130,12 +142,49 @@ h1{font-size:1.25rem;margin:0 0 .75rem}p{margin:0;line-height:1.5;color:#444}
 
 export type ReferralLinkHandlerOptions = {
   /** Ask Commish for the handoff. `Commish#links.handoff` has this shape. */
-  handoff: (input: { handle: string; signal?: AbortSignal }) => Promise<{ data: LinkHandoff }>;
+  handoff: (input: {
+    handle: string;
+    check?: string;
+    signal?: AbortSignal;
+  }) => Promise<{ data: LinkHandoff }>;
   /** Render your own not-found response for handles Commish does not know (default: an empty 404). */
   notFound?: (request: Request) => Response | Promise<Response>;
   /** Upper bound for the Commish request in milliseconds (default 4000). */
   timeoutMs?: number;
+  /**
+   * Set for a handler that receives every unknown one-segment path of the site
+   * (root links, brand.com/<name>). Such a path is usually not a creator, so a
+   * Commish outage answers with the not-found response instead of a 503 notice.
+   */
+  root?: boolean;
+  /**
+   * Replace the built-in budget for handles never seen to resolve: return false
+   * to answer not-found without asking Commish. For a caller that already
+   * rations its own lookups of the same paths.
+   */
+  admit?: () => boolean;
 };
+
+// Unknown handles are mostly crawlers and typos. Remember misses briefly and
+// cap lookups of handles never seen to resolve, so they do not become Commish
+// traffic. A handle that resolved recently is never held back.
+const MISS_TTL_MS = 60_000;
+const KNOWN_TTL_MS = 600_000;
+const MAX_ENTRIES = 1024;
+const WINDOW_MS = 10_000;
+const MAX_UNKNOWN_LOOKUPS = 60;
+function remember(map: Map<string, number>, key: string, ttl: number) {
+  map.delete(key);
+  if (map.size >= MAX_ENTRIES) map.delete(map.keys().next().value as string);
+  map.set(key, Date.now() + ttl);
+}
+function fresh(map: Map<string, number>, key: string) {
+  const expiry = map.get(key);
+  if (expiry === undefined) return false;
+  if (expiry > Date.now()) return true;
+  map.delete(key);
+  return false;
+}
 
 /**
  * Framework-neutral handler for `GET https://brand.com/<prefix>/<handle>`.
@@ -145,31 +194,91 @@ export type ReferralLinkHandlerOptions = {
  * - Commish route check: empty 204
  * - unknown handle: 404 (or your `notFound`)
  * - Commish unreachable: a static 503 page; the buyer is never sent on without
- *   the creator's referral
+ *   the creator's referral. With `root: true` an outage is the not-found
+ *   response instead, because most root paths are not creators.
  */
 export function createReferralLinkHandler(options: ReferralLinkHandlerOptions) {
+  const misses = new Map<string, number>();
+  const known = new Map<string, number>();
+  // First lookups of a handle not yet seen to resolve, so a burst on one unknown path asks once.
+  const first = new Map<string, Promise<"known" | "miss" | "failed">>();
+  let windowStart = 0;
+  let unknownLookups = 0;
+  const admit =
+    options.admit ??
+    (() => {
+      const now = Date.now();
+      if (now - windowStart >= WINDOW_MS) {
+        windowStart = now;
+        unknownLookups = 0;
+      }
+      if (unknownLookups >= MAX_UNKNOWN_LOOKUPS) return false;
+      unknownLookups += 1;
+      return true;
+    });
   return async function referralLink(request: Request, handle: string): Promise<Response> {
     const headers = { "cache-control": "private, no-store", "x-robots-tag": "noindex" };
     if (!["GET", "HEAD"].includes(request.method))
       return new Response(null, { status: 405, headers });
     const missing = () =>
       options.notFound ? options.notFound(request) : new Response(null, { status: 404, headers });
+    const failed = () => (options.root ? missing() : notice(unavailableCopy, "60"));
     if (typeof handle !== "string" || !HANDLE.test(handle)) return missing();
+    // A check from Commish is always asked, and never cached or held back.
+    const check = request.headers.get(LINK_CHECK_HEADER);
+    if (check !== null && !CHECK.test(check)) return missing();
+    const probing = check !== null || handle.startsWith("cmprobe-");
+    let settle: ((outcome: "known" | "miss" | "failed") => void) | undefined;
+    if (!probing) {
+      if (fresh(misses, handle)) return missing();
+      if (!fresh(known, handle)) {
+        const earlier = first.get(handle);
+        if (earlier) {
+          const outcome = await earlier;
+          if (outcome === "miss") return missing();
+          if (outcome === "failed") return failed();
+        } else {
+          if (!admit()) return missing();
+          first.set(
+            handle,
+            new Promise((resolve) => {
+              settle = resolve;
+            }),
+          );
+        }
+      }
+    }
+    const done = (outcome: "known" | "miss" | "failed") => {
+      if (!settle) return;
+      first.delete(handle);
+      settle(outcome);
+    };
     try {
       const { data } = await options.handoff({
         handle,
+        ...(check === null ? {} : { check }),
         signal: AbortSignal.timeout(options.timeoutMs ?? 4000),
       });
       assertLinkHandoff(data);
-      if (data.status === "probe") return new Response(null, { status: 204, headers });
+      if (data.status === "probe") {
+        done("miss");
+        return new Response(null, { status: 204, headers });
+      }
+      if (!probing) remember(known, handle, KNOWN_TTL_MS);
+      done("known");
       if (data.status === "paused") return notice(pauseCopy[data.reason], "900");
       return new Response(null, {
         status: 307,
         headers: { ...headers, location: data.location, "referrer-policy": "no-referrer" },
       });
     } catch (error) {
-      if (object(error) && error.name === "CommishError" && error.status === 404) return missing();
-      return notice(unavailableCopy, "60");
+      if (object(error) && error.name === "CommishError" && error.status === 404) {
+        if (!probing) remember(misses, handle, MISS_TTL_MS);
+        done("miss");
+        return missing();
+      }
+      done("failed");
+      return failed();
     }
   };
 }
