@@ -3,6 +3,36 @@
 Notable changes to `@commish/sdk`, `@commish/next`, and `commish`, which release
 together with one version. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## 0.9.0 - 2026-11-20
+
+### Added
+
+- Referral links on the business's own domain. One route at
+  `https://your-site.com/c/<handle>` asks Commish for the referral handoff and
+  forwards the buyer to the verified destination with the same short-lived
+  `commish_ref` the commish.sh link uses; creators are shown that link once
+  Commish has verified the route. commish.sh links keep working.
+- `@commish/sdk`: `createReferralLinkHandler` for any `Request`/`Response` server,
+  with `commish.links.handoff` and `commish.links.verifyRoute` (application secret
+  key only), the `LinkHandoff` and `LinkRouteCheck` types and their assertions.
+  The handler answers a pause with a static 503 notice, an unknown handle with a
+  404 (or your `notFound`), and a Commish outage with a 503 notice; it never
+  forwards a buyer without the referral. `onError` reports failed visits.
+- `@commish/next/links`: `createReferralLinkRoute` for an App Router route
+  handler. A Commish Pages page at the same prefix forwards creators who have no
+  page to the same link.
+- `commish-next links init` (plan, then `--apply`) writes
+  `app/c/[creator]/route.ts` and refuses, like `pages init`, when a route group,
+  the Pages Router or a dynamic or catch-all route could answer the same address.
+  `commish-next links verify` asks Commish to check the deployed route.
+- The `commish init` playbook for a Next.js repository includes the links install
+  under `commands.links`.
+
+### Changed
+
+- The SDK, Next adapter and `commish` launcher release together at 0.9.0.
+  The launcher pins `@commish/sdk@0.9.0`; Next accepts `@commish/sdk@~0.9.0`.
+
 ## 0.8.1 - 2026-11-17
 
 ### Added
