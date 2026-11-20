@@ -42,6 +42,12 @@ export default createCreatorPage(pagesOptions);
 
 `pagesOptions()` returns `{secretKey, programId, origin, prefix:'/c', apiUrl}` from server configuration. The underlying server API is `await commish.pages.resolve({programId, handle})`. Resolve is uncached and abortable; 404 is distinct from an unavailable service.
 
+If the bare referral link route (`commish-next links init`) is already
+installed at this prefix, delete its `route` file before running `pages init`:
+a page and a route cannot share a segment, and the Pages page forwards creators
+who have no page exactly as that route did. A published creator Page owns its
+address: a link under the same name credits the Page's partnership.
+
 ## Consent and checkout
 
 Connect `createCreatorPageHandlers({options: pagesOptions, publishableKey, consent})` in the generated same-origin POST route. `consent(request)` must read your actual consent manager and return `{attribution, measurement}`. Both default to false. Browser-supplied consent fields are not accepted. Do not enable either by default unless that accurately reflects your consent policy.

@@ -6,6 +6,8 @@ export type ReferralLinkRouteOptions = {
   apiUrl?: string;
   /** Render your own not-found response for handles Commish does not know (default: an empty 404). */
   notFound?: (request: Request) => Response | Promise<Response>;
+  /** Called when a visit fails for a reason other than an unknown handle, including missing configuration. */
+  onError?: (error: unknown, context: { handle: string }) => void;
 };
 export type ReferralLinkRouteSource =
   | ReferralLinkRouteOptions
@@ -27,6 +29,7 @@ export function createReferralLinkRoute(
   // One handler per route module, so its miss cache and lookup budget persist across requests.
   const handler = createReferralLinkHandler({
     root: routeOptions.root,
+    onError: (error, context) => configured?.onError?.(error, context),
     notFound: (request) =>
       notFound ? notFound(request) : new Response(null, { status: 404, headers: noStore }),
     handoff: async (input) => {

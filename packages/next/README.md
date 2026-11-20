@@ -210,8 +210,37 @@ export const GET = createReferralLinkRoute(() => ({
   a 404; pass `notFound` to render your own.
 - When one website carries several programs, the link credits the creator's
   earliest partnership there. Later partnerships keep their commish.sh links.
-- Other frameworks: `createReferralLinkHandler` from `@commish/sdk` is the same
-  handler for any `Request`/`Response` server.
+- The key deployed with the route and the key `links verify` runs with must
+  belong to the same application and the same TEST or LIVE mode. One address
+  serves one mode: verifying it with the LIVE key takes it over from TEST.
+- `links init` refuses, like `pages init`, when a route group, the Pages Router
+  or a dynamic or catch-all route could answer the same address. A run that
+  writes nothing reports `no_changes`.
+- Pass `onError` to hear about visits that failed for a reason other than an
+  unknown handle (a rejected key, a timeout); the visitor still gets the notice.
+
+**With Commish Pages on the same prefix.** A published creator Page owns its
+address. If one of your programs has Pages enabled and a creator's permitted
+page uses `/c/maya`, that address shows the Page and credits that program's
+partnership, and a bare link under the same name credits it too. Otherwise the
+link credits the creator's earliest eligible partnership on your website. The
+creator's dashboard only ever shows an address to the partnership it credits.
+Installing Pages at a prefix where you already installed the link route:
+delete `app/c/[creator]/route.ts` first, then run `pages init`; the Pages page
+forwards creators who have no page, so nothing is lost.
+
+**Other frameworks.** The same handler works with any `Request`/`Response`
+server:
+
+```ts
+import { Commish, createReferralLinkHandler } from "@commish/sdk";
+
+const commish = new Commish({ secretKey: process.env.COMMISH_SECRET_KEY! });
+const link = createReferralLinkHandler({ handoff: commish.links.handoff });
+
+// GET /c/:creator in your router
+export const creatorLink = (request: Request, creator: string) => link(request, creator);
+```
 
 ## Creator Pages
 

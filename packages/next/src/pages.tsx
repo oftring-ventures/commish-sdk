@@ -24,8 +24,11 @@ export {
   resolveCreatorPage,
 } from "./pages-routing.js";
 
+// A page cannot set a status or headers, so these stay 200; they are kept out
+// of indexes instead. The bare link route answers the same states with 503.
 const notice = (title: string, body: string) => (
   <main style={{ maxWidth: 640, margin: "6rem auto", padding: 24 }}>
+    <meta name="robots" content="noindex, nofollow" />
     <h1>{title}</h1>
     <p>{body}</p>
   </main>
@@ -57,7 +60,12 @@ async function linkFallback(source: PageOptionsSource, params: Promise<{ creator
   }
   if (link.status === "ready") redirect(link.location);
   // Commish's route check only needs the request to reach this server.
-  if (link.status === "probe") return <main data-commish-link-probe="" />;
+  if (link.status === "probe")
+    return (
+      <main data-commish-link-probe="">
+        <meta name="robots" content="noindex, nofollow" />
+      </main>
+    );
   return link.reason === "funding_paused"
     ? notice(
         "This referral link is paused",
