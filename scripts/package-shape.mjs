@@ -19,6 +19,7 @@ const entries = {
     "./pages": "pages",
     "./pages/handlers": "pages-handlers",
     "./pages/routing": "pages-routing",
+    "./links": "links",
   },
 };
 const browserEntries = new Set(["./browser", "./react"]);

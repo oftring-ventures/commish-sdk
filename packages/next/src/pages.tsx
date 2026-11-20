@@ -1,5 +1,11 @@
-import { type BuyerPromotionSummary, Commish, CommishError, type CreatorPage } from "@commish/sdk";
-import { notFound, unstable_rethrow } from "next/navigation.js";
+import {
+  type BuyerPromotionSummary,
+  Commish,
+  CommishError,
+  type CreatorPage,
+  type LinkHandoff,
+} from "@commish/sdk";
+import { notFound, redirect, unstable_rethrow } from "next/navigation.js";
 import { CreatorPageView } from "./pages-client.js";
 import {
   type CreatorPageOptions,
@@ -15,6 +21,40 @@ export {
   type PageOptionsSource,
   resolveCreatorPage,
 } from "./pages-routing.js";
+
+const notice = (title: string, body: string) => (
+  <main style={{ maxWidth: 640, margin: "6rem auto", padding: 24 }}>
+    <h1>{title}</h1>
+    <p>{body}</p>
+  </main>
+);
+
+async function linkFallback(source: PageOptionsSource, params: Promise<{ creator: string }>) {
+  let link: LinkHandoff;
+  try {
+    const options = typeof source === "function" ? await source() : source;
+    ({ data: link } = await new Commish({
+      secretKey: options.secretKey,
+      baseUrl: options.apiUrl,
+    }).links.handoff({ handle: (await params).creator, signal: AbortSignal.timeout(4000) }));
+  } catch (error) {
+    unstable_rethrow(error);
+    if (error instanceof CommishError && error.status === 404) notFound();
+    return notice("This page is temporarily unavailable", "Please try again shortly.");
+  }
+  if (link.status === "ready") redirect(link.location);
+  // Commish's route check only needs the request to reach this server.
+  if (link.status === "probe") return <main data-commish-link-probe="" />;
+  return link.reason === "funding_paused"
+    ? notice(
+        "This referral link is paused",
+        "The business has paused its funding, so new referrals are not being accepted right now. Please pause sharing this link until the business restores its funding.",
+      )
+    : notice(
+        "Promotion is temporarily unavailable",
+        "Promotion is temporarily unavailable. Please pause sharing this link while the business completes its checks.",
+      );
+}
 
 /** One dynamic route covers current and future participating creators. */
 export function createCreatorPage(source: PageOptionsSource) {
@@ -46,7 +86,10 @@ export function createCreatorPage(source: PageOptionsSource) {
     } catch (error) {
       // Never swallow Next's own control flow (dynamic bailout, redirects).
       unstable_rethrow(error);
-      if (error instanceof CommishError && error.status === 404) notFound();
+      // A creator without a published page still has a referral link here:
+      // forward the buyer exactly as the bare link route would.
+      if (error instanceof CommishError && error.status === 404)
+        return linkFallback(source, params);
       // No brand/creator content or ended-offer claim on dependency failure.
       return (
         <main style={{ maxWidth: 640, margin: "6rem auto", padding: 24 }}>
