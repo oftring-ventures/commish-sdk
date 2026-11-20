@@ -171,6 +171,48 @@ above and the Pages commands; its former `setup` and `verify` subcommands exit w
 `command_moved` and name the replacement. `commish-next --version` prints the
 installed version.
 
+## Referral links on your own domain
+
+By default a creator shares `https://commish.sh/p/live/<program>/<handle>`. Install
+one route and creators are shown `https://your-site.com/c/<handle>` instead. The
+route asks Commish where to send the buyer and forwards them to your verified
+destination with the same short-lived `commish_ref` the commish.sh link uses, so
+the capture route and provider above keep working unchanged.
+
+```sh
+pnpm exec commish-next links init --json           # plan only
+pnpm exec commish-next links init --apply --json   # writes app/c/[creator]/route.ts
+# deploy, then ask Commish to check the route on your verified website
+pnpm exec commish-next links verify --json
+```
+
+```ts
+// app/c/[creator]/route.ts
+import { createReferralLinkRoute } from "@commish/next/links";
+
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+export const GET = createReferralLinkRoute(() => ({
+  secretKey: process.env.COMMISH_SECRET_KEY!,
+  apiUrl: process.env.COMMISH_API_URL,
+}));
+```
+
+- One route serves every current and future creator; no deployment per creator.
+- Use `--prefix /creators` for a different one-segment prefix. The installer never
+  overwrites an existing file. A Commish Pages page at the same prefix already
+  forwards creators who have no page, so nothing is installed beside it.
+- Creators are shown the link on your website only after `links verify` passes.
+  Commish rechecks the route daily and falls back to commish.sh links if it stops
+  answering. commish.sh links keep working throughout.
+- A temporary funding or promotion pause shows a static notice on your domain
+  instead of the store, exactly as the commish.sh link does. An unknown handle is
+  a 404; pass `notFound` to render your own.
+- When one website carries several programs, the link credits the creator's
+  earliest partnership there. Later partnerships keep their commish.sh links.
+- Other frameworks: `createReferralLinkHandler` from `@commish/sdk` is the same
+  handler for any `Request`/`Response` server.
+
 ## Creator Pages
 
 Pages is optional and requires SDK/Next 0.3.0 or later. Installing it does not
