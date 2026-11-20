@@ -90,6 +90,13 @@ test("commands follow the detected package manager and framework", (t) => {
         ),
     );
     assert.equal(Object.hasOwn(guide.commands, "wire"), next);
+    // The links install is part of the Next playbook, under its own key.
+    assert.equal(Object.hasOwn(guide.commands, "links"), next);
+    if (next) {
+      assert.match(guide.commands.links, / commish-next links init --json$/);
+      assert.ok(guide.markdown.includes(guide.commands.links));
+      assert.ok(guide.markdown.includes("commish-next links verify --json"));
+    }
     assert(guide.markdown.includes("captureReferral"));
     assert(!guide.markdown.includes("@commish/next@"));
   }
