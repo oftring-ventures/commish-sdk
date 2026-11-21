@@ -19,6 +19,23 @@ export type ReferralLinkRouteSource =
  * forwards the buyer to your verified destination with the creator's referral,
  * and the existing capture on that page records it.
  */
+// Caches and budgets belong to one configuration: a route whose source returns
+// different credentials per request (several brands from one app) keeps one
+// instance per key and API URL, so one brand's misses never answer another's.
+function perConfiguration<T>(make: () => T, limit = 16) {
+  const instances = new Map<string, T>();
+  return (options: { secretKey?: string; apiUrl?: string } | undefined): T => {
+    const key = `${options?.apiUrl ?? ""}\u0000${options?.secretKey ?? ""}`;
+    let instance = instances.get(key);
+    if (instance === undefined) {
+      if (instances.size >= limit) instances.delete(instances.keys().next().value as string);
+      instance = make();
+      instances.set(key, instance);
+    }
+    return instance;
+  };
+}
+
 export function createReferralLinkRoute(
   source: ReferralLinkRouteSource,
   /**
@@ -32,8 +49,11 @@ export function createReferralLinkRoute(
   const unconfigured = async (): Promise<never> => {
     throw new Error("Commish link route is not configured");
   };
-  // One handler per route module, so its miss cache and lookup budget persist across requests.
-  const handler = createReferralLinkHandler({ root: routeOptions.root, handoff: unconfigured });
+  // One handler per route module and configuration, so its miss cache and lookup
+  // budget persist across requests without crossing between configurations.
+  const handlerFor = perConfiguration(() =>
+    createReferralLinkHandler({ root: routeOptions.root, handoff: unconfigured }),
+  );
   // biome-ignore lint/correctness/noComponentHookFactories: a route handler, not a component; the merchant's route module calls this factory once
   return async function GET(request: Request, context: { params: Promise<{ creator: string }> }) {
     // Configuration is read for each request and travels with it, so requests
@@ -48,7 +68,7 @@ export function createReferralLinkRoute(
       configured = undefined;
     }
     const options = configured;
-    return handler(request, handle, {
+    return handlerFor(options)(request, handle, {
       handoff: options?.secretKey
         ? (input) =>
             new Commish({ secretKey: options.secretKey, baseUrl: options.apiUrl }).links.handoff(

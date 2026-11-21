@@ -9,6 +9,23 @@ import { headers } from "next/headers.js";
 import { notFound, redirect, unstable_rethrow } from "next/navigation.js";
 import type { ReferralLinkRouteSource } from "./links.js";
 
+// Caches and budgets belong to one configuration: a route whose source returns
+// different credentials per request (several brands from one app) keeps one
+// instance per key and API URL, so one brand's misses never answer another's.
+function perConfiguration<T>(make: () => T, limit = 16) {
+  const instances = new Map<string, T>();
+  return (options: { secretKey?: string; apiUrl?: string } | undefined): T => {
+    const key = `${options?.apiUrl ?? ""}\u0000${options?.secretKey ?? ""}`;
+    let instance = instances.get(key);
+    if (instance === undefined) {
+      if (instances.size >= limit) instances.delete(instances.keys().next().value as string);
+      instance = make();
+      instances.set(key, instance);
+    }
+    return instance;
+  };
+}
+
 /**
  * Root links (https://brand.com/<name>): the page that receives the fallback
  * rewrite. `export default createReferralLinkPage(...)` in
@@ -38,13 +55,16 @@ import type { ReferralLinkRouteSource } from "./links.js";
  *   route group such as `app/(site)/`
  */
 export function createReferralLinkPage(source: ReferralLinkRouteSource) {
-  // One resolver per page module, so its miss cache and lookup budget persist across requests.
-  const resolve = createReferralLinkResolver({
-    root: true,
-    handoff: async () => {
-      throw new Error("Commish link page is not configured");
-    },
-  });
+  // One resolver per page module and configuration, so its miss cache and lookup
+  // budget persist across requests without crossing between configurations.
+  const resolverFor = perConfiguration(() =>
+    createReferralLinkResolver({
+      root: true,
+      handoff: async () => {
+        throw new Error("Commish link page is not configured");
+      },
+    }),
+  );
   // biome-ignore lint/correctness/noComponentHookFactories: the page module calls this factory once at module scope, so the component identity is stable
   return async function ReferralLinkPage({ params }: { params: Promise<{ creator: string }> }) {
     let outcome: ReferralLinkOutcome = { kind: "not_found" };
@@ -57,7 +77,7 @@ export function createReferralLinkPage(source: ReferralLinkRouteSource) {
       } catch (error) {
         unstable_rethrow(error);
       }
-      outcome = await resolve((await params).creator, {
+      outcome = await resolverFor(options)((await params).creator, {
         check,
         onError: options.onError,
         handoff: (input) =>
