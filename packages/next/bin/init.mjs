@@ -19,7 +19,7 @@ const usage = {
 };
 const usageText = [
   "Usage: commish-next [init] [--write] [--json]",
-  "       commish-next links <init|verify> [--apply|--dry-run] [--prefix /c] [--origin https://brand.com] [--json]",
+  "       commish-next links <init|verify> [--apply|--dry-run] [--prefix /c] [--root] [--origin https://brand.com] [--json]",
   "       commish-next pages <init|doctor|verify-alias> [--apply|--dry-run] [--root-aliases] [--prefix /c] [--creator handle] [--json]",
   "       commish-next --version",
   "Credential setup and verification live in @commish/sdk: commish setup, commish verify --json.",
