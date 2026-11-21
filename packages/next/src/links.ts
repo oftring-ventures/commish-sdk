@@ -21,50 +21,54 @@ export type ReferralLinkRouteSource =
  */
 export function createReferralLinkRoute(
   source: ReferralLinkRouteSource,
-  /** `root: true` for the route that receives the fallback rewrite of root links (brand.com/<name>). */
+  /**
+   * `root: true` for a route handler that receives root links (brand.com/<name>)
+   * from your own routing. The generated install uses `createReferralLinkPage`
+   * from `@commish/next/links/page` instead, so unknown paths show your own
+   * not-found page; a route handler can only answer them with `notFound`.
+   */
   routeOptions: { root?: boolean } = {},
 ) {
-  let notFound: ReferralLinkRouteOptions["notFound"];
-  let configured: ReferralLinkRouteOptions | undefined;
+  const unconfigured = async (): Promise<never> => {
+    throw new Error("Commish link route is not configured");
+  };
   // One handler per route module, so its miss cache and lookup budget persist across requests.
-  const handler = createReferralLinkHandler({
-    root: routeOptions.root,
-    onError: (error, context) => configured?.onError?.(error, context),
-    notFound: (request) =>
-      notFound ? notFound(request) : new Response(null, { status: 404, headers: noStore }),
-    handoff: async (input) => {
-      if (!configured) throw new Error("Commish link route is not configured");
-      return new Commish({
-        secretKey: configured.secretKey,
-        baseUrl: configured.apiUrl,
-      }).links.handoff(input);
-    },
-  });
+  const handler = createReferralLinkHandler({ root: routeOptions.root, handoff: unconfigured });
   // biome-ignore lint/correctness/noComponentHookFactories: a route handler, not a component; the merchant's route module calls this factory once
   return async function GET(request: Request, context: { params: Promise<{ creator: string }> }) {
+    // Configuration is read for each request and travels with it, so requests
+    // served at the same time never see each other's. A missing key is the
+    // same static notice as an outage, never an unhandled error.
+    let configured: ReferralLinkRouteOptions | undefined;
     let handle = "";
-    // Read configuration per request, so a missing key is the same static
-    // notice as an outage, never an unhandled error.
     try {
-      configured = typeof source === "function" ? await source() : source;
-      notFound = configured.notFound;
       handle = (await context.params).creator;
+      configured = typeof source === "function" ? await source() : source;
     } catch {
       configured = undefined;
     }
-    return handler(request, configured ? handle : "unconfigured");
+    const options = configured;
+    return handler(request, handle, {
+      handoff: options?.secretKey
+        ? (input) =>
+            new Commish({ secretKey: options.secretKey, baseUrl: options.apiUrl }).links.handoff(
+              input,
+            )
+        : unconfigured,
+      onError: options?.onError,
+      notFound: options?.notFound,
+    });
   };
 }
 
-const noStore = { "cache-control": "private, no-store", "x-robots-tag": "noindex" };
-
 /**
- * Root links (https://brand.com/<name>). Use ONLY in next.config
- * `rewrites().fallback`, after all of your own routing, so your pages always
- * win. It sends every other one-segment path to the root link route, which
- * answers 404 for anything that is not a creator.
+ * Root links (https://brand.com/<name>). Use ONLY as the LAST entry of
+ * next.config `rewrites().fallback`, after all of your own routing, so your
+ * pages always win. It sends every other one-segment path to the root link
+ * page (`createReferralLinkPage`), which shows your own not-found page for
+ * anything that is not a creator.
  */
-export function referralLinkFallbackRewrite(handlerPath = "/api/commish/link") {
+export function referralLinkFallbackRewrite(handlerPath = "/commish-link") {
   if (!/^\/[a-zA-Z0-9/-]+$/.test(handlerPath)) throw new TypeError("Invalid link handler path");
   return {
     source: "/:creator([a-z0-9][a-z0-9_-]{2,39})",

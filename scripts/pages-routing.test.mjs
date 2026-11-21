@@ -91,14 +91,14 @@ test("unmatched paths and outages stay merchant 404s", async () => {
         (await handler(new Request(`${page.origin}/wp-admin`), params("wp-admin"))).status,
         404,
       );
-    assert.equal(calls, 2, "a miss costs one page lookup and one link lookup, then is remembered");
+    assert.equal(calls, 1, "a miss is remembered instead of re-queried");
     calls = 0;
     await Promise.all(
       Array.from({ length: 5 }, () =>
         handler(new Request(`${page.origin}/crawler`), params("crawler")),
       ),
     );
-    assert.equal(calls, 2, "concurrent lookups of one path are coalesced, page and link alike");
+    assert.equal(calls, 1, "concurrent lookups of one path are coalesced");
     calls = 0;
     for (let i = 0; i < 100; i += 1)
       await handler(new Request(`${page.origin}/probe-${i}`), params(`probe-${i}`));
@@ -229,15 +229,38 @@ test("verified aliases are cached and survive crawler bursts and outages", async
   }
 });
 
-test("a root path that is not a page alias is served as a bare link through the same budget", async () => {
+test("bare root links are served only when the install opts in, and are marked as root requests", async () => {
   const original = globalThis.fetch;
   const calls = [];
   // A fresh lookup window, whatever the earlier tests spent.
   mock.timers.enable({ apis: ["Date"], now: Date.now() + 3_600_000 });
   try {
-    const handler = createCreatorAliasHandler(options);
     globalThis.fetch = async (url, init) => {
       calls.push(`${init.method} ${new URL(url).pathname.split("/").slice(-2).join("/")}`);
+      return String(url).includes("/links/")
+        ? Response.json({
+            data: {
+              protocol: "commish-links-v1",
+              status: "ready",
+              location: `${page.origin}/?commish_ref=token.signature`,
+            },
+          })
+        : Response.json({ error: { code: "page_not_found" } }, { status: 404 });
+    };
+    // An upgrade alone changes nothing: without the option the path stays a 404
+    // and no handoff is asked for.
+    const plain = createCreatorAliasHandler(options);
+    assert.equal(
+      (await plain(new Request(`${page.origin}/upgraded`), params("upgraded"))).status,
+      404,
+    );
+    assert.deepEqual(calls, ["GET prg_123456789012/upgraded"]);
+    calls.length = 0;
+    const handler = createCreatorAliasHandler(options, { rootLinks: true });
+    globalThis.fetch = async (url, init) => {
+      calls.push(`${init.method} ${new URL(url).pathname.split("/").slice(-2).join("/")}`);
+      if (String(url).includes("/links/"))
+        assert.equal(init.headers["x-commish-link-root"], "1", "marked as a root request");
       return String(url).includes("/links/")
         ? Response.json({
             data: {
@@ -265,6 +288,24 @@ test("a root path that is not a page alias is served as a bare link through the 
     );
     assert.equal(probe.status, 204);
     assert.equal(calls.at(-1), check);
+    // A check for a creator who has a page alias is not lost in the alias
+    // redirect: it goes to the link, and no page lookup is made for it.
+    calls.length = 0;
+    globalThis.fetch = async (url, init) => {
+      calls.push(`${init.method} ${new URL(url).pathname.split("/").slice(-2).join("/")}`);
+      return String(url).includes("/links/")
+        ? Response.json({ data: { protocol: "commish-links-v1", status: "probe" } })
+        : Response.json({ data: page });
+    };
+    const aliased = await handler(
+      new Request(`${page.origin}/maya`, { headers: { "x-commish-link-check": check } }),
+      params("maya"),
+    );
+    assert.equal(aliased.status, 204);
+    assert.deepEqual(calls, ["POST maya/handoff"]);
+    const visitor = await handler(new Request(`${page.origin}/maya`), params("maya"));
+    assert.equal(visitor.status, 307, "a visitor still gets the page alias redirect");
+    assert.equal(visitor.headers.get("location"), `${page.origin}/c/maya`);
   } finally {
     mock.timers.reset();
     globalThis.fetch = original;

@@ -4,6 +4,7 @@ import {
   CommishError,
   type CreatorPage,
   createReferralLinkHandler,
+  LINK_CHECK_HEADER,
 } from "@commish/sdk";
 
 export type CreatorPageOptions = {
@@ -56,6 +57,13 @@ export type CreatorAliasHandlerOptions = {
    * creator alias (default: an empty 404). Never called for creator aliases.
    */
   notFound?: (request: Request) => Response | Promise<Response>;
+  /**
+   * Also serve bare root links here (brand.com/<name> for a creator without a
+   * page alias). Off unless you set it: `commish-next links init --root` tells
+   * you to, and Commish answers such requests only while root links are
+   * switched on for the product in the dashboard.
+   */
+  rootLinks?: boolean;
 };
 
 // Unmatched one-segment URLs are mostly crawlers, and a published alias is read
@@ -167,23 +175,22 @@ export function createCreatorAliasHandler(
   source: PageOptionsSource,
   handlerOptions: CreatorAliasHandlerOptions = {},
 ) {
-  // A root path that is not a page alias may still be a creator's bare link
-  // (or Commish checking one). Unknown paths and outages stay a 404.
-  let current: CreatorPageOptions | undefined;
-  const link = createReferralLinkHandler({
-    root: true,
-    admit: admitLookup,
-    notFound: (request) =>
-      handlerOptions.notFound
-        ? handlerOptions.notFound(request)
-        : new Response(null, { status: 404, headers: { "cache-control": "private, no-store" } }),
-    handoff: async (input) => {
-      if (!current) throw new Error("Commish Pages is not configured");
-      return new Commish({ secretKey: current.secretKey, baseUrl: current.apiUrl }).links.handoff(
-        input,
-      );
-    },
-  });
+  // With `rootLinks`, a root path that is not a page alias may still be a
+  // creator's bare link (or Commish checking one). Unknown paths and outages
+  // stay a 404. The link lookups share the alias budget.
+  const link = handlerOptions.rootLinks
+    ? createReferralLinkHandler({
+        root: true,
+        admit: admitLookup,
+        handoff: async () => {
+          throw new Error("Commish Pages is not configured");
+        },
+      })
+    : null;
+  const missing = (request: Request) =>
+    handlerOptions.notFound
+      ? handlerOptions.notFound(request)
+      : new Response(null, { status: 404, headers: { "cache-control": "private, no-store" } });
   // biome-ignore lint/correctness/noComponentHookFactories: a route handler, not a component; the merchant's route module calls this factory once
   return async function GET(request: Request, context: { params: Promise<{ creator: string }> }) {
     const headers = { "cache-control": "private, no-store" };
@@ -191,11 +198,17 @@ export function createCreatorAliasHandler(
       return new Response(null, { status: 405, headers });
     let page: CreatorPage | null = null;
     let handle = "";
+    // Read for each request and carried with it, never shared between requests.
+    let current: CreatorPageOptions | undefined;
+    // A check from Commish asks whether this path reaches the link route. It
+    // is handed to the link even when the creator has a page alias here: the
+    // path is served by Commish either way.
+    const checking = link !== null && request.headers.get(LINK_CHECK_HEADER) !== null;
     try {
       handle = (await context.params).creator;
       if (/^[a-z0-9][a-z0-9_-]{2,39}$/.test(handle)) {
         current = typeof source === "function" ? await source() : source;
-        page = await lookupAlias(current, handle);
+        if (!checking) page = await lookupAlias(current, handle);
       }
     } catch {
       page = null;
@@ -209,6 +222,12 @@ export function createCreatorAliasHandler(
           "x-commish-page-id": page.pageId,
         },
       });
-    return link(request, current ? handle : "");
+    if (!link || !current) return missing(request);
+    const options = current;
+    return link(request, handle, {
+      notFound: missing,
+      handoff: (input) =>
+        new Commish({ secretKey: options.secretKey, baseUrl: options.apiUrl }).links.handoff(input),
+    });
   };
 }
