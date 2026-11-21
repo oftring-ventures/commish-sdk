@@ -26,12 +26,14 @@ beside it. See the package README, "Referral links on your own domain".
 
 Root links (`brand.com/<name>`, no prefix) are a second, separate opt-in. Only
 when the merchant asks for them: `commish-next links init --root --dry-run --json`,
-read `rootRewrite`, `routingReviewRequired` and `next`, then `--apply`. The
+read `rootRewrite`, `routingReviewRequired`, `loadingBoundaryReviewRequired`
+and `next`, then `--apply`. The
 command writes a page at `app/commish-link/[creator]/page.tsx` and, only when
 the project has no Next config, a fallback rewrite; it never edits an existing
 config, alias handler or catch-all route, and says what to merge by hand. Do
 not place the rewrite anywhere but last in `fallback`, and stop if the report is
-`catch_all_rewrite_blocks_root_links`. After deploying, the order is
+`catch_all_rewrite_blocks_root_links`. A root `loading` file must move into a
+route group before root links are turned on. After deploying, the order is
 `links verify`, then the merchant turns on short links in the Commish dashboard
 (an agent cannot), then `links verify --root`. A custom handler must forward
 the `x-commish-link-check` header and send `x-commish-link-root: 1`.

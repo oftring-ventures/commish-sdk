@@ -244,6 +244,7 @@ test("links init --root adds the root page and a fallback config only where it i
   const blocked = proxied.run("links", "init", "--root", "--json");
   assert.equal(blocked.out.rootRewrite, "catch_all_rewrite_blocks_root_links");
   assert.match(blocked.out.next[0], /Keep prefix links/);
+  assert.match(blocked.out.next[0], /`\/:path\*`/);
 
   const cms = fixture(t);
   mkdirSync(join(cms.root, "app/[...slug]"), { recursive: true });
@@ -349,7 +350,11 @@ test("links verify --root reports the switch and the fallback separately", async
   root = { enabled: true, verified: false };
   const unreached = await runLinks(["verify", "--root"]);
   assert.match(unreached.next[0], /do not reach the link route with the check header/);
-  // An older Commish answers without the switch: it is reported as unknown.
+  // The switch could not be read (an older Commish, or the root check could not run).
+  root = { enabled: null, verified: false };
+  const unknown = await runLinks(["verify", "--root"]);
+  assert.deepEqual(unknown.root, { enabled: null, verified: false });
+  assert.match(unknown.next[0], /could not check the root fallback just now/);
   root = { verified: false };
   assert.deepEqual((await runLinks(["verify", "--root"])).root, { enabled: null, verified: false });
   assert.equal((await runLinks(["verify"])).root, undefined);
@@ -424,4 +429,70 @@ test("links init applies the same ownership rules as pages init", (t) => {
     "export default function Page() {}\n",
   );
   assert.equal(unrelated.run("links", "init", "--apply", "--json").out.status, "files_installed");
+});
+
+test("links init --root reads only rewrites for a rule that takes every path", (t) => {
+  const config = (text) => {
+    const project = fixture(t);
+    writeFileSync(join(project.root, "next.config.mjs"), text);
+    return project.run("links", "init", "--root", "--json").out.rootRewrite;
+  };
+  // Security headers and a www-to-apex redirect for every path route nothing.
+  assert.equal(
+    config(
+      'export default { async headers() { return [{ source: "/:path*", headers: [{ key: "x-frame-options", value: "DENY" }] }]; } };\n',
+    ),
+    "manual_config_merge_required",
+  );
+  assert.equal(
+    config(
+      'export default { async redirects() { return [{ source: "/(.*)", has: [{ type: "host", value: "www.brand.example" }], destination: "https://brand.example/:path*", permanent: true }]; } };\n',
+    ),
+    "manual_config_merge_required",
+  );
+  // A fallback with a one-or-more parameter takes every one-segment path too.
+  assert.equal(
+    config(
+      "export default {\n  // the old site's pages\n  async rewrites() {\n    return { fallback: [{ source: '/:path+', destination: 'https://legacy.example/:path+' }] };\n  },\n};\n",
+    ),
+    "catch_all_rewrite_blocks_root_links",
+  );
+  assert.equal(
+    config(
+      'export default { rewrites: async () => [{ source: "/blog/:path*", destination: "https://blog.example/:path*" }] };\n',
+    ),
+    "manual_config_merge_required",
+    "a rule under a prefix leaves one-segment paths free",
+  );
+});
+
+test("links init --root asks for a root loading file to move into a route group", (t) => {
+  for (const app of ["app", "src/app"]) {
+    const project = fixture(t);
+    if (app === "src/app") {
+      rmSync(join(project.root, "app"), { recursive: true });
+      mkdirSync(join(project.root, "src/app"), { recursive: true });
+      writeFileSync(
+        join(project.root, "src/app/layout.tsx"),
+        "export default function Layout() {}\n",
+      );
+    }
+    writeFileSync(
+      join(project.root, `${app}/loading.tsx`),
+      "export default function Loading() {}\n",
+    );
+    const planned = project.run("links", "init", "--root", "--json");
+    assert.deepEqual(planned.out.loadingBoundaryReviewRequired, [`${app}/loading.tsx`]);
+    assert.match(planned.out.next[0], new RegExp(`Move ${app}/loading\\.tsx into a route group`));
+    assert.match(planned.out.next[0], /answer 200/);
+  }
+  const grouped = fixture(t);
+  mkdirSync(join(grouped.root, "app/(site)"));
+  writeFileSync(
+    join(grouped.root, "app/(site)/loading.tsx"),
+    "export default function Loading() {}\n",
+  );
+  const fine = grouped.run("links", "init", "--root", "--json");
+  assert.equal(fine.out.loadingBoundaryReviewRequired, undefined);
+  assert.equal(grouped.run("links", "init", "--json").out.loadingBoundaryReviewRequired, undefined);
 });

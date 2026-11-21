@@ -191,6 +191,48 @@ export const GET = createReferralLinkRoute(() => ({
 const ROOT_STEPS =
   "Deploy. Then, in this order: run `commish-next links verify` (short links need a verified link route), turn on short links for this product in the Commish dashboard, and run `commish-next links verify --root`.";
 
+// A rewrite source that takes every one-segment path: /:path*, /:path+,
+// /:path(.*), /:path(.+), /(.*) or /(.+). Only rules inside rewrites count: a headers() or
+// redirects() rule that matches every path does not route anything.
+const CATCH_ALL = /^\/(?:\(\.[*+]\)|:[A-Za-z_]\w*(?:[*+]|\(\.[*+]\)))$/;
+function catchAllRewrite(text) {
+  const keyword = /\brewrites\b/g;
+  for (let match = keyword.exec(text); match; match = keyword.exec(text)) {
+    // The rewrites function or list: from the first { or [ after the name to
+    // its matching close, skipping strings and comments.
+    let index = match.index + match[0].length;
+    while (index < text.length && !"{[".includes(text[index])) index += 1;
+    const start = index;
+    let depth = 0;
+    for (; index < text.length; index += 1) {
+      const char = text[index];
+      const next = text[index + 1];
+      if (char === "/" && next === "/") {
+        const end = text.indexOf("\n", index);
+        index = end < 0 ? text.length : end;
+      } else if (char === "/" && next === "*") {
+        const end = text.indexOf("*/", index + 2);
+        index = end < 0 ? text.length : end + 1;
+      } else if ("'\"`".includes(char)) {
+        for (index += 1; index < text.length && text[index] !== char; index += 1) {
+          if (text[index] === "\\") index += 1;
+        }
+      } else if ("{[(".includes(char)) {
+        depth += 1;
+      } else if ("}])".includes(char)) {
+        depth -= 1;
+        if (depth === 0) break;
+      }
+    }
+    const body = text.slice(start, index + 1);
+    for (const [, source] of body.matchAll(/source\s*:\s*["'`]([^"'`]+)["'`]/g)) {
+      if (CATCH_ALL.test(source)) return source;
+    }
+    keyword.lastIndex = Math.max(keyword.lastIndex, index + 1);
+  }
+  return null;
+}
+
 // Root links (brand.com/<name>): a page that receives a fallback rewrite, so
 // the site's own pages always win and a path that is not a creator shows the
 // site's own not-found page. Only a project without a Next config gets one
@@ -248,8 +290,11 @@ function rootPlan(app, typed, servedByPages) {
       files: [],
       review,
       rewrite: "manual_cms_fallback_required",
-      next: `A dynamic route at the top of ${app}/ answers every path, so a fallback rewrite is never reached. Only that route can hand a path over: for paths it does not own, have it return \`createReferralLinkRoute(source, { root: true })\` from "@commish/next/links" (pass \`notFound\` to render your own 404). ${ROOT_STEPS}`,
+      next: `A dynamic route at the top of ${app}/ answers every path, so a fallback rewrite is never reached. Only that route can hand a path over, for the paths it does not own. A page (\`[slug]/page.tsx\`): create \`const RootLink = createReferralLinkPage(source)\` from "@commish/next/links/page" at module scope and \`return RootLink({ params })\`. A route handler: create \`const rootLink = createReferralLinkRoute(source, { root: true })\` from "@commish/next/links" at module scope and \`return rootLink(request, context)\`. ${ROOT_STEPS}`,
     };
+  // A loading file at the top of the app wraps the root link page: unknown
+  // paths would answer 200 and creator links a client-side refresh.
+  const loading = ["tsx", "ts", "jsx", "js"].map((ext) => `${app}/loading.${ext}`).filter(stat);
   const path = `${app}/commish-link/[creator]/page.${typed ? "tsx" : "js"}`;
   const content = `import { createReferralLinkPage } from "@commish/next/links/page";
 
@@ -278,21 +323,25 @@ export default createReferralLinkPage(() => ({
       return {
         files: [page, { path: configs[0], status: "unchanged" }],
         review,
+        loading,
         rewrite: "fallback_rewrite_present",
         next: ROOT_STEPS,
       };
     // A rule that already matches every path leaves no place for this one:
     // behind it root links are never reached, ahead of it your own pages are not.
-    if (/["'`]\/(:[A-Za-z_]\w*\*|\(\.\*\))["'`]/.test(text))
+    const catchAll = catchAllRewrite(text);
+    if (catchAll)
       return {
         files: [page],
         review,
+        loading,
         rewrite: "catch_all_rewrite_blocks_root_links",
-        next: `${configs[0]} already has a rewrite that matches every path (such as \`/:path*\`). Root links cannot be added as a fallback beside it: placed after that rule they are never reached, and placed before it they would take one-segment paths away from the site that rule serves. Keep prefix links, or narrow that rule so it no longer matches one-segment paths.`,
+        next: `${configs[0]} already has a rewrite that matches every path (\`${catchAll}\`). Root links cannot be added as a fallback beside it: placed after that rule they are never reached, and placed before it they would take one-segment paths away from the site that rule serves. Keep prefix links, or narrow that rule so it no longer matches one-segment paths.`,
       };
     return {
       files: [page],
       review,
+      loading,
       rewrite: "manual_config_merge_required",
       next: `Add \`referralLinkFallbackRewrite()\` from "@commish/next/links" as the LAST entry of the \`fallback\` list of \`rewrites()\` in ${configs[0]}, keeping every existing rule ahead of it. If \`rewrites()\` returns an array today, return \`{ afterFiles: [...thatArray], fallback: [referralLinkFallbackRewrite()] }\` instead. Never use beforeFiles or middleware for this. ${ROOT_STEPS}`,
     };
@@ -310,6 +359,7 @@ export default {
   return {
     files: [page, { path: "next.config.mjs", content: config, status: "create" }],
     review,
+    loading,
     rewrite: "fallback_rewrite_supported",
     next: ROOT_STEPS,
   };
@@ -361,7 +411,9 @@ export async function runLinks(args) {
                     ? "Unknown paths at the top of your site reach the link route. Each creator's link switches to the short form once Commish has checked their name."
                     : data.root?.enabled === false
                       ? "Short links are switched off for this product. Turn them on in the Commish dashboard (the product's Creator links on your website section), then run this command again."
-                      : "Short links are on, but unknown paths at the top of your site do not reach the link route with the check header. Confirm the fallback rewrite from `commish-next links init --root` is deployed, and that @commish/next is 0.10.0 or later on that deployment.",
+                      : typeof data.root?.enabled !== "boolean"
+                        ? "Commish could not check the root fallback just now. Run this command again shortly."
+                        : "Short links are on, but unknown paths at the top of your site do not reach the link route with the check header. Confirm the fallback rewrite from `commish-next links init --root` is deployed, and that @commish/next is 0.10.0 or later on that deployment.",
                 ]
               : []),
             "Creators are now shown links on this website. Their commish.sh links keep working.",
@@ -415,8 +467,14 @@ export async function runLinks(args) {
     ...(root ? { rootRewrite: root.rewrite } : {}),
     // Middleware or a proxy runs before every rewrite; confirm it lets root paths through.
     ...(root?.review.length ? { routingReviewRequired: root.review } : {}),
+    ...(root?.loading?.length ? { loadingBoundaryReviewRequired: root.loading } : {}),
     requiredEnvironment: ["COMMISH_API_URL", "COMMISH_SECRET_KEY"],
     next: [
+      ...(root?.loading?.length
+        ? [
+            `Move ${root.loading[0]} into a route group (such as ${route.app}/(site)/) so it no longer wraps ${route.app}/commish-link: at the top of ${route.app}/ it makes every unknown one-segment path answer 200, and creator links a client-side refresh instead of a redirect.`,
+          ]
+        : []),
       ...(root ? [root.next] : []),
       "Deploy, then run `commish-next links verify` with the same prefix so Commish checks the route on your verified website.",
       "Until that check passes, creators keep their commish.sh links. Nothing changes for existing links.",

@@ -286,16 +286,27 @@ export default createReferralLinkPage(() => ({
   the **last** `fallback` entry, after every rule of your own. If `rewrites()`
   returns an array today, return
   `{ afterFiles: [...thatArray], fallback: [referralLinkFallbackRewrite()] }`.
-  If a rule already matches every path (such as `/:path*` to a legacy site),
-  root links cannot be added beside it: after that rule they are never reached,
-  before it they would take one-segment paths from the site it serves. Keep
-  prefix links, or narrow that rule first.
+  If a rewrite already matches every path (such as `/:path*` or `/:path+` to a
+  legacy site), root links cannot be added beside it: after that rule they are
+  never reached, before it they would take one-segment paths from the site it
+  serves. Keep prefix links, or narrow that rule first. Only `rewrites()`
+  counts: a `headers()` or `redirects()` rule for every path is fine.
 - Middleware or a proxy runs before every rewrite. The command lists such files
   as `routingReviewRequired`; confirm they let unknown one-segment paths through.
+- A `loading` file at the top of `app/` (or `src/app/`) wraps the root link
+  page: every unknown one-segment path would answer 200 and creator links would
+  arrive as a client-side refresh instead of a redirect. The command lists it
+  as `loadingBoundaryReviewRequired`; move it into a route group such as
+  `app/(site)/loading.tsx`.
 - A top-level dynamic or catch-all route answers every path before a fallback
-  rewrite is reached, so only it can hand a path over: for paths it does not
-  own, return `createReferralLinkRoute(source, { root: true })` from
-  `@commish/next/links`, with `notFound` for your own 404.
+  rewrite is reached, so only it can hand a path over, for the paths it does
+  not own. From a page (`app/[slug]/page.tsx`): create
+  `const RootLink = createReferralLinkPage(source)` from
+  `@commish/next/links/page` at module scope and `return RootLink({ params })`.
+  From a route handler: create
+  `const rootLink = createReferralLinkRoute(source, { root: true })` from
+  `@commish/next/links` at module scope and `return rootLink(request, context)`,
+  with `notFound` for your own 404.
 - Your own pages always win. Commish checks each creator's name against your
   site and keeps that creator on the prefix link when a page of yours answers
   the path; the dashboard lists those names.
@@ -305,6 +316,11 @@ export default createReferralLinkPage(() => ({
   never resolved; a creator seen in the last ten minutes gets a short notice
   instead, and a buyer is never forwarded without the referral. Unknown paths
   are remembered briefly and lookups are rationed per server instance.
+- What a page does differently from the route handler: the redirect is Next's
+  own 307, without `referrer-policy: no-referrer` or `x-robots-tag` (add them
+  for these paths in `headers()` if you need them); every method is answered
+  like GET; the source's `notFound` is not used, your `not-found` page is; and
+  the pause and outage notice is a 200 with a noindex meta tag.
 - Commish sends its checks with an `x-commish-link-check` header. The page and
   the handlers forward it unchanged, together with `x-commish-link-root: 1`;
   a custom handler must forward both (`links.handoff({ handle, check, root: true })`).
