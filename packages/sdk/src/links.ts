@@ -262,8 +262,11 @@ function budget(limit: number) {
  */
 export function createReferralLinkResolver(options: ReferralLinkResolverOptions) {
   const timeoutMs = options.timeoutMs ?? 4000;
-  if (!Number.isFinite(timeoutMs) || timeoutMs <= 0)
-    throw new TypeError("timeoutMs must be a positive number");
+  // AbortSignal.timeout accepts whole milliseconds up to 2^31 - 1 and throws otherwise.
+  if (!Number.isInteger(timeoutMs) || timeoutMs <= 0 || timeoutMs > 2_147_483_647)
+    throw new TypeError(
+      "timeoutMs must be a positive number of whole milliseconds, at most 2147483647",
+    );
   const misses = new Map<string, number>();
   const known = new Map<string, number>();
   // First lookups of a handle not yet seen to resolve, so a burst on one unknown path asks once.
@@ -281,7 +284,7 @@ export function createReferralLinkResolver(options: ReferralLinkResolverOptions)
     // A check from Commish is never cached, and has its own allowance.
     const probing = check !== null || handle.startsWith("cmprobe-");
     // During an outage a creator seen recently gets the notice, not a 404.
-    const seen = !probing && fresh(known, handle);
+    let seen = !probing && fresh(known, handle);
     const failed = (): ReferralLinkOutcome =>
       options.root && !seen ? missing : { kind: "unavailable" };
     let settle: ((outcome: "known" | "miss" | "failed") => void) | undefined;
@@ -295,6 +298,8 @@ export function createReferralLinkResolver(options: ReferralLinkResolverOptions)
           const outcome = await earlier;
           if (outcome === "miss") return missing;
           if (outcome === "failed") return failed();
+          // The earlier lookup has just seen this creator resolve.
+          seen = true;
         } else {
           // On a prefix route nearly every path is meant as a creator link, so
           // a spent budget is a temporary notice there, never a dead link.
@@ -313,8 +318,8 @@ export function createReferralLinkResolver(options: ReferralLinkResolverOptions)
       first.delete(handle);
       settle(outcome);
     };
-    const signal = AbortSignal.timeout(timeoutMs);
     try {
+      const signal = AbortSignal.timeout(timeoutMs);
       // The timeout also ends a custom handoff that ignores the signal, so one
       // stuck request cannot hold every later visit to the same handle.
       const { data } = await Promise.race([
@@ -337,7 +342,8 @@ export function createReferralLinkResolver(options: ReferralLinkResolverOptions)
       done("known");
       return data.status === "paused"
         ? { kind: "paused", reason: data.reason }
-        : { kind: "redirect", location: data.location };
+        : // Percent-encoded, so the Location header can always be written.
+          { kind: "redirect", location: new URL(data.location).href };
     } catch (error) {
       if (object(error) && error.name === "CommishError" && error.status === 404) {
         if (!probing) remember(misses, handle, MISS_TTL_MS);
