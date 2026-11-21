@@ -221,9 +221,11 @@ const KNOWN_TTL_MS = 600_000;
 const MAX_ENTRIES = 1024;
 const WINDOW_MS = 10_000;
 const MAX_UNKNOWN_LOOKUPS = 60;
-// Commish sends a few checks per website and hour. They are never cached, so
-// they get a small allowance of their own instead of an open door.
-const MAX_CHECKS = 10;
+// Commish sends a few checks per website and hour, at most a fallback and ten
+// names in one run. They are never cached, so they get a small allowance of
+// their own instead of an open door; forged checks can use it up for ten
+// seconds, which only delays Commish's checks of this site.
+const MAX_CHECKS = 20;
 function remember(map: Map<string, number>, key: string, ttl: number) {
   map.delete(key);
   if (map.size >= MAX_ENTRIES) map.delete(map.keys().next().value as string);
