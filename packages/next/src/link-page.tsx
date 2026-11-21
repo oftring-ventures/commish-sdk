@@ -25,6 +25,17 @@ import type { ReferralLinkRouteSource } from "./links.js";
  *
  * Its requests are marked as root requests, which Commish answers only while
  * root links are switched on for the product in the dashboard.
+ *
+ * What a page cannot do that `createReferralLinkRoute` does:
+ *
+ * - the redirect is Next's own 307, without `referrer-policy: no-referrer` or
+ *   `x-robots-tag`; add them for these paths in `headers()` if you need them
+ * - every method is answered like GET (a route handler answers others 405)
+ * - the source's `notFound` is not used: your `not-found` page is
+ * - the pause and outage notice is a 200 with a noindex meta tag
+ * - a root `app/loading.*` wraps this page, so the redirect and the not-found
+ *   answer arrive as a 200 with a client-side refresh; keep `loading` inside a
+ *   route group such as `app/(site)/`
  */
 export function createReferralLinkPage(source: ReferralLinkRouteSource) {
   // One resolver per page module, so its miss cache and lookup budget persist across requests.
