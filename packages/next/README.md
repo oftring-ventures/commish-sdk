@@ -300,13 +300,22 @@ export default createReferralLinkPage(() => ({
   `app/(site)/loading.tsx`.
 - A top-level dynamic or catch-all route answers every path before a fallback
   rewrite is reached, so only it can hand a path over, for the paths it does
-  not own. From a page (`app/[slug]/page.tsx`): create
+  not own. Both read the creator from a `creator` parameter, so pass the one
+  segment your route received under that name (for a catch-all, only when it
+  has exactly one segment). From a page (`app/[slug]/page.tsx`): create
   `const RootLink = createReferralLinkPage(source)` from
-  `@commish/next/links/page` at module scope and `return RootLink({ params })`.
+  `@commish/next/links/page` at module scope and
+  `return RootLink({ params: Promise.resolve({ creator: slug }) })`.
   From a route handler: create
   `const rootLink = createReferralLinkRoute(source, { root: true })` from
-  `@commish/next/links` at module scope and `return rootLink(request, context)`,
+  `@commish/next/links` at module scope and
+  `return rootLink(request, { params: Promise.resolve({ creator: slug }) })`,
   with `notFound` for your own 404.
+- `links init --root` reads `rewrites()` as text: a commented-out rule that
+  matches every path is still read as one. Remove such comments first.
+- On a Commish Pages site whose aliases are served at a prefix other than
+  `/c`, run `links init --root --prefix <that prefix>` so the command uses the
+  Pages alias handler instead of installing a second root page.
 - Your own pages always win. Commish checks each creator's name against your
   site and keeps that creator on the prefix link when a page of yours answers
   the path; the dashboard lists those names.

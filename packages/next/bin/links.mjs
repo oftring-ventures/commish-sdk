@@ -325,7 +325,7 @@ function rootPlan(app, typed, servedByPages, prefix) {
       files: [],
       review,
       rewrite: "manual_cms_fallback_required",
-      next: `A dynamic route at the top of ${app}/ answers every path, so a fallback rewrite is never reached. Only that route can hand a path over, for the paths it does not own. A page (\`[slug]/page.tsx\`): create \`const RootLink = createReferralLinkPage(source)\` from "@commish/next/links/page" at module scope and \`return RootLink({ params })\`. A route handler: create \`const rootLink = createReferralLinkRoute(source, { root: true })\` from "@commish/next/links" at module scope and \`return rootLink(request, context)\`. ${ROOT_STEPS}`,
+      next: `A dynamic route at the top of ${app}/ answers every path, so a fallback rewrite is never reached. Only that route can hand a path over, for the paths it does not own. Both read the creator from a \`creator\` parameter, so pass the one segment your route received under that name (for a catch-all, only when it has exactly one segment). A page (\`[slug]/page.tsx\`): create \`const RootLink = createReferralLinkPage(source)\` from "@commish/next/links/page" at module scope and \`return RootLink({ params: Promise.resolve({ creator: slug }) })\`. A route handler: create \`const rootLink = createReferralLinkRoute(source, { root: true })\` from "@commish/next/links" at module scope and \`return rootLink(request, { params: Promise.resolve({ creator: slug }) })\`. ${ROOT_STEPS}`,
     };
   // A loading file at the top of the app wraps the root link page: unknown
   // paths would answer 200 and creator links a client-side refresh.
