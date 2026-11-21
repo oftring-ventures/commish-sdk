@@ -3,6 +3,70 @@
 Notable changes to `@commish/sdk`, `@commish/next`, and `commish`, which release
 together with one version. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## 0.10.0 - 2026-11-21
+
+### Added
+
+- Root links: a creator's referral link at `https://your-site.com/<handle>`,
+  beside the prefix link. It needs both the install below and the business's
+  root-links switch in the Commish dashboard; Commish refuses root requests
+  while the switch is off, and shows creators a root link only after it has
+  checked the site.
+- `@commish/next/links/page`: `createReferralLinkPage` for
+  `app/commish-link/[creator]/page.tsx`, and `referralLinkFallbackRewrite()`
+  from `@commish/next/links` for the last entry of `rewrites().fallback`. A
+  path that is not a creator shows the app's own `not-found` page.
+- `createReferralLinkRoute(source, { root: true })`, for a top-level dynamic or
+  catch-all route that hands the paths it does not own over itself.
+- `createCreatorAliasHandler(options, { rootLinks: true })`: on a Commish Pages
+  site, the alias handler also serves root links for creators without a page.
+  Without the option it serves page aliases only, as before.
+- `@commish/sdk`: `createReferralLinkResolver` (the lookup logic without a
+  response), `links.handoff({ handle, check, root })`, the `LINK_CHECK_HEADER`
+  and `LINK_ROOT_HEADER` constants, `links.verifyRoute({ root: true })` and the
+  receipt's optional `root: { enabled, verified }`.
+- `commish-next links init --root` writes the root link page, and
+  `next.config.mjs` with the fallback rewrite when the project has no Next
+  config; otherwise it reports what to merge by hand and what blocks root links
+  (a rewrite that takes every path, a top-level dynamic route, a `loading` file
+  at the top of `app/`, middleware). `commish-next links verify --root` reports
+  the root check.
+
+### Changed
+
+- The prefix route remembers unknown handles for 60 seconds and known creators
+  for ten minutes, asks Commish once for a burst on one unknown path, and allows
+  60 lookups of never-seen handles per 10 seconds per server instance (or your
+  own `admit`). A spent budget is the 503 notice. Commish's checks have their
+  own allowance of 20 per 10 seconds per instance.
+- Handlers forward Commish's `x-commish-link-check` header and mark root
+  requests with `x-commish-link-root: 1`. 0.9.x handlers forward neither, so
+  they cannot pass the site check for root links; a custom handler must forward
+  both (`links.handoff({ handle, check, root: true })`).
+- `createReferralLinkRoute` keeps one handler per route module and
+  configuration (up to 16 configurations per module), so its caches and
+  budgets last across requests.
+- The SDK, Next adapter and `commish` launcher release together at 0.10.0.
+  The launcher pins `@commish/sdk@0.10.0`; Next accepts `@commish/sdk@~0.10.0`
+  and needs it (`@commish/next/links/page` uses exports 0.9.0 does not have).
+
+### Known limits
+
+- The check allowance is per instance and cannot tell Commish's checks from
+  forged ones. A visitor who keeps sending forged checks to one instance can
+  make Commish's check of the site fail; after three failed rechecks at least
+  ten minutes apart Commish withdraws the route and creators see commish.sh
+  links again until the business checks the site again. Attribution and
+  payments are unaffected.
+- A root path seen while the switch was off stays a 404 for up to 60 seconds
+  per instance after the switch is turned on.
+- The root link page cannot set its status or headers: the pause and outage
+  notice is a 200 with a noindex meta tag, and the redirect is Next's own 307
+  without `referrer-policy: no-referrer` or `x-robots-tag`.
+- `links init --root` reads `rewrites()` as text, so a commented-out rule that
+  takes every path still counts; on a Pages site whose aliases are served at a
+  prefix other than `/c`, run it with `--prefix <that prefix>`.
+
 ## 0.9.0 - 2026-11-20
 
 ### Added
