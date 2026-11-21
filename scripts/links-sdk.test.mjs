@@ -372,12 +372,19 @@ test("at the root an outage is a notice for a creator seen recently, not found o
 });
 
 test("a handoff that never settles ends at the timeout and does not hold later visits", async () => {
-  const stuck = () => new Promise(() => {});
-  const handler = createReferralLinkHandler({ handoff: stuck, timeoutMs: 20 });
-  const started = Date.now();
-  assert.equal((await handler(get("/c/tim"), "tim")).status, 503);
-  assert.equal((await handler(get("/c/tim"), "tim")).status, 503);
-  assert.ok(Date.now() - started < 2000);
+  // AbortSignal.timeout's timer does not keep the event loop alive. A server always
+  // does; this test holds a referenced timer so Node 22 waits for the timeout too.
+  const keepAlive = setInterval(() => {}, 1000);
+  try {
+    const stuck = () => new Promise(() => {});
+    const handler = createReferralLinkHandler({ handoff: stuck, timeoutMs: 20 });
+    const started = Date.now();
+    assert.equal((await handler(get("/c/tim"), "tim")).status, 503);
+    assert.equal((await handler(get("/c/tim"), "tim")).status, 503);
+    assert.ok(Date.now() - started < 2000);
+  } finally {
+    clearInterval(keepAlive);
+  }
 });
 
 test("per-request values replace the handler's own, for configuration read on each request", async () => {
