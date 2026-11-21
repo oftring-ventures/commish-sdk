@@ -311,3 +311,38 @@ test("bare root links are served only when the install opts in, and are marked a
     globalThis.fetch = original;
   }
 });
+
+test("bare root links keep one brand's misses apart from another brand's creators", async () => {
+  const original = globalThis.fetch;
+  // A fresh lookup window, whatever the earlier tests spent.
+  mock.timers.enable({ apis: ["Date"], now: Date.now() + 7_200_000 });
+  try {
+    const brandA = { ...options, secretKey: "cm_live_sk_fixture_brand_a_123456" };
+    const brandB = { ...options, secretKey: "cm_live_sk_fixture_brand_b_123456" };
+    let current = brandA;
+    globalThis.fetch = async (url, init) => {
+      if (!String(url).includes("/links/"))
+        return Response.json({ error: { code: "page_not_found" } }, { status: 404 });
+      return init.headers.authorization === `Bearer ${brandA.secretKey}`
+        ? Response.json({ error: { code: "link_not_found" } }, { status: 404 })
+        : Response.json({
+            data: {
+              protocol: "commish-links-v1",
+              status: "ready",
+              location: `${page.origin}/?commish_ref=token.signature`,
+            },
+          });
+    };
+    const handler = createCreatorAliasHandler(() => current, { rootLinks: true });
+    assert.equal(
+      (await handler(new Request(`${page.origin}/shared`), params("shared"))).status,
+      404,
+    );
+    current = brandB;
+    const response = await handler(new Request(`${page.origin}/shared`), params("shared"));
+    assert.equal(response.status, 307);
+  } finally {
+    globalThis.fetch = original;
+    mock.timers.reset();
+  }
+});
