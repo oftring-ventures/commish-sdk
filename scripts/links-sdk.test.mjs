@@ -322,7 +322,7 @@ test("checks have a small allowance of their own and never spend the visitors' b
   });
   const handler = createReferralLinkHandler({ handoff: sdk.links.handoff, root: true });
   const statuses = [];
-  for (let i = 0; i < 15; i += 1)
+  for (let i = 0; i < 25; i += 1)
     statuses.push(
       (
         await handler(
@@ -331,9 +331,10 @@ test("checks have a small allowance of their own and never spend the visitors' b
         )
       ).status,
     );
-  assert.equal(calls, 10, "a forged check header cannot become unlimited Commish calls");
-  assert.deepEqual(statuses.slice(0, 10), Array(10).fill(204));
-  assert.deepEqual(statuses.slice(10), Array(5).fill(404));
+  // Room for Commish's largest run on one site: a fallback and ten names.
+  assert.equal(calls, 20, "a forged check header cannot become unlimited Commish calls");
+  assert.deepEqual(statuses.slice(0, 20), Array(20).fill(204));
+  assert.deepEqual(statuses.slice(20), Array(5).fill(404));
   calls = 0;
   for (let i = 0; i < 5; i += 1) await handler(get(`/cmprobe-x${i}`), `cmprobe-x${i}`);
   assert.equal(calls, 0, "a check-shaped path shares that allowance");
