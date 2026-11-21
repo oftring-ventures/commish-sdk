@@ -5,6 +5,8 @@ import {
   Commish,
   CommishError,
   createReferralLinkHandler,
+  createReferralLinkResolver,
+  referralLinkNotice,
 } from "../packages/sdk/dist/index.js";
 
 const ready = {
@@ -292,4 +294,165 @@ test("the handler reports failures to onError, names allowed methods and rejects
       () => createReferralLinkHandler({ handoff: rejected.sdk.links.handoff, timeoutMs }),
       /timeoutMs must be a positive number/,
     );
+});
+
+test("a root route marks its requests; a prefix route does not", async () => {
+  const seen = [];
+  const { sdk } = client((_url, init) => {
+    seen.push(init.headers ?? {});
+    return Response.json({ data: ready });
+  });
+  await createReferralLinkHandler({ handoff: sdk.links.handoff, root: true })(get("/maya"), "maya");
+  await createReferralLinkHandler({ handoff: sdk.links.handoff })(get("/c/maya"), "maya");
+  assert.equal(seen[0]["x-commish-link-root"], "1");
+  assert.equal(seen[1]["x-commish-link-root"], undefined);
+  // A root check carries both the mark and the value.
+  await sdk.links.handoff({ handle: check, check, root: true });
+  assert.equal(seen[2]["x-commish-link-root"], "1");
+  assert.equal(seen[2]["x-commish-link-check"], check);
+});
+
+test("checks have a small allowance of their own and never spend the visitors' budget", async () => {
+  let calls = 0;
+  const { sdk } = client((url) => {
+    calls += 1;
+    return String(url).includes("/links/maya/")
+      ? Response.json({ data: ready })
+      : Response.json({ data: { protocol: "commish-links-v1", status: "probe" } });
+  });
+  const handler = createReferralLinkHandler({ handoff: sdk.links.handoff, root: true });
+  const statuses = [];
+  for (let i = 0; i < 15; i += 1)
+    statuses.push(
+      (
+        await handler(
+          new Request("https://brand.example/tim", { headers: { "x-commish-link-check": check } }),
+          "tim",
+        )
+      ).status,
+    );
+  assert.equal(calls, 10, "a forged check header cannot become unlimited Commish calls");
+  assert.deepEqual(statuses.slice(0, 10), Array(10).fill(204));
+  assert.deepEqual(statuses.slice(10), Array(5).fill(404));
+  calls = 0;
+  for (let i = 0; i < 5; i += 1) await handler(get(`/cmprobe-x${i}`), `cmprobe-x${i}`);
+  assert.equal(calls, 0, "a check-shaped path shares that allowance");
+  assert.equal((await handler(get("/maya"), "maya")).status, 307, "visitors are not affected");
+});
+
+test("a spent lookup budget is a notice on the prefix route and not found at the root", async () => {
+  const unknown = () => Response.json({ error: { code: "link_not_found" } }, { status: 404 });
+  const prefix = createReferralLinkHandler({ handoff: client(unknown).sdk.links.handoff });
+  for (let i = 0; i < 60; i += 1) await prefix(get(`/c/scan-${i}`), `scan-${i}`);
+  const held = await prefix(get("/c/creator-q"), "creator-q");
+  assert.equal(held.status, 503, "a real creator's first visit is never told the link is dead");
+  assert.equal(held.headers.get("retry-after"), "60");
+  const root = createReferralLinkHandler({
+    handoff: client(unknown).sdk.links.handoff,
+    root: true,
+  });
+  for (let i = 0; i < 60; i += 1) await root(get(`/scan-${i}`), `scan-${i}`);
+  assert.equal((await root(get("/creator-q"), "creator-q")).status, 404);
+});
+
+test("at the root an outage is a notice for a creator seen recently, not found otherwise", async () => {
+  let offline = false;
+  const { sdk } = client(() => {
+    if (offline) throw new Error("offline");
+    return Response.json({ data: ready });
+  });
+  const handler = createReferralLinkHandler({ handoff: sdk.links.handoff, root: true });
+  assert.equal((await handler(get("/tim"), "tim")).status, 307);
+  offline = true;
+  const known = await handler(get("/tim"), "tim");
+  assert.equal(known.status, 503);
+  assert.equal(known.headers.get("location"), null, "never forwarded without the referral");
+  assert.equal((await handler(get("/pricing"), "pricing")).status, 404);
+});
+
+test("a handoff that never settles ends at the timeout and does not hold later visits", async () => {
+  const stuck = () => new Promise(() => {});
+  const handler = createReferralLinkHandler({ handoff: stuck, timeoutMs: 20 });
+  const started = Date.now();
+  assert.equal((await handler(get("/c/tim"), "tim")).status, 503);
+  assert.equal((await handler(get("/c/tim"), "tim")).status, 503);
+  assert.ok(Date.now() - started < 2000);
+});
+
+test("per-request values replace the handler's own, for configuration read on each request", async () => {
+  const errors = [];
+  const handler = createReferralLinkHandler({
+    handoff: () => {
+      throw new Error("unconfigured");
+    },
+    onError: () => errors.push("default"),
+  });
+  const { sdk } = client((url) =>
+    String(url).includes("/links/maya/")
+      ? Response.json({ data: ready })
+      : Response.json({ error: { code: "link_not_found" } }, { status: 404 }),
+  );
+  assert.equal((await handler(get(), "maya", { handoff: sdk.links.handoff })).status, 307);
+  const missing = await handler(get("/c/nobody"), "nobody", {
+    handoff: sdk.links.handoff,
+    notFound: () => new Response("this request's 404", { status: 404 }),
+  });
+  assert.equal(await missing.text(), "this request's 404");
+  await handler(get("/c/other"), "other", { onError: () => errors.push("visit") });
+  assert.deepEqual(errors, ["visit"]);
+});
+
+test("the resolver reports outcomes for frameworks whose pages cannot return a response", async () => {
+  const { sdk } = client((url) =>
+    String(url).includes("/links/maya/")
+      ? Response.json({ data: ready })
+      : String(url).includes("/links/paused/")
+        ? Response.json({
+            data: { protocol: "commish-links-v1", status: "paused", reason: "promotion" },
+          })
+        : String(url).includes("/links/tim/")
+          ? Response.json({ data: { protocol: "commish-links-v1", status: "probe" } })
+          : Response.json({ error: { code: "link_not_found" } }, { status: 404 }),
+  );
+  const resolve = createReferralLinkResolver({ handoff: sdk.links.handoff, root: true });
+  assert.deepEqual(await resolve("maya"), { kind: "redirect", location: ready.location });
+  assert.deepEqual(await resolve("paused"), { kind: "paused", reason: "promotion" });
+  assert.deepEqual(await resolve("tim", { check }), { kind: "probe" });
+  assert.deepEqual(await resolve("nobody"), { kind: "not_found" });
+  assert.deepEqual(await resolve("Not A Handle"), { kind: "not_found" });
+  assert.deepEqual(await resolve("maya", { check: "anything" }), { kind: "not_found" });
+  assert.equal(referralLinkNotice("promotion").title, "Promotion is temporarily unavailable");
+  assert.equal(referralLinkNotice(null).title, "This link is temporarily unavailable");
+});
+
+test("the root answer of a route check may say whether root links are switched on", async () => {
+  const receipt = (root) => ({
+    verified: true,
+    route: {
+      origin: "https://brand.example",
+      prefix: "/c",
+      template: "https://brand.example/c/{creator}",
+    },
+    root,
+  });
+  for (const root of [
+    { enabled: false, verified: false },
+    { enabled: true, verified: true },
+    { enabled: null, verified: false },
+  ])
+    assert.deepEqual(
+      (
+        await client(() => Response.json({ data: receipt(root) })).sdk.links.verifyRoute({
+          root: true,
+        })
+      ).data.root,
+      root,
+    );
+  await assert.rejects(
+    () =>
+      client(() =>
+        Response.json({ data: receipt({ enabled: "yes", verified: true }) }),
+      ).sdk.links.verifyRoute({ root: true }),
+    /invalid Commish link route/,
+  );
 });
