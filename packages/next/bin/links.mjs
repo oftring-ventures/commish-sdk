@@ -192,10 +192,10 @@ export const GET = createReferralLinkRoute(() => ({
 const ROOT_STEPS =
   "Deploy. Then, in this order: run `commish-next links verify` (short links need a verified link route), turn on short links for this product in the Commish dashboard, and run `commish-next links verify --root`.";
 
-// A rewrite source that takes every one-segment path: /:path*, /:path+,
+// A rewrite source that takes every one-segment path: /:path, /:path*, /:path+,
 // /:path(.*), /:path(.+), /(.*) or /(.+). Only rules inside rewrites count: a headers() or
 // redirects() rule that matches every path does not route anything.
-const CATCH_ALL = /^\/(?:\(\.[*+]\)|:[A-Za-z_]\w*(?:[*+]|\(\.[*+]\)))$/;
+const CATCH_ALL = /^\/(?:\(\.[*+]\)|:[A-Za-z_]\w*(?:[*+]|\(\.[*+]\))?)$/;
 function catchAllRewrite(text) {
   const keyword = /\brewrites\b/g;
   for (let match = keyword.exec(text); match; match = keyword.exec(text)) {
@@ -443,6 +443,8 @@ export async function runLinks(args) {
         writeFileSync(file.path, file.content, { flag: "wx" });
       }
   }
+  // A conflict on the root page names its reason as the prefix route's would.
+  const rootManual = root?.files.find((file) => file.manualIntegration)?.manualIntegration;
   return {
     // "files_installed" only when this run wrote something.
     status: !selected.apply
@@ -450,7 +452,9 @@ export async function runLinks(args) {
       : [route, ...(root?.files ?? [])].some((file) => file.status === "create")
         ? "files_installed"
         : "no_changes",
-    ...(route.manualIntegration ? { manualIntegration: route.manualIntegration } : {}),
+    ...((route.manualIntegration ?? rootManual)
+      ? { manualIntegration: route.manualIntegration ?? rootManual }
+      : {}),
     app: route.app,
     prefix: selected.prefix,
     files: [
@@ -459,10 +463,11 @@ export async function runLinks(args) {
         status: route.status,
         ...(route.status === "conflict" ? { existing: route.existing } : {}),
       },
-      ...(root?.files ?? []).map(({ path, status, existing }) => ({
+      ...(root?.files ?? []).map(({ path, status, existing, manualIntegration }) => ({
         path,
         status,
         ...(existing ? { existing } : {}),
+        ...(manualIntegration ? { manualIntegration } : {}),
       })),
     ],
     ...(root ? { rootRewrite: root.rewrite } : {}),

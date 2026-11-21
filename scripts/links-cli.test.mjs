@@ -247,6 +247,16 @@ test("links init --root adds the root page and a fallback config only where it i
   assert.equal(blocked.out.rootRewrite, "catch_all_rewrite_blocks_root_links");
   assert.match(blocked.out.next[0], /Keep prefix links/);
   assert.match(blocked.out.next[0], /`\/:path\*`/);
+  // A bare dynamic source takes every one-segment path too.
+  const bare = fixture(t);
+  writeFileSync(
+    join(bare.root, "next.config.mjs"),
+    'export default { rewrites: async () => [{ source: "/:slug", destination: "/cms/:slug" }] };\n',
+  );
+  assert.equal(
+    bare.run("links", "init", "--root", "--json").out.rootRewrite,
+    "catch_all_rewrite_blocks_root_links",
+  );
 
   const cms = fixture(t);
   mkdirSync(join(cms.root, "app/[...slug]"), { recursive: true });
@@ -279,7 +289,14 @@ test("links init --root checks who owns the root page's address", (t) => {
     join(other.root, "app/commish-link/[creator]/page.js"),
     "export default function Page() {}\n",
   );
-  assert.equal(other.run("links", "init", "--root", "--json").out.files[1].status, "conflict");
+  const plan = other.run("links", "init", "--root", "--json").out;
+  assert.equal(plan.files[1].status, "conflict");
+  // The JSON report names why, on the file and at the top, like a prefix conflict.
+  assert.equal(
+    plan.files[1].manualIntegration,
+    "existing_page_namespace_requires_manual_integration",
+  );
+  assert.equal(plan.manualIntegration, "existing_page_namespace_requires_manual_integration");
 });
 
 test("on a Commish Pages site links init --root asks for the alias handler's opt-in", (t) => {
