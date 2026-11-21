@@ -46,7 +46,8 @@ function options(args) {
   if (parsed.values.apply && parsed.values["dry-run"]) throw new Error("invalid_links_command");
   const prefix = parsed.values.prefix ?? "/c";
   if (!/^\/[a-z][a-z0-9-]{0,29}$/.test(prefix)) throw new Error("invalid_link_prefix");
-  if (["/api", "/admin", "/auth", "/login"].includes(prefix))
+  // /commish-link is where the root link page lives, so a prefix route there would share its segment.
+  if (["/api", "/admin", "/auth", "/login", "/commish-link"].includes(prefix))
     throw new Error("reserved_link_prefix");
   const origin = parsed.values.origin;
   if (origin !== undefined) {

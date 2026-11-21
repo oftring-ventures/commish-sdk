@@ -65,6 +65,8 @@ test("links init honours a custom prefix and plain JavaScript projects", (t) => 
   for (const [prefix, code] of [
     ["c", "invalid_link_prefix"],
     ["/api", "reserved_link_prefix"],
+    // The root link page's own segment; a prefix route there would collide with it.
+    ["/commish-link", "reserved_link_prefix"],
     ["/C", "invalid_link_prefix"],
   ])
     assert.equal(f.run("links", "init", "--prefix", prefix, "--json").error.code, code);
