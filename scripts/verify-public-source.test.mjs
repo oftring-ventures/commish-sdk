@@ -173,6 +173,7 @@ test("the committed pair is admitted and archive targets follow the exports", ()
       ...[
         "browser",
         "index",
+        "link-page",
         "links",
         "pages",
         "pages-handlers",
