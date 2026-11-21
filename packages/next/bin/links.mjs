@@ -331,9 +331,10 @@ export default createReferralLinkPage(() => ({
     // A rule that already matches every path leaves no place for this one:
     // behind it root links are never reached, ahead of it your own pages are not.
     const catchAll = catchAllRewrite(text);
+    // Like a top-level dynamic route: no root page is written where a rewrite can never reach it.
     if (catchAll)
       return {
-        files: [page],
+        files: [],
         review,
         loading,
         rewrite: "catch_all_rewrite_blocks_root_links",

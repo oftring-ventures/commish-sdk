@@ -245,6 +245,13 @@ test("links init --root adds the root page and a fallback config only where it i
   );
   const blocked = proxied.run("links", "init", "--root", "--json");
   assert.equal(blocked.out.rootRewrite, "catch_all_rewrite_blocks_root_links");
+  assert.deepEqual(
+    blocked.out.files.map(({ path }) => path),
+    ["app/c/[creator]/route.ts"],
+    "no root page is written where the rewrite could never reach it",
+  );
+  proxied.run("links", "init", "--root", "--apply", "--json");
+  assert.throws(() => readFileSync(join(proxied.root, "app/commish-link/[creator]/page.tsx")));
   assert.match(blocked.out.next[0], /Keep prefix links/);
   assert.match(blocked.out.next[0], /`\/:path\*`/);
   // A bare dynamic source takes every one-segment path too.
