@@ -336,10 +336,59 @@ test("on a Commish Pages site links init --root asks for the alias handler's opt
     join(pages.root, handler),
     "export const GET = createCreatorAliasHandler(pagesOptions, { rootLinks: true });\n",
   );
+  // Opted in, but bare root paths cannot reach the handler without its fallback rewrite.
+  const unrouted = pages.run("links", "init", "--root", "--apply", "--json");
+  assert.equal(unrouted.out.status, "no_changes");
+  assert.equal(unrouted.out.rootRewrite, "pages_alias_rewrite_required");
+  assert.match(unrouted.out.next[0], /creatorPageFallbackRewrite\(\)/);
+  assert.throws(
+    () => readFileSync(join(pages.root, "next.config.mjs")),
+    "never written for the merchant",
+  );
+  writeFileSync(
+    join(pages.root, "next.config.mjs"),
+    'import { creatorPageFallbackRewrite } from "@commish/next/pages/routing";\nexport default { async rewrites() { return { fallback: [creatorPageFallbackRewrite()] }; } };\n',
+  );
   const served = pages.run("links", "init", "--root", "--apply", "--json");
   assert.equal(served.out.status, "no_changes");
   assert.equal(served.out.rootRewrite, "served_by_pages");
-  assert.throws(() => readFileSync(join(pages.root, "next.config.mjs")));
+});
+
+test("root verify steps keep the installed prefix", (t) => {
+  const custom = fixture(t);
+  const plan = custom.run("links", "init", "--root", "--prefix", "/creators", "--json").out;
+  const steps = plan.next.join(" ");
+  assert.match(steps, /`commish-next links verify --prefix \/creators`/);
+  assert.match(steps, /`commish-next links verify --root --prefix \/creators`/);
+  const standard = fixture(t).run("links", "init", "--root", "--json").out.next.join(" ");
+  assert.match(standard, /`commish-next links verify`/);
+  assert.doesNotMatch(standard, /--prefix/);
+});
+
+test("only a route that can match one segment keeps root links from the rewrite", (t) => {
+  const nested = fixture(t);
+  mkdirSync(join(nested.root, "app/[locale]/blog/[slug]"), { recursive: true });
+  writeFileSync(
+    join(nested.root, "app/[locale]/blog/[slug]/page.tsx"),
+    "export default function Page() {}\n",
+  );
+  const planned = nested.run("links", "init", "--root", "--json").out;
+  assert.notEqual(planned.rootRewrite, "manual_cms_fallback_required");
+  assert.ok(planned.files.some(({ path }) => path === "app/commish-link/[creator]/page.tsx"));
+  for (const route of [
+    "app/[slug]/page.tsx",
+    "app/[locale]/[[...rest]]/page.tsx",
+    "app/[[...all]]/route.ts",
+  ]) {
+    const owner = fixture(t);
+    mkdirSync(join(owner.root, route.split("/").slice(0, -1).join("/")), { recursive: true });
+    writeFileSync(join(owner.root, route), "export default function Page() {}\n");
+    assert.equal(
+      owner.run("links", "init", "--root", "--json").out.rootRewrite,
+      "manual_cms_fallback_required",
+      route,
+    );
+  }
 });
 
 test("links verify --root reports the switch and the fallback separately", async (t) => {

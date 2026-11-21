@@ -189,8 +189,11 @@ export const GET = createReferralLinkRoute(() => ({
   return { app, ...claimed };
 }
 
-const ROOT_STEPS =
-  "Deploy. Then, in this order: run `commish-next links verify` (short links need a verified link route), turn on short links for this product in the Commish dashboard, and run `commish-next links verify --root`.";
+// The verify commands carry the installed prefix: an omitted --prefix means /c.
+const rootSteps = (prefix) => {
+  const flag = prefix === "/c" ? "" : ` --prefix ${prefix}`;
+  return `Deploy. Then, in this order: run \`commish-next links verify${flag}\` (short links need a verified link route), turn on short links for this product in the Commish dashboard, and run \`commish-next links verify --root${flag}\`.`;
+};
 
 // A rewrite source that takes every one-segment path: /:path, /:path*, /:path+,
 // /:path(.*), /:path(.+), /(.*) or /(.+). Only rules inside rewrites count: a headers() or
@@ -238,7 +241,8 @@ function catchAllRewrite(text) {
 // the site's own pages always win and a path that is not a creator shows the
 // site's own not-found page. Only a project without a Next config gets one
 // written; an existing config is merged by hand.
-function rootPlan(app, typed, servedByPages) {
+function rootPlan(app, typed, servedByPages, prefix) {
+  const ROOT_STEPS = rootSteps(prefix);
   const review = ["middleware", "proxy", "src/middleware", "src/proxy"]
     .flatMap((name) => [`${name}.ts`, `${name}.js`])
     .filter(stat);
@@ -258,6 +262,20 @@ function rootPlan(app, typed, servedByPages) {
         next: "Root links on a Commish Pages site are served by the Pages alias handler, which is not installed. Run `commish-next pages init --root-aliases --dry-run`, follow it, then run this command again.",
       };
     const opted = handlers.find((file) => /rootLinks\s*:\s*true/.test(readFileSync(file, "utf8")));
+    // Bare root paths reach the alias handler only through its fallback rewrite.
+    const pagesConfig = ["js", "mjs", "cjs", "ts", "mts"]
+      .map((ext) => `next.config.${ext}`)
+      .find(stat);
+    const routed =
+      pagesConfig !== undefined &&
+      readFileSync(pagesConfig, "utf8").includes("creatorPageFallbackRewrite(");
+    if (opted && !routed)
+      return {
+        files: [{ path: opted, status: "unchanged" }],
+        review,
+        rewrite: "pages_alias_rewrite_required",
+        next: `${pagesConfig ?? "next.config"} has no \`creatorPageFallbackRewrite()\`, so bare root paths never reach ${opted}. Add it from "@commish/next/pages/routing" as the LAST entry of the \`fallback\` list of \`rewrites()\` (\`commish-next pages init --root-aliases --dry-run\` shows the merge). ${ROOT_STEPS}`,
+      };
     return opted
       ? {
           files: [{ path: opted, status: "unchanged" }],
@@ -278,13 +296,29 @@ function rootPlan(app, typed, servedByPages) {
       .slice(app.length + 1)
       .split("/")
       .filter((part) => !/^\(.+\)$/.test(part));
+  // Only a pattern that can match exactly one segment answers /<name>: [x], a
+  // catch-all [...x] or [[...x]] at the top, or [x] followed by an optional [[...y]].
+  const catchAllPart = (part) => /^\[\[?\.\.\./.test(part ?? "");
+  const matchesOneSegment = (segments) =>
+    catchAllPart(segments[0]) ||
+    (segments[0]?.startsWith("[") &&
+      (segments.length === 1 || (segments.length === 2 && /^\[\[\.\.\./.test(segments[1]))));
   const rootDynamic =
     filesAt(app).some((file) => {
       const parts = topLevel(file);
-      return parts[0]?.startsWith("[") && /^(page|route)\.[jt]sx?$/.test(parts.at(-1));
+      return /^(page|route)\.[jt]sx?$/.test(parts.at(-1)) && matchesOneSegment(parts.slice(0, -1));
     }) ||
     ["pages", "src/pages"].some(
-      (dir) => stat(dir)?.isDirectory() && readdirSync(dir).some((name) => name.startsWith("[")),
+      (dir) =>
+        stat(dir)?.isDirectory() &&
+        filesAt(dir).some((file) => {
+          const parts = file
+            .slice(dir.length + 1)
+            .replace(/\.[^./]+$/, "")
+            .split("/");
+          if (parts.at(-1) === "index") parts.pop();
+          return parts[0] !== "api" && matchesOneSegment(parts);
+        }),
     );
   if (rootDynamic)
     return {
@@ -430,7 +464,7 @@ export async function runLinks(args) {
   const route = plan(selected.prefix);
   const typed = route.path.endsWith(".ts");
   const root = selected.root
-    ? rootPlan(route.app, typed, route.status === "served_by_pages")
+    ? rootPlan(route.app, typed, route.status === "served_by_pages", selected.prefix)
     : null;
   if (selected.apply) {
     const writes = [route, ...(root?.files ?? [])];
