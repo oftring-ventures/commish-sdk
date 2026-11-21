@@ -464,3 +464,47 @@ test("the root answer of a route check may say whether root links are switched o
     /invalid Commish link route/,
   );
 });
+
+test("a timeout that AbortSignal.timeout cannot take is refused when the handler is made", () => {
+  const handoff = async () => ({ data: ready });
+  for (const timeoutMs of [0.5, 2_147_483_648, Number.NaN])
+    assert.throws(() => createReferralLinkHandler({ handoff, timeoutMs }), /timeoutMs/);
+  assert.doesNotThrow(() => createReferralLinkHandler({ handoff, timeoutMs: 2_147_483_647 }));
+});
+
+test("a destination with unescaped characters is still a 307, percent-encoded", async () => {
+  const handler = createReferralLinkHandler({
+    handoff: async () => ({
+      data: { ...ready, location: "https://brand.example/商品?commish_ref=token.signature" },
+    }),
+  });
+  const response = await handler(get("/c/maya"), "maya");
+  assert.equal(response.status, 307);
+  assert.equal(
+    response.headers.get("location"),
+    "https://brand.example/%E5%95%86%E5%93%81?commish_ref=token.signature",
+  );
+});
+
+test("at the root a visitor who waited on a lookup that found the creator gets the notice if their own handoff fails", async () => {
+  let release;
+  let calls = 0;
+  const handler = createReferralLinkHandler({
+    root: true,
+    handoff: () => {
+      calls += 1;
+      if (calls === 1)
+        return new Promise((resolve) => {
+          release = () => resolve({ data: ready });
+        });
+      throw new Error("Commish is unreachable");
+    },
+  });
+  const firstVisit = handler(get("/maya"), "maya");
+  const secondVisit = handler(get("/maya"), "maya");
+  await new Promise((resolve) => setImmediate(resolve));
+  release();
+  assert.equal((await firstVisit).status, 307);
+  assert.equal((await secondVisit).status, 503);
+  assert.equal(calls, 2);
+});
