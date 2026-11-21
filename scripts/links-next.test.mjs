@@ -159,3 +159,22 @@ test("the root link page is the not-found page when unconfigured or when Commish
     /^NEXT_HTTP_ERROR_FALLBACK;404/,
   );
 });
+
+test("one configuration's miss never answers another configuration's creator", async (t) => {
+  const brandA = "cm_live_sk_fixture_brand_a_123456";
+  const brandB = "cm_live_sk_fixture_brand_b_123456";
+  const fetcher = mock.method(globalThis, "fetch", async (_url, init) =>
+    init.headers.authorization === `Bearer ${brandA}`
+      ? Response.json({ error: { code: "link_not_found" } }, { status: 404 })
+      : Response.json({ data: ready }),
+  );
+  t.after(() => fetcher.mock.restore());
+  let key = brandA;
+  const route = createReferralLinkRoute(() => ({ secretKey: key }));
+  assert.equal((await visit(route)).status, 404);
+  key = brandB;
+  const response = await visit(route);
+  assert.equal(response.status, 307);
+  assert.equal(response.headers.get("location"), ready.location);
+  assert.equal(fetcher.mock.calls.length, 2);
+});
