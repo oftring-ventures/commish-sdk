@@ -48,7 +48,10 @@ export {
   assertLinkHandoff,
   assertLinkRouteCheck,
   createReferralLinkHandler,
+  createReferralLinkResolver,
   LINK_CHECK_HEADER,
+  LINK_ROOT_HEADER,
+  referralLinkNotice,
 } from "./links.js";
 export type * from "./pages.js";
 export { assertCreatorPage } from "./pages.js";
@@ -58,6 +61,7 @@ import {
   assertLinkHandoff,
   assertLinkRouteCheck,
   LINK_CHECK_HEADER,
+  LINK_ROOT_HEADER,
   type LinkHandoff,
   type LinkRouteCheck,
   linkCheck,
@@ -165,17 +169,25 @@ export class Commish {
   /** Referral links on the business's own domain. Application-scoped secret key only. */
   readonly links = {
     /** Where to send a buyer who opened `https://brand.com/<prefix>/<handle>`. */
-    handoff: async (input: { handle: string; check?: string; signal?: AbortSignal }) => {
+    handoff: async (input: {
+      handle: string;
+      /** A root check value from Commish, forwarded unchanged; such a request is never a handoff. */
+      check?: string;
+      /** The request came in at the root of the site; answered only while root links are switched on. */
+      root?: boolean;
+      signal?: AbortSignal;
+    }) => {
+      const headers = {
+        ...(input.check === undefined ? {} : { [LINK_CHECK_HEADER]: linkCheck(input.check) }),
+        ...(input.root ? { [LINK_ROOT_HEADER]: "1" } : {}),
+      };
       const result = await this.request<{ data: LinkHandoff }>(
         `/links/${linkHandle(input.handle)}/handoff`,
         {
           method: "POST",
           cache: "no-store",
           signal: input.signal,
-          // A root path check from Commish: forwarded unchanged, never a handoff.
-          ...(input.check === undefined
-            ? {}
-            : { headers: { [LINK_CHECK_HEADER]: linkCheck(input.check) } }),
+          ...(Object.keys(headers).length ? { headers } : {}),
         },
       );
       assertLinkHandoff(result.data);
