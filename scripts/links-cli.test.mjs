@@ -94,6 +94,7 @@ test("links init never overwrites a merchant route and steps aside for Commish P
   );
   const served = pages.run("links", "init", "--apply", "--json");
   assert.equal(served.status, 0);
+  assert.equal(served.out.status, "no_changes");
   assert.deepEqual(served.out.files, [
     { path: "app/c/[creator]/page.tsx", status: "served_by_pages" },
   ]);
@@ -177,7 +178,7 @@ test("links verify reports the checked route and never claims an integration", a
   await assert.rejects(() => runLinks(["verify"]), /origin_unverified/);
 });
 
-test("links init --root adds the root route and a fallback config only where it is safe", (t) => {
+test("links init --root adds the root page and a fallback config only where it is safe", (t) => {
   const fresh = fixture(t);
   const planned = fresh.run("links", "init", "--root", "--json");
   assert.equal(planned.out.rootRewrite, "fallback_rewrite_supported");
@@ -185,55 +186,137 @@ test("links init --root adds the root route and a fallback config only where it 
     planned.out.files.map(({ path, status }) => `${status} ${path}`),
     [
       "create app/c/[creator]/route.ts",
-      "create app/api/commish/link/[creator]/route.ts",
+      "create app/commish-link/[creator]/page.tsx",
       "create next.config.mjs",
     ],
   );
-  fresh.run("links", "init", "--root", "--apply", "--json");
-  assert.match(
-    readFileSync(join(fresh.root, "app/api/commish/link/[creator]/route.ts"), "utf8"),
-    /\{ root: true \}/,
+  // The order a fresh install has to follow: the prefix route is verified first.
+  assert.match(planned.out.next[0], /links verify`.*turn on short links.*links verify --root/s);
+  assert.equal(
+    fresh.run("links", "init", "--root", "--apply", "--json").out.status,
+    "files_installed",
   );
+  const page = readFileSync(join(fresh.root, "app/commish-link/[creator]/page.tsx"), "utf8");
+  // A page, so a path that is not a creator shows the site's own not-found page.
+  assert.match(page, /createReferralLinkPage/);
+  assert.match(page, /@commish\/next\/links\/page/);
+  assert.match(page, /export const dynamic = "force-dynamic"/);
   const config = readFileSync(join(fresh.root, "next.config.mjs"), "utf8");
   assert.match(config, /fallback: \[referralLinkFallbackRewrite\(\)\]/);
   assert.match(config, /beforeFiles: \[\]/);
+  // A second run reports what is there instead of asking for another merge.
+  const again = fresh.run("links", "init", "--root", "--apply", "--json");
+  assert.equal(again.out.status, "no_changes");
+  assert.equal(again.out.rootRewrite, "fallback_rewrite_present");
+  assert.deepEqual(
+    again.out.files.map(({ path, status }) => `${status} ${path}`),
+    [
+      "unchanged app/c/[creator]/route.ts",
+      "unchanged app/commish-link/[creator]/page.tsx",
+      "unchanged next.config.mjs",
+    ],
+  );
+  assert.doesNotMatch(again.out.next[0], /Add `referralLinkFallbackRewrite/);
 
   const configured = fixture(t);
   writeFileSync(
     join(configured.root, "next.config.ts"),
     "export default { reactStrictMode: true };\n",
   );
+  writeFileSync(join(configured.root, "middleware.ts"), "export function middleware() {}\n");
   const merge = configured.run("links", "init", "--root", "--apply", "--json");
   assert.equal(merge.out.rootRewrite, "manual_config_merge_required");
-  assert.match(merge.out.next[0], /fallback/);
+  assert.match(merge.out.next[0], /LAST entry of the `fallback` list/);
+  assert.match(merge.out.next[0], /returns an array today.*afterFiles: \[\.\.\.thatArray\]/s);
+  assert.deepEqual(merge.out.routingReviewRequired, ["middleware.ts"]);
   assert.equal(
     readFileSync(join(configured.root, "next.config.ts"), "utf8"),
     "export default { reactStrictMode: true };\n",
   );
-  assert.ok(readFileSync(join(configured.root, "app/api/commish/link/[creator]/route.ts"), "utf8"));
+  assert.ok(readFileSync(join(configured.root, "app/commish-link/[creator]/page.tsx"), "utf8"));
+
+  // A rule that already matches every path leaves no safe place for the fallback.
+  const proxied = fixture(t);
+  writeFileSync(
+    join(proxied.root, "next.config.mjs"),
+    'export default { rewrites: async () => ({ fallback: [{ source: "/:path*", destination: "https://legacy.example/:path*" }] }) };\n',
+  );
+  const blocked = proxied.run("links", "init", "--root", "--json");
+  assert.equal(blocked.out.rootRewrite, "catch_all_rewrite_blocks_root_links");
+  assert.match(blocked.out.next[0], /Keep prefix links/);
 
   const cms = fixture(t);
   mkdirSync(join(cms.root, "app/[...slug]"), { recursive: true });
   writeFileSync(join(cms.root, "app/[...slug]/page.tsx"), "export default function Page() {}\n");
-  assert.equal(
-    cms.run("links", "init", "--root", "--json").out.rootRewrite,
-    "manual_cms_fallback_required",
+  const owned = cms.run("links", "init", "--root", "--json");
+  assert.equal(owned.out.rootRewrite, "manual_cms_fallback_required");
+  assert.deepEqual(
+    owned.out.files.map(({ path }) => path),
+    ["app/c/[creator]/route.ts"],
+    "no root page is written where a rewrite could never reach it",
   );
+});
 
+test("links init --root checks who owns the root page's address", (t) => {
+  // The same page in a route group: Next would refuse to build both.
+  const grouped = fixture(t);
+  mkdirSync(join(grouped.root, "app/(site)/commish-link/[creator]"), { recursive: true });
+  writeFileSync(
+    join(grouped.root, "app/(site)/commish-link/[creator]/page.tsx"),
+    "export default function Page() {}\n",
+  );
+  const duplicate = grouped.run("links", "init", "--root", "--apply", "--json");
+  assert.equal(duplicate.status, 1);
+  assert.equal(duplicate.error.code, "existing_page_namespace_requires_manual_integration");
+  assert.throws(() => readFileSync(join(grouped.root, "app/commish-link/[creator]/page.tsx")));
+  // The same page with another extension is not silently doubled either.
+  const other = fixture(t);
+  mkdirSync(join(other.root, "app/commish-link/[creator]"), { recursive: true });
+  writeFileSync(
+    join(other.root, "app/commish-link/[creator]/page.js"),
+    "export default function Page() {}\n",
+  );
+  assert.equal(other.run("links", "init", "--root", "--json").out.files[1].status, "conflict");
+});
+
+test("on a Commish Pages site links init --root asks for the alias handler's opt-in", (t) => {
   const pages = fixture(t);
   mkdirSync(join(pages.root, "app/c/[creator]"), { recursive: true });
   writeFileSync(
     join(pages.root, "app/c/[creator]/page.tsx"),
     'import { createCreatorPage } from "@commish/next/pages";\n',
   );
+  const missing = pages.run("links", "init", "--root", "--apply", "--json");
+  assert.equal(missing.out.status, "no_changes");
+  assert.equal(missing.out.rootRewrite, "pages_alias_handler_required");
+  assert.match(missing.out.next[0], /pages init --root-aliases/);
+  const handler = "app/api/commish/alias/[creator]/route.ts";
+  mkdirSync(join(pages.root, "app/api/commish/alias/[creator]"), { recursive: true });
+  writeFileSync(
+    join(pages.root, handler),
+    "export const GET = createCreatorAliasHandler(pagesOptions);\n",
+  );
+  const asked = pages.run("links", "init", "--root", "--apply", "--json");
+  assert.equal(asked.out.rootRewrite, "pages_alias_opt_in_required");
+  assert.deepEqual(asked.out.files[1], { path: handler, status: "manual_edit_required" });
+  assert.match(asked.out.next[0], /\{ rootLinks: true \}/);
+  // Never edited for the merchant.
+  assert.equal(
+    readFileSync(join(pages.root, handler), "utf8"),
+    "export const GET = createCreatorAliasHandler(pagesOptions);\n",
+  );
+  writeFileSync(
+    join(pages.root, handler),
+    "export const GET = createCreatorAliasHandler(pagesOptions, { rootLinks: true });\n",
+  );
   const served = pages.run("links", "init", "--root", "--apply", "--json");
+  assert.equal(served.out.status, "no_changes");
   assert.equal(served.out.rootRewrite, "served_by_pages");
-  assert.equal(served.out.files.length, 1);
   assert.throws(() => readFileSync(join(pages.root, "next.config.mjs")));
 });
 
-test("links verify --root reports the fallback separately", async (t) => {
-  let rootVerified = true;
+test("links verify --root reports the switch and the fallback separately", async (t) => {
+  let root = { enabled: true, verified: true };
   const bodies = [];
   const fetcher = mock.method(globalThis, "fetch", async (_url, init) => {
     bodies.push(JSON.parse(init.body));
@@ -245,7 +328,7 @@ test("links verify --root reports the fallback separately", async (t) => {
           prefix: "/c",
           template: "https://brand.example/c/{creator}",
         },
-        root: { verified: rootVerified },
+        root,
       },
     });
   });
@@ -257,12 +340,18 @@ test("links verify --root reports the fallback separately", async (t) => {
   });
   process.env.COMMISH_SECRET_KEY = secretKey;
   const passed = await runLinks(["verify", "--root"]);
-  assert.deepEqual(passed.root, { verified: true });
+  assert.deepEqual(passed.root, { enabled: true, verified: true });
   assert.deepEqual(bodies[0], { prefix: "/c", root: true });
-  rootVerified = false;
-  const failed = await runLinks(["verify", "--root"]);
-  assert.deepEqual(failed.root, { verified: false });
-  assert.match(failed.next[0], /turned on/);
+  root = { enabled: false, verified: false };
+  const off = await runLinks(["verify", "--root"]);
+  assert.deepEqual(off.root, { enabled: false, verified: false });
+  assert.match(off.next[0], /switched off for this product/);
+  root = { enabled: true, verified: false };
+  const unreached = await runLinks(["verify", "--root"]);
+  assert.match(unreached.next[0], /do not reach the link route with the check header/);
+  // An older Commish answers without the switch: it is reported as unknown.
+  root = { verified: false };
+  assert.deepEqual((await runLinks(["verify", "--root"])).root, { enabled: null, verified: false });
   assert.equal((await runLinks(["verify"])).root, undefined);
 });
 

@@ -247,16 +247,19 @@ export const creatorLink = (request: Request, creator: string) => link(request, 
 Root links drop the prefix. They share your site's own namespace, so they are
 opt-in twice: you turn on short links for the product in the Commish dashboard,
 and you add one fallback rewrite so that only paths none of your own routes
-match reach Commish.
+match reach Commish. Commish refuses a root request while the dashboard switch
+is off, whatever is installed.
 
 ```sh
 pnpm exec commish-next links init --root --apply --json
-# deploy, turn on short links in the dashboard, then
+# deploy, then in this order:
+pnpm exec commish-next links verify --json          # the prefix route comes first
+# turn on short links for the product in the Commish dashboard
 pnpm exec commish-next links verify --root --json
 ```
 
 ```js
-// next.config.mjs: fallback only, after every page, asset and route of yours
+// next.config.mjs: fallback only, and last, after every page, asset and route of yours
 import { referralLinkFallbackRewrite } from "@commish/next/links";
 
 export default {
@@ -266,20 +269,52 @@ export default {
 };
 ```
 
-- `--root` writes `app/api/commish/link/[creator]/route.ts`, the route the
-  rewrite targets, and a `next.config.mjs` only when the project has no Next
-  config. An existing config is merged by hand; a top-level dynamic or
-  catch-all route has to hand unknown paths over itself.
+```tsx
+// app/commish-link/[creator]/page.tsx: the page the rewrite targets
+import { createReferralLinkPage } from "@commish/next/links/page";
+
+export const dynamic = "force-dynamic";
+export default createReferralLinkPage(() => ({
+  secretKey: process.env.COMMISH_SECRET_KEY!,
+  apiUrl: process.env.COMMISH_API_URL,
+}));
+```
+
+- `--root` writes that page and a `next.config.mjs` only when the project has
+  no Next config. Run again, it reports both as unchanged.
+- An existing config is merged by hand: add `referralLinkFallbackRewrite()` as
+  the **last** `fallback` entry, after every rule of your own. If `rewrites()`
+  returns an array today, return
+  `{ afterFiles: [...thatArray], fallback: [referralLinkFallbackRewrite()] }`.
+  If a rule already matches every path (such as `/:path*` to a legacy site),
+  root links cannot be added beside it: after that rule they are never reached,
+  before it they would take one-segment paths from the site it serves. Keep
+  prefix links, or narrow that rule first.
+- Middleware or a proxy runs before every rewrite. The command lists such files
+  as `routingReviewRequired`; confirm they let unknown one-segment paths through.
+- A top-level dynamic or catch-all route answers every path before a fallback
+  rewrite is reached, so only it can hand a path over: for paths it does not
+  own, return `createReferralLinkRoute(source, { root: true })` from
+  `@commish/next/links`, with `notFound` for your own 404.
 - Your own pages always win. Commish checks each creator's name against your
   site and keeps that creator on the prefix link when a page of yours answers
   the path; the dashboard lists those names.
-- The root route answers everything that is not a creator, and any Commish
-  outage, with a 404 (your `notFound` if you pass one), never a 5xx. Unknown
-  paths are remembered briefly and lookups are rationed per server instance.
-- Commish sends its per-name check with an `x-commish-link-check` header. The
-  handlers forward it unchanged; a custom handler must do the same.
+- The target is a page, not a route handler, so a path that is not a creator
+  (a typo, a removed page, an old campaign link) shows your own `not-found`
+  page, as it did before the rewrite. So does a Commish outage for a path that
+  never resolved; a creator seen in the last ten minutes gets a short notice
+  instead, and a buyer is never forwarded without the referral. Unknown paths
+  are remembered briefly and lookups are rationed per server instance.
+- Commish sends its checks with an `x-commish-link-check` header. The page and
+  the handlers forward it unchanged, together with `x-commish-link-root: 1`;
+  a custom handler must forward both (`links.handoff({ handle, check, root: true })`).
+  The site-level check passes only when the header arrives, so 0.9.x handlers
+  cannot serve root links.
 - With Commish Pages installed, the Pages alias handler serves root links for
-  creators without a page too, so no second route or rewrite is needed.
+  creators without a page too, once it opts in:
+  `createCreatorAliasHandler(options, { rootLinks: true })`. The command tells
+  you which file to edit; it never edits an existing file. Without the option
+  the handler serves page aliases only, as before.
 
 ## Creator Pages
 
