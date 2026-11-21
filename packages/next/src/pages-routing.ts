@@ -178,15 +178,26 @@ export function createCreatorAliasHandler(
   // With `rootLinks`, a root path that is not a page alias may still be a
   // creator's bare link (or Commish checking one). Unknown paths and outages
   // stay a 404. The link lookups share the alias budget.
-  const link = handlerOptions.rootLinks
-    ? createReferralLinkHandler({
+  // One link handler per configuration (secret key and API URL, at most 16), so
+  // one brand's misses never answer another brand's creator.
+  const links = new Map<string, ReturnType<typeof createReferralLinkHandler>>();
+  const linkFor = (options: CreatorPageOptions) => {
+    const key = `${options.apiUrl ?? ""}\u0000${options.secretKey ?? ""}`;
+    let handler = links.get(key);
+    if (handler === undefined) {
+      if (links.size >= 16) links.delete(links.keys().next().value as string);
+      handler = createReferralLinkHandler({
         root: true,
         admit: admitLookup,
         handoff: async () => {
           throw new Error("Commish Pages is not configured");
         },
-      })
-    : null;
+      });
+      links.set(key, handler);
+    }
+    return handler;
+  };
+  const link = handlerOptions.rootLinks ? linkFor : null;
   const missing = (request: Request) =>
     handlerOptions.notFound
       ? handlerOptions.notFound(request)
@@ -224,7 +235,7 @@ export function createCreatorAliasHandler(
       });
     if (!link || !current) return missing(request);
     const options = current;
-    return link(request, handle, {
+    return link(options)(request, handle, {
       notFound: missing,
       handoff: (input) =>
         new Commish({ secretKey: options.secretKey, baseUrl: options.apiUrl }).links.handoff(input),
