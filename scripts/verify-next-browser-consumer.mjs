@@ -172,6 +172,7 @@ function verifyNextConsumer(provider, sdk, next, context, execute = execFileSync
         "./pages/handlers",
         "./pages/routing",
         "./links",
+        "./links/page",
       ].includes(entry),
       "unsupported Next export tuple",
     );

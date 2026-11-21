@@ -228,3 +228,121 @@ test("verified aliases are cached and survive crawler bursts and outages", async
     mock.timers.reset();
   }
 });
+
+test("bare root links are served only when the install opts in, and are marked as root requests", async () => {
+  const original = globalThis.fetch;
+  const calls = [];
+  // A fresh lookup window, whatever the earlier tests spent.
+  mock.timers.enable({ apis: ["Date"], now: Date.now() + 3_600_000 });
+  try {
+    globalThis.fetch = async (url, init) => {
+      calls.push(`${init.method} ${new URL(url).pathname.split("/").slice(-2).join("/")}`);
+      return String(url).includes("/links/")
+        ? Response.json({
+            data: {
+              protocol: "commish-links-v1",
+              status: "ready",
+              location: `${page.origin}/?commish_ref=token.signature`,
+            },
+          })
+        : Response.json({ error: { code: "page_not_found" } }, { status: 404 });
+    };
+    // An upgrade alone changes nothing: without the option the path stays a 404
+    // and no handoff is asked for.
+    const plain = createCreatorAliasHandler(options);
+    assert.equal(
+      (await plain(new Request(`${page.origin}/upgraded`), params("upgraded"))).status,
+      404,
+    );
+    assert.deepEqual(calls, ["GET prg_123456789012/upgraded"]);
+    calls.length = 0;
+    const handler = createCreatorAliasHandler(options, { rootLinks: true });
+    globalThis.fetch = async (url, init) => {
+      calls.push(`${init.method} ${new URL(url).pathname.split("/").slice(-2).join("/")}`);
+      if (String(url).includes("/links/"))
+        assert.equal(init.headers["x-commish-link-root"], "1", "marked as a root request");
+      return String(url).includes("/links/")
+        ? Response.json({
+            data: {
+              protocol: "commish-links-v1",
+              status: "ready",
+              location: `${page.origin}/?commish_ref=token.signature`,
+            },
+          })
+        : Response.json({ error: { code: "page_not_found" } }, { status: 404 });
+    };
+    const response = await handler(new Request(`${page.origin}/barelink`), params("barelink"));
+    assert.equal(response.status, 307);
+    assert.equal(response.headers.get("location"), `${page.origin}/?commish_ref=token.signature`);
+    assert.deepEqual(calls, ["GET prg_123456789012/barelink", "POST barelink/handoff"]);
+    const check = "cmprobe-0123456789abcdef01234567";
+    globalThis.fetch = async (url, init) => {
+      calls.push(init.headers?.["x-commish-link-check"] ?? "no-check");
+      return String(url).includes("/links/")
+        ? Response.json({ data: { protocol: "commish-links-v1", status: "probe" } })
+        : Response.json({ error: { code: "page_not_found" } }, { status: 404 });
+    };
+    const probe = await handler(
+      new Request(`${page.origin}/barelink`, { headers: { "x-commish-link-check": check } }),
+      params("barelink"),
+    );
+    assert.equal(probe.status, 204);
+    assert.equal(calls.at(-1), check);
+    // A check for a creator who has a page alias is not lost in the alias
+    // redirect: it goes to the link, and no page lookup is made for it.
+    calls.length = 0;
+    globalThis.fetch = async (url, init) => {
+      calls.push(`${init.method} ${new URL(url).pathname.split("/").slice(-2).join("/")}`);
+      return String(url).includes("/links/")
+        ? Response.json({ data: { protocol: "commish-links-v1", status: "probe" } })
+        : Response.json({ data: page });
+    };
+    const aliased = await handler(
+      new Request(`${page.origin}/maya`, { headers: { "x-commish-link-check": check } }),
+      params("maya"),
+    );
+    assert.equal(aliased.status, 204);
+    assert.deepEqual(calls, ["POST maya/handoff"]);
+    const visitor = await handler(new Request(`${page.origin}/maya`), params("maya"));
+    assert.equal(visitor.status, 307, "a visitor still gets the page alias redirect");
+    assert.equal(visitor.headers.get("location"), `${page.origin}/c/maya`);
+  } finally {
+    mock.timers.reset();
+    globalThis.fetch = original;
+  }
+});
+
+test("bare root links keep one brand's misses apart from another brand's creators", async () => {
+  const original = globalThis.fetch;
+  // A fresh lookup window, whatever the earlier tests spent.
+  mock.timers.enable({ apis: ["Date"], now: Date.now() + 7_200_000 });
+  try {
+    const brandA = { ...options, secretKey: "cm_live_sk_fixture_brand_a_123456" };
+    const brandB = { ...options, secretKey: "cm_live_sk_fixture_brand_b_123456" };
+    let current = brandA;
+    globalThis.fetch = async (url, init) => {
+      if (!String(url).includes("/links/"))
+        return Response.json({ error: { code: "page_not_found" } }, { status: 404 });
+      return init.headers.authorization === `Bearer ${brandA.secretKey}`
+        ? Response.json({ error: { code: "link_not_found" } }, { status: 404 })
+        : Response.json({
+            data: {
+              protocol: "commish-links-v1",
+              status: "ready",
+              location: `${page.origin}/?commish_ref=token.signature`,
+            },
+          });
+    };
+    const handler = createCreatorAliasHandler(() => current, { rootLinks: true });
+    assert.equal(
+      (await handler(new Request(`${page.origin}/shared`), params("shared"))).status,
+      404,
+    );
+    current = brandB;
+    const response = await handler(new Request(`${page.origin}/shared`), params("shared"));
+    assert.equal(response.status, 307);
+  } finally {
+    globalThis.fetch = original;
+    mock.timers.reset();
+  }
+});

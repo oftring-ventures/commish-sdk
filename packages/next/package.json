@@ -54,6 +54,11 @@
       "browser": null,
       "default": "./dist/links.js"
     },
+    "./links/page": {
+      "types": "./dist/link-page.d.ts",
+      "browser": null,
+      "default": "./dist/link-page.js"
+    },
     "./package.json": "./package.json"
   },
   "peerDependencies": {
